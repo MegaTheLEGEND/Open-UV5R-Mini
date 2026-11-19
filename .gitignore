@@ -1,0 +1,7 @@
+# Stock Baofeng firmware and anything derived from it stays local (copyright).
+firmware/
+*.ufw
+*.bin
+*.dis
+__pycache__/
+build/
