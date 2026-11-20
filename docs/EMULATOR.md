@@ -90,6 +90,16 @@ Everything else in the SFR space is a plain register file that reads back what w
   0x00A000, 0x00D000, and 0x0C0000–0x0C7FFF (32 KB read in 4 KiB pages; probably a font or picture). The
   boot was in the BK4819 code (return addresses 0x01E40C64, 0x01E40DFA on the stack) when the run ended.
 
+## Recent changes (2026-11-19)
+
+- `idle` (wait for an interrupt) now falls straight through: there are no interrupts yet. A 12-million-instruction
+  boot reaches no new functions after about 2.3 million, so the code is probably waiting for an interrupt.
+- `emu/uart_pins.py` and `emu/loader_store.py` call single stock routines with `Machine.call` to learn what they
+  do (the cable pin setup; where the update loader is stored).
+- `tools/lift/func_test.py` records every function call during a boot and checks the lifted C against it
+  ([LIFTER.md](LIFTER.md)). Every new function the emulator reaches gets checked automatically, so more boot means
+  more proven C.
+
 ## Road map (next steps, in order)
 
 1. **SPI1 wait**: find why `SPI1_Wait` spins until its time-out after some transfers (the done flag must be set for

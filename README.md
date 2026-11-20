@@ -42,6 +42,9 @@ The C firmware isn't ready, but the rest of the repo is useful now:
   [docs/UPDATE-MODE.md](docs/UPDATE-MODE.md) and [docs/EMULATOR.md](docs/EMULATOR.md).
 - **Reverse-engineering tools.** A disassembly with named functions (`tools/disasm.py`, `tools/symbols.txt`), and
   a CPU emulator that runs the real firmware part way, for tracing what the stock code does (`emu/`).
+- **See any stock function as C.** The lifter (`tools/lift/`) turns the whole stock app into compilable C in
+  seconds and checks it against the stock code instruction by instruction. Use it to understand a function before
+  modding it, or as the starting point for rewriting it. See [docs/LIFTER.md](docs/LIFTER.md).
 
 There are no new radio features yet, and the C build must not be flashed (it can't yet be flashed again
 afterwards).
@@ -70,6 +73,8 @@ Bluetooth libraries from your own SDK copy; this repo never contains them. See [
 | `tools/flashcheck.py` | The flasher's image checks, run before anything goes near a radio |
 | `tools/uv5r_flasher.py` | GUI flasher with a built-in emulated radio (protocol + flash) for practice flashes |
 | `emu/uv5r_emu.py` | Emulator running the real firmware (work in progress, see [docs/EMULATOR.md](docs/EMULATOR.md)) |
+| `tools/lift/lift.py` | Lift the stock app to C (`build/lift/`); `insn_test.py` and `func_test.py` check it against the ISA models and the stock code ([docs/LIFTER.md](docs/LIFTER.md)) |
+| `emu/loader_store.py`, `emu/uart_pins.py` | Run stock routines in the emulator to learn what they do (loader store address, cable pin setup) |
 | `tests/update_host.py` | Runs the C update mode on the PC against the real flasher host ([docs/UPDATE-MODE.md](docs/UPDATE-MODE.md)) |
 | `tools/ufwpatch.py` | Apply or make patches in the format Codeplug Studio's flasher reads |
 

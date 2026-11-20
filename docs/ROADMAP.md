@@ -12,10 +12,10 @@ A radio running an app without these cannot be flashed again without opening the
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
 | 1.1 | Update-mode protocol (ping, rate, reads, container and loader checks, hand-over record) | **done** | `app/update.c`, tested by `tests/update_host.py` against the real flasher host |
-| 1.2 | Loader store: choose the flash address, erase, write, read back and verify | **partial** | the address rule depends on the settings layout; being learnt by running the stock allocator in the emulator (`emu/loader_store.py`) |
-| 1.3 | Hand-over reset: record to 0x2FF88, close interrupts, reset into the bootloader | **partial** | record done; the reset (ROM 0x020011E6 path, `sub_01E435BA`) still to port |
-| 1.4 | Cable UART on the USB pins (TX 61 = D+, RX 62 = D−): pin routing and IO map | **partial** | UART registers done (`driver/uart.c`); the USB-pin routing is still to port |
-| 1.5 | Internal-flash driver: read, page program, sector/block erase, JEDEC id | **unknown → partial** | map known (ROM 0x0200048C/0x02000772/0x020006BC/0x02000526); C wrappers to write |
+| 1.2 | Loader store: choose the flash address, erase, write, read back and verify | **done** | `UPDATE_StoreLoader` writes the same bytes at the same addresses as the stock allocator (learnt in the emulator, `emu/loader_store.py`); checked by `tests/update_host.py` |
+| 1.3 | Hand-over reset: record to 0x2FF88, close interrupts, reset into the bootloader | **done** (untested on hardware) | `port_handover` in `app/update_radio.c`, ported from `sub_01E435BA` |
+| 1.4 | Cable UART on the USB pins (RX 61 = D+, TX 62 = D−): pin routing and IO map | **done** (untested on hardware) | `driver/uart.c`; the pin setup's register bits recorded from the stock code in the emulator (`emu/uart_pins.py`) |
+| 1.5 | Internal-flash driver: read, page program, sector/block erase, JEDEC id | **done** (untested on hardware) | through the mask-ROM routines, range-checked to 0xFA000–0xFE000 (`app/update_radio.c`) |
 | 1.6 | Run the C update mode on the CPU emulator, then on a radio with a case-open recovery path at hand | **todo** | |
 
 ## 2. Platform (chip and board)
@@ -71,6 +71,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
+| 6.5 | Lifter: whole stock app to C, checked against the stock code | **done** (first version) | `tools/lift/`, [LIFTER.md](LIFTER.md): 93.6% of functions lift fully; every function the emulated boot reaches matches stock in lockstep |
 | 6.3 | External flash dump from a real radio | **todo** | SOIC-8 clip + CH341A; needed for 4.2 and 5.2 |
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
 
