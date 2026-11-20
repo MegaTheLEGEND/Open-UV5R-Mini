@@ -1,0 +1,83 @@
+# Road map to a working C firmware
+
+What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-19.
+
+Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
+**unknown** = needs reverse-engineering first.
+
+## 1. Before the first flash (safety)
+
+A radio running an app without these cannot be flashed again without opening the case.
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 1.1 | Update-mode protocol (ping, rate, reads, container and loader checks, hand-over record) | **done** | `app/update.c`, tested by `tests/update_host.py` against the real flasher host |
+| 1.2 | Loader store: choose the flash address, erase, write, read back and verify | **partial** | the address rule depends on the settings layout; being learnt by running the stock allocator in the emulator (`emu/loader_store.py`) |
+| 1.3 | Hand-over reset: record to 0x2FF88, close interrupts, reset into the bootloader | **partial** | record done; the reset (ROM 0x020011E6 path, `sub_01E435BA`) still to port |
+| 1.4 | Cable UART on the USB pins (TX 61 = D+, RX 62 = D−): pin routing and IO map | **partial** | UART registers done (`driver/uart.c`); the USB-pin routing is still to port |
+| 1.5 | Internal-flash driver: read, page program, sector/block erase, JEDEC id | **unknown → partial** | map known (ROM 0x0200048C/0x02000772/0x020006BC/0x02000526); C wrappers to write |
+| 1.6 | Run the C update mode on the CPU emulator, then on a radio with a case-open recovery path at hand | **todo** | |
+
+## 2. Platform (chip and board)
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | `start.S` minimal; clock setup to port from stock `main` |
+| 2.2 | Watchdog | **unknown → partial** | clear is `p33_or(0x80, 0x40)`; enable and timeout to find |
+| 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known, `BOARD_PowerOff` written, untested |
+| 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** | stock uses `APP_TimeSlice10ms` 0x01E4F1AA |
+| 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **unknown** | channel and divider to find |
+| 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7 known; LED pins unknown |
+| 2.7 | Audio: speaker amplifier enable, routing BK4819 audio to the speaker, beeps and tones | **unknown** | amplifier pin still open (RE-NOTES) |
+| 2.8 | External SPI flash driver (CS PA3 on SPI1) | **todo** | protocol known (`03` read); contents unknown: needs a dump from a radio |
+
+## 3. Radio (BK4819)
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 3.1 | Register access, RX/TX switch, set frequency | **done** (basic) | `driver/bk4819.c` |
+| 3.2 | Band and filter switching (VHF/UHF LNA and PA select pins), TX power levels | **unknown** | GPIOs and register values to find |
+| 3.3 | Per-radio calibration (record sector at 0x93000): TX power, squelch, battery | **unknown** | read-only; must never be erased |
+| 3.4 | Squelch (RSSI, noise, glitch), S-meter | **todo** | |
+| 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | lookups found in stock (`CTCSS_FindNearest`, `DCS_GolayEncode`) |
+| 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
+| 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | PTT handler located (`PTT_Handler`) |
+| 3.8 | Dual watch, scanning (channel, frequency, priority) | **todo** | |
+| 3.9 | FM broadcast radio | **unknown** | which chip receives it to find |
+
+## 4. User interface
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 4.1 | LCD driver, rectangles, pixels, text | **done** | `driver/st7735s.c`, `ui/` |
+| 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
+| 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix done (`driver/keyboard.c`); layers todo |
+| 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **todo** | |
+| 4.5 | Menu system with every stock menu item | **todo** | menu strings found in `app.bin` |
+| 4.6 | VFO entry, channel store/delete, power-on screen and messages | **todo** | |
+
+## 5. Data and compatibility
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document |
+| 5.2 | Channel memory format as stock (so existing radios keep their channels) | **unknown** | likely in the external flash 0x000000–0x009000; Codeplug Studio documents the clone layout |
+| 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Codeplug Studio documents it |
+| 5.4 | Bluetooth / Wireless CPS | **todo** | optional edition with JieLi blobs (docs/BLUETOOTH.md) |
+
+## 6. Tooling and tests
+
+| # | Item | Status | Notes |
+| --- | --- | --- | --- |
+| 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
+| 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
+| 6.3 | External flash dump from a real radio | **todo** | SOIC-8 clip + CH341A; needed for 4.2 and 5.2 |
+| 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
+
+## Order of work
+
+1. Section 1 (safety), then flash the C build once with a recovery path ready.
+2. 2.1–2.4 and 5.1 so the radio boots, keeps time and keeps its settings.
+3. 3.1–3.4, 3.7 and 2.7 for a radio that receives and transmits on one frequency.
+4. 4.3–4.6 and 3.5 for everyday use; then 5.2–5.3 so programming software works.
+5. The rest (scanning, dual watch, FM radio, DTMF, Bluetooth).
