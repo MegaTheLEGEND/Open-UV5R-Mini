@@ -47,3 +47,16 @@ python tools/lift/func_test.py --steps 3000000  # lifted functions vs the stock 
 
 Next steps that raise coverage: interrupts and the remaining radio parts in the emulator (more functions
 exercised), and the instruction gaps above.
+
+## Readable C with a local model
+
+`tools/lift/local_rewrite.py` runs unattended on your own PC with Ollama (default `qwen3-coder:30b`). It works
+through the lifted functions, smallest first. For each one it asks the model for a readable rewrite, then compiles
+the rewrite against the lifted original with `tools/lift/eqtest_rt.c`. The test runs 300 random states and compares
+four things: r0 at return, sp, every byte written outside the stack frame, and every call (address, r0..r3, sp).
+A failed test goes back to the model, up to 3 tries. Each rewrite that passes goes to
+`build/readable/sub_XXXXXXXX.c`, which is not committed. The run resumes where it stopped.
+
+```
+python tools/lift/local_rewrite.py            # keys: p pause, s skip, q quit
+```
