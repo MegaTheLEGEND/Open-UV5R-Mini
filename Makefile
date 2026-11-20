@@ -1,0 +1,52 @@
+# Open-UV5R-Mini build. Needs only the open pi32v2 LLVM toolchain
+# (https://github.com/jvitkauskas/pi32v2-llvm/releases).
+#
+#   make TOOLCHAIN=/path/to/pi32v2-llvm/bin
+#
+# Output: build/firmware.elf and build/firmware.bin (raw image for the app.bin slot at 0x01E00100).
+
+TOOLCHAIN ?=
+CC      := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)clang
+LD      := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)ld.lld
+OBJCOPY := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-objcopy
+SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
+
+BUILD := build/fw
+TARGET := $(BUILD)/firmware
+
+SRC := main.c board.c \
+       driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c \
+       ui/font.c ui/helper.c
+ASM := start.S
+
+CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
+          -std=c11 -Wall -Wextra -I.
+LDFLAGS := -T firmware.ld --gc-sections
+
+OBJ := $(addprefix $(BUILD)/,$(SRC:.c=.o) $(ASM:.S=.o))
+
+all: $(TARGET).bin
+
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: %.S
+	@mkdir -p $(dir $@)
+	$(CC) --target=pi32v2 -c $< -o $@
+
+$(TARGET).elf: $(OBJ) firmware.ld
+	$(LD) $(LDFLAGS) $(OBJ) -o $@
+	$(SIZE) $@
+
+$(TARGET).bin: $(TARGET).elf
+	$(OBJCOPY) -O binary $< $@
+
+# Host syntax check with any GCC/Clang (no pi32v2 toolchain needed).
+check:
+	gcc -fsyntax-only -std=c11 -Wall -Wextra -I. $(SRC)
+
+clean:
+	rm -rf $(BUILD)
+
+.PHONY: all check clean

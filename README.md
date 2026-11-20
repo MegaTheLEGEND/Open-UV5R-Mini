@@ -14,6 +14,11 @@ possible without JieLi's closed compiler.
 Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
 [docs/RE-NOTES.md](docs/RE-NOTES.md) for hardware findings.
 
+## Firmware (C port)
+
+The first image is a key-test screen built on egzumer-style drivers for the BK4819, ST7735S LCD and keypad.
+See [docs/PORTING.md](docs/PORTING.md) for status, build steps and what is still unknown.
+
 ## Tools
 
 | Tool | What |
