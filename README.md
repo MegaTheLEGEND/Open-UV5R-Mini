@@ -19,6 +19,33 @@ radio and for replacing functions with C. See [docs/MATCHING.md](docs/MATCHING.m
 **C port:** early. What still has to be written before it is a working firmware, and in what order, is in the
 **[road map](docs/ROADMAP.md)**.
 
+### What you can use it for today
+
+The C firmware isn't ready, but the rest of the repo is useful now:
+
+- **Build stock v0.27 from source with open tools.** `tools/build_matching.py` rebuilds it byte for byte, with no
+  JieLi compiler or SDK. That gives an editable source for the stock firmware: small same-size changes (text,
+  values, single instructions) build and pass every check. Try the `5RMINI` → `OPENUV` demo in
+  [docs/MATCHING.md](docs/MATCHING.md).
+- **Flash a radio with your own build, or put it back to stock.** The build writes a patch that
+  [Codeplug Studio](https://codeplug.mm9pdy.net)'s flasher accepts ([docs/TESTING.md](docs/TESTING.md)).
+- **Practise flashing without a radio.** `tools/uv5r_flasher.py` has a built-in emulated radio: a full update,
+  a power cut part way, resuming, and a boot check, all on the PC. Its serial path has not been tried on a real
+  radio yet.
+- **Inspect and check `.ufw` files.** Unpack them (`tools/jl_ufw_unpack.py`), verify every CRC
+  (`tools/ufwcheck.py`), and run the flasher's safety checks before anything goes near a radio
+  (`tools/flashcheck.py`). `tools/mkufw.py` refuses images that would leave a radio impossible to flash again.
+- **Reference for anyone working on this radio.** Covers the `.ufw` format and its cipher, the flash layout, the
+  pin map (LCD, keypad, PTT, BK4819, power), and the stock update protocol and hand-over. Also covers the ROM
+  routines identified so far and the second flash chip.
+  See [docs/FIRMWARE.md](docs/FIRMWARE.md), [docs/RE-NOTES.md](docs/RE-NOTES.md),
+  [docs/UPDATE-MODE.md](docs/UPDATE-MODE.md) and [docs/EMULATOR.md](docs/EMULATOR.md).
+- **Reverse-engineering tools.** A disassembly with named functions (`tools/disasm.py`, `tools/symbols.txt`), and
+  a CPU emulator that runs the real firmware part way, for tracing what the stock code does (`emu/`).
+
+There are no new radio features yet, and the C build must not be flashed (it can't yet be flashed again
+afterwards).
+
 Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
 [docs/RE-NOTES.md](docs/RE-NOTES.md) for hardware findings.
 
