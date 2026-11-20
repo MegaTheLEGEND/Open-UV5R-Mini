@@ -1,5 +1,9 @@
 # C port status
 
+> **Do not flash the bare-metal build.** It has no update mode, so a radio running it could not be flashed
+> again without opening the case. Test on a radio with the matching build instead ([MATCHING.md](MATCHING.md),
+> [TESTING.md](TESTING.md)); the C drivers will be moved into it function by function.
+
 Layout follows egzumer's UV-K5 firmware: `driver/` for chips, `ui/` for drawing, `board.*` for the pin map,
 `main.c` for the application. Everything is written from the reverse-engineering notes; no stock or JieLi
 code is used.

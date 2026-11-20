@@ -14,6 +14,22 @@ from jl_ufw_unpack import jl_crypt  # noqa: E402
 from mkufw import APP_AREA, APP_BIN_OFFSET, app_area_crypt, crc16  # noqa: E402
 
 
+def flash_of(u):
+    hdr = jl_crypt(u[:0x40])
+    for i in range(struct.unpack_from('<H', hdr, 8)[0]):
+        r = jl_crypt(u[0x40 + 0x50 * i:0x90 + 0x50 * i])
+        if r[0x40:].split(b'\0')[0] == b'flash.bin':
+            off, ln = struct.unpack_from('<II', r, 8)
+            return u[off:off + ln]
+    raise SystemExit('no flash.bin')
+
+
+def app_entry(u):
+    """(length, data CRC) of the app.bin directory entry."""
+    ent = app_area_crypt(flash_of(u)[APP_AREA + 32:APP_AREA + 64], 32)
+    return struct.unpack_from('<I', ent, 8)[0], struct.unpack_from('<H', ent, 2)[0]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('ufw')
@@ -56,7 +72,8 @@ def main():
         print('app area length 0x%X does not match app.bin end 0x%X' % (area_len, APP_BIN_OFFSET + app_len))
         ok = False
     if a.app:
-        same = open(a.app, 'rb').read() == app
+        want = open(a.app, 'rb').read()
+        same = app[:len(want)] == want and set(app[len(want):]) <= {0xFF}
         ok &= same
         print('%-34s %s' % ('app.bin slot equals ' + os.path.basename(a.app), 'ok ' if same else 'BAD'))
     print('ALL OK' if ok else 'FAILED')

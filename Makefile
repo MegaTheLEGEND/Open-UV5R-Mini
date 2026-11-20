@@ -45,7 +45,8 @@ $(TARGET).elf: $(OBJ) firmware.ld
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
 
-# Flashable update: our app in the app.bin slot of your stock .ufw (kept outside git).
+# Our app in the app.bin slot of your stock .ufw (kept outside git). NOT flashable: the stock .ufw has no loader,
+# and this app has no update mode (docs/TESTING.md). For radio testing use: make matching
 #   make ufw BASE_UFW=firmware/stock-nrf-v0.27.ufw
 BASE_UFW ?= firmware/stock-nrf-v0.27.ufw
 PYTHON ?= python
@@ -60,4 +61,9 @@ check:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all check clean ufw
+# Stock v0.27 rebuilt from source byte for byte, plus a flashable image and flasher patch (docs/MATCHING.md).
+ISA ?= ../pi32v2-isa
+matching:
+	$(PYTHON) tools/build_matching.py --toolchain $(TOOLCHAIN) --isa $(ISA)
+
+.PHONY: all check clean ufw matching

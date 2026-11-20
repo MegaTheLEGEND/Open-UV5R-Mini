@@ -48,7 +48,16 @@ def app_area_crypt(data, start):
     return bytes(out)
 
 
-def build(base, app):
+def has_loader(ufw, recs):
+    """True when ota.bin carries a loader (the image can be flashed over the cable)."""
+    r = next((x for x in recs if x[2] == 'ota.bin'), None)
+    if not r:
+        return False
+    off, ln = struct.unpack_from('<II', r[1], 8)
+    return any(b != 0xFF for b in ufw[off:off + ln])
+
+
+def build(base, app, allow_no_update_mode=False):
     ufw = bytearray(base)
 
     # --- .ufw header and records
@@ -67,6 +76,12 @@ def build(base, app):
     flash_rec = next((x for x in recs if x[2] == 'flash.bin'), None)
     if not flash_rec:
         raise SystemExit('base .ufw has no flash.bin')
+    # The cable update mode (PTT-A + = at power-on, "UPDATE...") is run by the stock app, not the bootloader.
+    # An app without it, flashed onto a radio, leaves no way to flash again short of a case-open repair.
+    if has_loader(ufw, recs) and b'UPDATE\x00' not in app and not allow_no_update_mode:
+        raise SystemExit('refusing: this base is flashable (it carries a loader) but the app has no stock update\n'
+                         'mode, so a radio running it could not be flashed again. Build on the matching source\n'
+                         '(tools/build_matching.py) or pass --allow-no-update-mode if you have a recovery path.')
     _, frec, _ = flash_rec
     f_off, f_len = struct.unpack_from('<II', frec, 8)
     flash = bytearray(ufw[f_off:f_off + f_len])
@@ -82,9 +97,12 @@ def build(base, app):
     if len(app) > max_app:
         raise SystemExit('app is %d bytes, the slot holds %d' % (len(app), max_app))
 
-    new_area_len = APP_BIN_OFFSET + len(app)
-    # app bytes, then 0xFF up to the old end so everything after the slot stays where it was
-    area_plain[APP_BIN_OFFSET:old_area_len] = app + b'\xFF' * (old_area_len - new_area_len)
+    # The slot keeps the stock length: the app is padded with 0xFF to it, so the length fields, everything after
+    # the slot and the erase size the loader plans are all unchanged (the flasher's "stock bytes" rule: only the
+    # app window and the CRC fields may differ from stock).
+    new_area_len = old_area_len
+    app = app + b'\xFF' * (max_app - len(app))
+    area_plain[APP_BIN_OFFSET:old_area_len] = app
 
     struct.pack_into('<I', ent, 8, len(app))
     struct.pack_into('<H', ent, 2, crc16(app))
@@ -116,15 +134,17 @@ def main():
     ap.add_argument('--base', required=True, help='stock .ufw to start from (not modified)')
     ap.add_argument('--app', required=True, help='raw app image linked at 0x01E00100')
     ap.add_argument('-o', '--out', required=True)
+    ap.add_argument('--allow-no-update-mode', action='store_true',
+                    help='allow an app without the stock update mode on a flashable base (can brick a radio)')
     a = ap.parse_args()
     base = open(a.base, 'rb').read()
     app = open(a.app, 'rb').read()
-    out = build(base, app)
+    out = build(base, app, a.allow_no_update_mode)
     if os.path.abspath(a.out) == os.path.abspath(a.base):
         raise SystemExit('refusing to overwrite the base .ufw')
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     open(a.out, 'wb').write(out)
-    print('wrote %s (%d bytes, app %d bytes)' % (a.out, len(out), len(app)))
+    print("wrote %s (%d bytes, app %d bytes, padded to the stock slot)" % (a.out, len(out), len(app)))
 
 
 if __name__ == '__main__':

@@ -11,6 +11,12 @@ possible without JieLi's closed compiler.
 
 ## Status
 
+**Matching build done:** the stock v0.27 firmware is rebuilt from source with only open tools, byte for byte
+(`app.bin`, the `.ufw`, and the flashable image with loader all identical). It is the safe base for testing on a
+radio and for replacing functions with C. See [docs/MATCHING.md](docs/MATCHING.md) and
+[docs/TESTING.md](docs/TESTING.md).
+
+
 Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
 [docs/RE-NOTES.md](docs/RE-NOTES.md) for hardware findings.
 
@@ -30,6 +36,10 @@ Bluetooth libraries from your own SDK copy; this repo never contains them. See [
 | `tools/disasm.py` | Disassemble `app.bin` with the pi32v2-isa table, with string cross-references |
 | `tools/mkufw.py` | Put a built app image into a stock `.ufw`, re-encrypting and fixing every CRC |
 | `tools/ufwcheck.py` | Verify every CRC in a `.ufw` |
+| `tools/mkasm.py` | Turn the stock `app.bin` into assembly that rebuilds byte for byte |
+| `tools/build_matching.py` | Matching build end to end: source, rebuild, `.ufw`, flashable image, checks, flasher patch |
+| `tools/flashcheck.py` | The flasher's image checks, run before anything goes near a radio |
+| `tools/ufwpatch.py` | Apply or make patches in the format Codeplug Studio's flasher reads |
 
 ```powershell
 python tools/jl_ufw_unpack.py stock-nrf-v0.27.ufw firmware/stock
