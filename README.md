@@ -71,6 +71,9 @@ python tools/uv5r_flasher.py                                               # fla
 Building the C firmware needs the open [pi32v2 toolchain](https://github.com/jvitkauskas/pi32v2-isa).
 See [docs/PORTING.md](docs/PORTING.md).
 
+Using Claude Code or another AI agent? Point it at [AGENTS.md](AGENTS.md): the rules, the context and how to
+contribute.
+
 ## Docs
 
 | Doc | Read it for |
