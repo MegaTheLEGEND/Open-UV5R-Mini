@@ -36,9 +36,9 @@ typedef struct {
 #define IO_PORTC(n) (32 + (n))
 #define IO_PORTD(n) (48 + (n))
 
-/* SPI2 (LCD in the stock firmware): +0 CON, +4 BAUD, +0xC DMA address, +0x10 DMA count.
+/* SPI1 (LCD in the stock firmware; SPI0/1/2 = 0x1E1C00/0x1E1D00/0x1E1E00): +0 CON, +4 BAUD, +0xC DMA address, +0x10 DMA count.
  * Not used yet: the first port bit-bangs the LCD. */
-#define SPI2_BASE 0x001E1D00u
+#define SPI1_BASE 0x001E1D00u
 
 /* Power-domain ("P33") registers are reached through routines in the chip's mask ROM.
  * The stock firmware calls them at these fixed addresses. */

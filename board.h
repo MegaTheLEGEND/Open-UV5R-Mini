@@ -13,8 +13,8 @@
 #define PIN_LCD_CS       IO_PORTB(5)
 #define PIN_LCD_RESET    IO_PORTB(4)
 #define PIN_LCD_BACKLIGHT IO_PORTB(7)   /* active high */
-#define PIN_LCD_SCK      IO_PORTB(0)    /* SPI2 clock (inferred, see docs/PORTING.md) */
-#define PIN_LCD_MOSI     IO_PORTB(1)    /* SPI2 data out (inferred) */
+#define PIN_LCD_SCK      IO_PORTB(0)    /* SPI1 port A clock (confirmed by the BR23 SDK pin table) */
+#define PIN_LCD_MOSI     IO_PORTB(1)    /* SPI1 port A data out (confirmed) */
 #define LCD_DC_PR_BIT    1              /* D/C is PR1 in the power domain */
 
 /* Keypad: rows driven low one at a time, columns read with pull-ups */

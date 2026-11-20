@@ -1,9 +1,9 @@
 /* Open-UV5R-Mini: ST7735S 128x128 RGB565 LCD.
  *
  * The init sequence and window offset are the stock firmware's (sub_01E485EC, sub_01E3E518).
- * The stock drives the panel with SPI2 at 20 MHz; this first port bit-bangs the same lines so it does not
- * depend on SPI2 register bits that are not decoded yet. CS = PB5, RESET = PB4, D/C = PR1 (power domain),
- * SCK/MOSI = PB0/PB1 (inferred from the board init; check on hardware).
+ * The stock drives the panel with SPI1 at 20 MHz; this first port bit-bangs the same lines so it does not
+ * depend on SPI1 register bits that are not decoded yet. CS = PB5, RESET = PB4, D/C = PR1 (power domain),
+ * SCK/MOSI = PB0/PB1 (SPI1 port A).
  */
 #include "driver/st7735s.h"
 #include "board.h"

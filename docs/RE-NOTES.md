@@ -72,8 +72,10 @@ Driver functions:
 | `sub_01E3F58A()` | clear screen: window rows 0..127, write 0x8000 bytes (128×128×2) |
 | `sub_01E3D150(ms)` | millisecond delay |
 
-Pins: **CS = PB5** (GPIO 21), **RESET = PB4** (GPIO 20). D/C and the SPI pins are set through the
-JieLi SPI driver (`sub_01E5714E`); not yet mapped.
+Pins: **CS = PB5** (GPIO 21), **RESET = PB4** (GPIO 20), **backlight = PB7** (active high, `sub_01E41CA8`),
+**D/C = PR1** (power-domain port, set by `sub_01E5714E` through the mask-ROM P33 routines),
+**SCK = PB0, MOSI = PB1** (SPI1 at 0x1E1D00, port A; the stock's SPI base table at 0x01E64A90 is
+SPI0/1/2 = 0x1E1C00/0x1E1D00/0x1E1E00, and the BR23 SDK's pin table gives SPI1 port A = PB0/PB1/PB2).
 
 Visible area is 128×128. With MADCTL 0xA8 (MY | MV | BGR) the panel's columns are offset by 32
 (CASET 32..159).

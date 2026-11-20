@@ -31,7 +31,7 @@ Needs the open [pi32v2-llvm](https://github.com/jvitkauskas/pi32v2-llvm/releases
 2. **Entry and clocks.** The bootloader jumps to 0x01E00100; it is assumed the PLL and flash cache are set up
    by then, as the stock app does no clock setup before its own init.
 3. **Watchdog.** Not mapped. If the radio resets every few seconds, the watchdog needs clearing.
-4. **LCD SPI pins.** PB0 = SCK, PB1 = MOSI is inferred (outputs set low in the stock init, with PB2 as a
-   pulled-up input = MISO). If the screen stays blank, decode the SPI2 IO-map setup instead.
+4. **LCD SPI pins** are confirmed: the stock uses SPI1 (0x1E1D00), and SPI1 port A is CLK = PB0,
+   DO = PB1, DI = PB2. Moving from bit-banging to the SPI1 peripheral is a later speed-up.
 5. **LCD D/C on PR1** goes through the mask-ROM P33 routines at 0x02000058/0x020000A0, as the stock does.
 6. **Audio.** The speaker amplifier enable pin is not mapped, so RX audio is silent.
