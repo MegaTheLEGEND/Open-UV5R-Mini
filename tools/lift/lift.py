@@ -27,10 +27,15 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from special import SPECIAL  # noqa: E402
+
 FLASH_BASE = 0x01E00000
 M = 0xFFFFFFFF
 
-SR_NAMES = {'sp': 'S.sp', 'rets': 'S.rets', 'icfg': 'S.icfg', 'psr': 'S.flags'}
+SR_LIST = 'reti rete retx rets sr4 psr cnum uspn sspn icfgn icfgs icfg usp ssp sp pc'.split()
+SR_NAMES = {n: 'S.sr[%d]' % k for k, n in enumerate(SR_LIST) if n != 'pc'}
+SR_NAMES.update({'sp': 'S.sp', 'rets': 'S.rets', 'icfg': 'S.icfg', 'psr': 'S.flags'})
 
 
 class Unimpl(Exception):
@@ -375,9 +380,22 @@ def cond_c(kw, c):
 NOPS = {'nop', 'ssync', 'csync', 'btbclr', 'idle', 'sevl', 'wfe', 'lockset', 'lockclr', 'bkpt', 'hbkpt'}
 
 
-def translate(text, pc, size, op):
+def translate(text, pc, size, op, fid=None):
     """codec.format text of one instruction -> Unit."""
     u = Unit(pc, size, text)
+    h = SPECIAL.get(fid) or (SPECIAL.get(fid[:-2]) if fid and fid.endswith('.p') else None)
+    if h is not None:
+        got = h(op, text)
+        if got is not None:
+            u.kind, u.code, u.cond = got
+            if u.kind == 'if':
+                u.t, u.e = op['t'], op['e']
+            elif u.kind == 'br':
+                u.target = pc + size + op['n']
+            mm = re.match(r'^(r\d+)(?:_(r\d+))? ', text)
+            if mm:
+                u.dests = [int(x[1:]) for x in mm.groups() if x]
+            return u
     t = re.sub(r'\s+#$', '', text.split('   ;')[0].strip()).strip()
     end = pc + size
     w = t.split(' ', 1)[0]
@@ -572,6 +590,27 @@ def base_regs(inner):
     return []
 
 
+def carry_code(text):
+    """C for an add/subtract that also sets the carry flag (bit 1 of S.flags) as the ISA does: add = carry out,
+    subtract = no borrow. None if the text is not such a form."""
+    t = re.sub(r'\s+#$', '', text.split('   ;')[0].strip())
+    m = re.fullmatch(r'(r\d+) = (r\d+|-?\d+|0x[0-9A-Fa-f]+) ([+-]) (r\d+|-?\d+|0x[0-9A-Fa-f]+)', t)
+    if m:
+        d, a, op, b = m.groups()
+    else:
+        m = re.fullmatch(r'(r\d+) ([+-])= (r\d+|-?\d+|0x[0-9A-Fa-f]+)', t)
+        if not m:
+            return None
+        d, op, b = m.groups()
+        a = d
+    A, B, D = val(a), val(b), val(d)
+    if op == '+':
+        return '{ uint32_t _x = %s, _y = %s; %s = _x + _y; S.flags = (S.flags & ~2u) | ((%s < _x) ? 2u : 0u); }' % (
+            A, B, D, D)
+    return '{ uint32_t _x = %s, _y = %s; %s = _x - _y; S.flags = (S.flags & ~2u) | ((_x >= _y) ? 2u : 0u); }' % (
+        A, B, D)
+
+
 HALF_MASK = {'l': 0xFFFF, 'h': 0xFFFF0000, 'b0': 0xFF, 'b1': 0xFF00, 'b2': 0xFF0000, 'b3': 0xFF000000}
 
 
@@ -643,6 +682,10 @@ class Lifter:
             pass
         self.disk_key = key
 
+    def rd(self, a, n):
+        o = a - FLASH_BASE
+        return int.from_bytes(self.area[o:o + n], 'little')
+
     def save(self):
         if self.disk_dirty:
             os.makedirs(os.path.dirname(self.disk_path), exist_ok=True)
@@ -678,14 +721,25 @@ class Lifter:
         if d is None:
             raise Unimpl('undecodable')
         insn, raw, size, text, op = d
-        u = translate(text, a, size, op)
+        u = translate(text, a, size, op, insn.id)
         if insn.id.endswith('.p'):
             d2 = self.decode(a + size)
             if d2 is None:
                 raise Unimpl('pair without a second instruction')
-            u2 = translate(d2[3], a + size, d2[2], d2[4])
+            u2 = translate(d2[3], a + size, d2[2], d2[4], d2[0].id)
             u = pair_units(u, u2)
         return u
+
+    def carry_fix(self, units):
+        """addc/subc read the carry flag: make the instruction before each one compute it."""
+        for k, u in enumerate(units):
+            d = self.decode(u.pc)
+            if not d or d[0].id not in ('addc.rrr', 'subc.rrr') or k == 0:
+                continue
+            prev = units[k - 1]
+            c = carry_code(prev.text)
+            if c is not None and prev.kind == 'op':
+                prev.code = c
 
     def units(self, start, end):
         """Linear sweep [start, end) -> list of Unit (unimplemented forms become kind 'unimpl')."""
@@ -703,6 +757,17 @@ class Lifter:
                 u.kind = 'unimpl'
             out.append(u)
             a += u.size
+            if u.kind == 'tbb':
+                # the jump table: data up to its first target, then code again
+                targets = tbb_targets(u, end, self.rd)
+                if targets:
+                    t_end = min(targets)
+                    if t_end > a:
+                        dt = Unit(a, t_end - a, 'jump table: %s' % ' '.join('%x' % t for t in targets))
+                        dt.kind = 'data'
+                        out.append(dt)
+                        a = t_end
+        self.carry_fix(out)
         return out
 
 
@@ -757,6 +822,8 @@ def c_function(name, start, end, units, entries, trace_pc=True):
         body.append('L_%08X:; /* %s */' % (u.pc, u.text.replace('*/', '* /')))
         if trace_pc:
             body.append('	LIFT_INSN(%s);' % h32(u.pc))
+        if u.kind == 'data':
+            continue
         if u.kind == 'unimpl':
             unimpl += 1
             body.append('\tlift_unimpl(%s, "unimplemented instruction");' % h32(u.pc))
@@ -817,7 +884,7 @@ RUNTIME_H = r'''/* Generated by tools/lift/lift.py: the lifted stock app's runti
 #ifndef LIFT_H
 #define LIFT_H
 #include <stdint.h>
-typedef struct { uint32_t r[16]; uint32_t sp, rets, flags, icfg; } LiftState;
+typedef struct { uint32_t r[16]; uint32_t sp, rets, flags, icfg; uint32_t sr[3]; } LiftState;  /* sr: reti rete retx */
 extern LiftState S;
 extern uint32_t lift_pc;          /* the stock instruction being run (for tests and fault reports) */
 extern uint32_t lift_icount;      /* instructions run (tests run the lifted code in lockstep with the stock) */
@@ -851,13 +918,58 @@ uint32_t lift_fadd(uint32_t a, uint32_t b);
 uint32_t lift_fsub(uint32_t a, uint32_t b);
 uint32_t lift_fmul(uint32_t a, uint32_t b);
 uint32_t lift_fdiv(uint32_t a, uint32_t b);
+uint32_t lift_ror(uint32_t a, uint32_t n);
+uint64_t lift_xchg64_sat(uint64_t a, uint32_t n);
+uint32_t lift_ftou(uint32_t a);
+uint32_t lift_xchg(uint32_t a, uint32_t n);
+uint32_t lift_xchg_sat(uint32_t a, uint32_t n);
+uint32_t lift_utof(uint32_t a);
+uint32_t lift_ftoi_floor(uint32_t a);
+uint32_t lift_fmin(uint32_t a, uint32_t b);
+uint32_t lift_fmax(uint32_t a, uint32_t b);
+uint32_t lift_uextra_r(uint32_t a, uint32_t t);
+uint32_t lift_sextra_r(uint32_t a, uint32_t t);
+uint32_t lift_ssat64(int64_t v);
+uint32_t lift_usat64(int64_t v);
+uint32_t lift_shiftr(uint64_t x, uint32_t n, int mode, int arith);
+int lift_fcmp_gt(uint32_t a, uint32_t b);
+int lift_fcmp_lt(uint32_t a, uint32_t b);
+int lift_fcmp_ge(uint32_t a, uint32_t b);
+int lift_fcmp_le(uint32_t a, uint32_t b);
+int lift_fcmp_eq(uint32_t a, uint32_t b);
+int lift_fcmp_ugt(uint32_t a, uint32_t b);
+int lift_fcmp_ult(uint32_t a, uint32_t b);
+int lift_fcmp_uge(uint32_t a, uint32_t b);
+int lift_fcmp_ule(uint32_t a, uint32_t b);
+/* system hooks: what these do depends on the chip around the code (interrupts, exceptions) */
+uint64_t lift_copex(uint64_t x, int n);
+void lift_swi(int n);
+void lift_trigger(void);
+void lift_sysret(int bank);
 #endif
 '''
 
 
-def reachable(units, start, end):
+def tbb_targets(u, end, rd):
+    """A tbb/tbh table follows the instruction; it ends where the first target starts."""
+    w = 2 if u.text.startswith('tbh') else 1
+    tend = u.pc + u.size
+    out, i = [], 0
+    while True:
+        pos = tend + i * w
+        if pos >= min(out + [end]):
+            break
+        t = tend + 2 * rd(pos, w)
+        if t <= pos or t >= end:         # (a target inside the table is padding: the table has ended)
+            break
+        out.append(t)
+        i += 1
+    return out
+
+
+def reachable(units, start, end, rd=None):
     """The units control can reach from the function's start (so data swept as code adds no bogus targets).
-    After a tbb/tbh the rest of the function counts as reachable (the table's targets are not followed)."""
+    tbb/tbh tables are followed when rd (read flash bytes) is given, else the rest of the function counts."""
     idx = {u.pc: k for k, u in enumerate(units)}
     seen, work = set(), [0] if units else []
     while work:
@@ -867,9 +979,12 @@ def reachable(units, start, end):
         seen.add(k)
         u = units[k]
         if u.kind == 'tbb':
-            seen.update(range(k, len(units)))
-            break
-        if u.kind == 'unimpl':
+            if rd is None:
+                seen.update(range(k, len(units)))
+                break
+            work.extend(idx[t] for t in tbb_targets(u, end, rd) if t in idx)
+            continue
+        if u.kind in ('unimpl', 'data'):
             continue
         if u.kind in ('br', 'goto') and u.target in idx:
             work.append(idx[u.target])
@@ -878,23 +993,68 @@ def reachable(units, start, end):
     return [units[k] for k in sorted(seen)]
 
 
+def looks_like_code(L, a, end, limit=48, depth=0):
+    """A pointer target is taken as code only if it decodes cleanly up to its first return or jump (data tables
+    that code also loads as constants soon hit undecodable bytes or forms nothing uses)."""
+    n = 0
+    while a < end and n < limit:
+        try:
+            u = L.unit_at(a)
+        except Unimpl:
+            return False
+        w = u.text.split(' ', 1)[0]
+        if w in ('nop', 'bkpt', 'hbkpt', 'swi', 'rte', 'rti', 'rtss', 'rthw', 'idle', 'csync', 'ssync', 'trigger'):
+            return False            # zero words and system instructions: a table, not code
+        if u.kind == 'br' and L.decode(u.target) is None:
+            return False
+        if u.kind == 'tbb' and n == 0:
+            return False            # a byte table 00 01 .. decodes as tbb
+        if u.kind == 'goto' and n == 0:
+            # a thunk, or a code pointer in a table decoding as goto: its target must look like code too
+            return depth < 2 and u.target is not None and looks_like_code(L, u.target, end, limit, depth + 1)
+        if u.kind in ('ret', 'goto', 'gotor', 'tbb'):
+            return True
+        a += u.size
+        n += 1
+    return n >= limit
+
+
 def discover(L, dis_funcs):
     """Function ranges: the disassembly's labels plus every direct call or jump target that lands outside its own
     function (code reached only from the middle of other code). -> ([(name, start, end)], {(start, end): units})"""
-    entries = {f[1] for f in dis_funcs}
+    entries = {f[1] for f in dis_funcs} | {FLASH_BASE + 0x100}     # (+ the app's entry point: start-up code)
     last = dis_funcs[-1]
     code_end = (last[2][-1] + 6) if last[2] else last[1]
     cache = {}
+    # words in flash that may be code pointers (function-pointer tables, vectors)
+    words = set()
+    for o in range(0x100, len(L.area) - 3, 2):
+        w = int.from_bytes(L.area[o:o + 4], 'little')
+        if FLASH_BASE + 0x100 <= w < code_end and not w & 1:
+            words.add(w)
     while True:
         starts = sorted(entries)
         ranges = [(st, starts[k + 1] if k + 1 < len(starts) else code_end) for k, st in enumerate(starts)]
         new = set()
+        all_pcs = set()
         for st, en in ranges:
             units = cache.get((st, en))
             if units is None:
                 units = cache[(st, en)] = L.units(st, en)
+            all_pcs.update(u.pc for u in units if u.kind not in ('unimpl', 'data'))
+        # code addresses used as values: a constant loaded by code (goto/call through a register, a callback
+        # handed to the RTOS) or a word in a table in flash. Splitting a function there is harmless: the code
+        # before it falls through into it as a tail call.
+        consts = set(words)
+        for st, en in ranges:
+            for u in reachable(cache[(st, en)], st, en, L.rd):
+                for m in re.finditer(r'= (\d+)', u.text):
+                    consts.add(int(m.group(1)))
+        new |= {c for c in consts if c in all_pcs and c not in entries and looks_like_code(L, c, code_end)}
+        for st, en in ranges:
+            units = cache[(st, en)]
             pcs = {u.pc for u in units}
-            for u in reachable(units, st, en):
+            for u in reachable(units, st, en, L.rd):
                 t = u.target
                 if t is None or u.kind not in ('call', 'goto', 'br'):
                     continue
@@ -903,6 +1063,40 @@ def discover(L, dis_funcs):
         if not new:
             return [('sub_%08X' % st, st, en) for st, en in ranges], cache
         entries |= new
+
+
+def program_reachable(L, funcs, cache):
+    """Entries of the functions that are code: reached from the app's entry point through direct calls and jumps,
+    or whose address appears as a constant (a function pointer in code, or a word in a table in flash)."""
+    starts = {st: (st, en) for _, st, en in funcs}
+    words = set()
+    area = L.area
+    for o in range(0, len(area) - 3, 2):
+        w = int.from_bytes(area[o:o + 4], 'little')
+        if w in starts:
+            words.add(w)
+    live, work = set(), [FLASH_BASE + 0x100]
+    while work:
+        st = work.pop()
+        if st in live or st not in starts:
+            continue
+        live.add(st)
+        rng = starts[st]
+        for u in reachable(cache[rng], rng[0], rng[1], L.rd):
+            if u.target is not None:
+                work.append(u.target)
+            if rng[0] <= (u.target or 0) < rng[1]:
+                continue
+            for m in re.finditer(r'= (\d+)', u.text):
+                v = int(m.group(1))
+                if v in starts:
+                    work.append(v)
+        nxt = rng[1]
+        units = cache[rng]
+        reach = reachable(units, rng[0], rng[1], L.rd)
+        if units and reach and reach[-1] is units[-1] and                 units[-1].kind not in ('ret', 'goto', 'gotor', 'tbb', 'unimpl', 'data') and nxt in starts:
+            work.append(nxt)                # falls through into the next function
+    return live
 
 
 def main():
@@ -919,27 +1113,37 @@ def main():
     out = ['/* Generated by tools/lift/lift.py from the stock app. Derived from Baofeng firmware: do not commit. */',
            '#include "lift.h"', '']
     table = []
-    total_units = total_unimpl = clean = 0
     for name, start, end in funcs:
-        units = cache[(start, end)]
-        code, _ = c_function(name, start, end, units, entries)
+        code, _ = c_function(name, start, end, cache[(start, end)], entries)
         out.append(code)
         out.append('')
         table.append(name)
-        reach = reachable(units, start, end)
-        unimpl = sum(u.kind == 'unimpl' for u in reach)
-        total_units += len(reach)
-        total_unimpl += unimpl
-        clean += unimpl == 0
     L.save()
     out.append('void lift_dispatch(uint32_t addr, int *found)\n{\n\t*found = 1;\n\tswitch (addr) {')
     for name in table:
         out.append('\tcase 0x%su: %s(); return;' % (name[4:], name.replace('sub_', 'f_')))
     out.append('\t}\n\t*found = 0;\n}')
+    live = program_reachable(L, funcs, cache)
+    total_units = total_unimpl = clean = 0
+    gaps = []
+    for name, start, end in funcs:
+        if start not in live:
+            continue
+        reach = reachable(cache[(start, end)], start, end, L.rd)
+        bad = [u for u in reach if u.kind == 'unimpl']
+        total_units += len(reach)
+        total_unimpl += len(bad)
+        clean += not bad
+        gaps += [(name, u) for u in bad]
     open(os.path.join(a.out, 'lifted.c'), 'w').write('\n'.join(out) + '\n')
     open(os.path.join(a.out, 'lift.h'), 'w').write(RUNTIME_H)
-    print('%d functions, %d reachable instructions, %d not lifted; %d functions fully lifted (%.1f%%)' % (
-        len(funcs), total_units, total_unimpl, clean, 100.0 * clean / len(funcs)))
+    print('%d functions swept, %d of them code (reached from the entry point through calls, jumps and function '
+          'pointers)' % (len(funcs), len(live)))
+    print('code: %d instructions, %d not lifted (%.2f%% lifted); %d of %d functions fully lifted (%.1f%%)' % (
+        total_units, total_unimpl, 100.0 * (total_units - total_unimpl) / max(total_units, 1), clean, len(live),
+        100.0 * clean / max(len(live), 1)))
+    for name, u in gaps[:20]:
+        print('  not lifted: %s %#x %s' % (name, u.pc, u.text))
 
 
 if __name__ == '__main__':

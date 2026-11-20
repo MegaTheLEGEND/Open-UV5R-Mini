@@ -131,7 +131,7 @@ def main():
 
     class State(ctypes.Structure):
         _fields_ = [('r', ctypes.c_uint32 * 16), ('sp', ctypes.c_uint32), ('rets', ctypes.c_uint32),
-                    ('flags', ctypes.c_uint32), ('icfg', ctypes.c_uint32)]
+                    ('flags', ctypes.c_uint32), ('icfg', ctypes.c_uint32), ('sr', ctypes.c_uint32 * 16)]
     lib.lift_state.restype = ctypes.POINTER(State)
     S = lib.lift_state().contents
     taken = ctypes.c_int.in_dll(lib, 'lift_taken')

@@ -145,7 +145,7 @@ class Replay:
 
         class State(ctypes.Structure):
             _fields_ = [('r', ctypes.c_uint32 * 16), ('sp', ctypes.c_uint32), ('rets', ctypes.c_uint32),
-                        ('flags', ctypes.c_uint32), ('icfg', ctypes.c_uint32)]
+                        ('flags', ctypes.c_uint32), ('icfg', ctypes.c_uint32), ('sr', ctypes.c_uint32 * 16)]
         lib.lift_state.restype = ctypes.POINTER(State)
         lib.lift_fault_why.restype = ctypes.c_char_p
         self.S = lib.lift_state().contents
