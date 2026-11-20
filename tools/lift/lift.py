@@ -20,6 +20,7 @@ How instructions map (pi32v2, as the ISA's models define them; tools/lift/insn_t
 """
 import argparse
 import hashlib
+import json
 import os
 import pickle
 import re
@@ -1137,6 +1138,22 @@ def main():
         gaps += [(name, u) for u in bad]
     open(os.path.join(a.out, 'lifted.c'), 'w').write('\n'.join(out) + '\n')
     open(os.path.join(a.out, 'lift.h'), 'w').write(RUNTIME_H)
+    # per-function facts for tools/lift/local_rewrite.py: is it real code, what it calls, which strings it uses
+    info = {}
+    bodies = {m.group(1): m.group(0) for m in re.finditer(r'^void (f_[0-9A-F]{8})\(void\)\n\{\n.*?^\}\n',
+                                                          '\n'.join(out), re.S | re.M)}
+    for name, start, end in funcs:
+        fn = name.replace('sub_', 'f_')
+        body = bodies.get(fn, '')
+        strs = []
+        for c in sorted(set(int(x, 16) for x in re.findall(r'0x(01E[0-9A-F]{5})u', body))):
+            s = L.area[c - FLASH_BASE:c - FLASH_BASE + 80].split(b'\0')[0]
+            if len(s) >= 3 and all(32 <= ch < 127 or ch in (9, 10, 13) for ch in s) and \
+                    not any(t.endswith(s.decode('ascii')) for t in strs):
+                strs.append(s.decode('ascii'))
+        info[fn] = {'live': start in live, 'start': start, 'end': end, 'strings': strs,
+                    'calls': sorted(set('f_' + x for x in re.findall(r'lift_call\(0x([0-9A-F]{8})u\)', body)))}
+    json.dump(info, open(os.path.join(a.out, 'functions.json'), 'w'), indent=0)
     print('%d functions swept, %d of them code (reached from the entry point through calls, jumps and function '
           'pointers)' % (len(funcs), len(live)))
     print('code: %d instructions, %d not lifted (%.2f%% lifted); %d of %d functions fully lifted (%.1f%%)' % (

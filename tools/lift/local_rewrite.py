@@ -53,7 +53,7 @@ No other functions, no headers, no globals.
 - Add a short comment saying what the function seems to do.
 Answer with only the C function in one ```c block.
 
-{extra}Original:
+{context}{extra}Original:
 ```c
 {code}
 ```"""
@@ -65,6 +65,34 @@ def read_functions(path):
     for m in re.finditer(r'^void (f_[0-9A-F]{8})\(void\)\n\{\n(.*?)^\}\n', src, re.S | re.M):
         out[m.group(1)] = m.group(0)
     return out
+
+
+def summary(path):
+    """The model's one-line description at the top of a passed rewrite."""
+    try:
+        for line in open(path, encoding='utf-8'):
+            line = line.strip()
+            if line.startswith('//') or line.startswith('/*'):
+                t = line.strip('/* ').strip()
+                if t:
+                    return t[:160]
+            elif line:
+                return None
+    except OSError:
+        return None
+
+
+def context_for(name, info, summaries):
+    i = info.get(name)
+    if not i:
+        return ''
+    out = []
+    if i['strings']:
+        out.append('Strings it uses: ' + '; '.join(repr(x) for x in i['strings'][:12]))
+    known = ['  %s: %s' % (c.replace('f_', 'sub_'), summaries[c]) for c in i['calls'] if summaries.get(c)]
+    if known:
+        out.append('What some of the functions it calls do (from earlier rewrites):\n' + '\n'.join(known[:20]))
+    return ('Context:\n' + '\n'.join(out) + '\n\n') if out else ''
 
 
 def ollama(url, model, prompt, timeout):
@@ -159,6 +187,13 @@ def main():
     prog = json.load(open(prog_path)) if os.path.exists(prog_path) else {}
     log = open(os.path.join(OUT, 'log.txt'), 'a', encoding='utf-8')
 
+    info_path = os.path.join(LIFT, 'functions.json')
+    info = json.load(open(info_path)) if os.path.exists(info_path) else {}
+    if info:     # only real code: the rest of the sweep is data the disassembler took for code
+        funcs = {n: c for n, c in funcs.items() if info.get(n, {}).get('live')}
+    else:
+        print('build/lift/functions.json is missing: run tools/lift/lift.py again for context and real-code-only')
+    summaries = {n: summary(os.path.join(OUT, n.replace('f_', 'sub_') + '.c')) for n in funcs}
     only = {x.replace('sub_', 'f_') for x in a.only.split(',') if x}
     todo = [n for n in sorted(funcs, key=lambda n: funcs[n].count('\n')) if (not only or n in only)]
     todo = [n for n in todo if funcs[n].count('\n') <= a.max_lines]
@@ -202,7 +237,8 @@ def main():
             status(name, 'asking the model (try %d)' % (k + 1))
             stats['tries'] += 1
             try:
-                reply = ollama(a.url, a.model, PROMPT.format(name=name, code=orig, extra=extra), a.llm_timeout)
+                reply = ollama(a.url, a.model, PROMPT.format(name=name, code=orig, extra=extra,
+                                                              context=context_for(name, info, summaries)), a.llm_timeout)
                 llm_down = 0
             except (urllib.error.URLError, TimeoutError, OSError, KeyError, ValueError) as e:
                 stats['llm_error'] += 1
@@ -242,6 +278,7 @@ def main():
         elif result:
             open(os.path.join(OUT, name.replace('f_', 'sub_') + '.c'), 'w', encoding='utf-8').write(result)
             prog[name] = {'status': 'pass', 'tries': k + 1}
+            summaries[name] = summary(os.path.join(OUT, name.replace('f_', 'sub_') + '.c'))
             stats['pass'] += 1
         elif not keys.quit:
             prog[name] = {'status': 'fail'}
