@@ -17,7 +17,7 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := main.c board.c app/app.c bt/bt_none.c \
+SRC := main.c board.c app/app.c app/update.c app/update_radio.c driver/uart.c bt/bt_none.c \
        driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c \
        ui/font.c ui/helper.c
 ASM := start.S

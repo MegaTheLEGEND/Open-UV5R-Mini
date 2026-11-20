@@ -41,6 +41,7 @@ Bluetooth libraries from your own SDK copy; this repo never contains them. See [
 | `tools/flashcheck.py` | The flasher's image checks, run before anything goes near a radio |
 | `tools/uv5r_flasher.py` | GUI flasher with a built-in emulated radio (protocol + flash) for practice flashes |
 | `emu/uv5r_emu.py` | Emulator running the real firmware (work in progress, see [docs/EMULATOR.md](docs/EMULATOR.md)) |
+| `tests/update_host.py` | Runs the C update mode on the PC against the real flasher host ([docs/UPDATE-MODE.md](docs/UPDATE-MODE.md)) |
 | `tools/ufwpatch.py` | Apply or make patches in the format Codeplug Studio's flasher reads |
 
 ```powershell

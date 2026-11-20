@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "app/app.h"
+#include "app/update.h"
 #include "board.h"
 #include "bt/bt.h"
 #include "driver/bk4819.h"
@@ -54,6 +55,8 @@ void APP_Init(void)
 	BOARD_Init();
 	ST7735S_Init();
 	KEYBOARD_Init();
+	if (UPDATE_Requested())
+		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app */
 	BK4819_Init();
 	BK4819_SetFrequency(TEST_FREQ_10HZ);
 	BK4819_SetMode(BK4819_MODE_RX);

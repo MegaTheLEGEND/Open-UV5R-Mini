@@ -1,7 +1,8 @@
 # C port status
 
 > **Do not flash the bare-metal build.** It has no update mode, so a radio running it could not be flashed
-> again without opening the case. Test on a radio with the matching build instead ([MATCHING.md](MATCHING.md),
+> again without opening the case. Update mode is being ported first: [UPDATE-MODE.md](UPDATE-MODE.md) (protocol
+> done and tested on the PC; loader store and USB-pin routing still open). Test on a radio with the matching build instead ([MATCHING.md](MATCHING.md),
 > [TESTING.md](TESTING.md)); the C drivers will be moved into it function by function.
 
 Layout follows egzumer's UV-K5 firmware: `driver/` for chips, `ui/` for drawing, `board.*` for the pin map,
