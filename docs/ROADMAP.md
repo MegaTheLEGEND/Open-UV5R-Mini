@@ -1,6 +1,6 @@
 # Road map to a working C firmware
 
-What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-19.
+What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-20.
 
 Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
 **unknown** = needs reverse-engineering first.
@@ -71,9 +71,10 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
-| 6.5 | Lifter: whole stock app to C, checked against the stock code | **done** (first version) | `tools/lift/`, [LIFTER.md](LIFTER.md): 93.6% of functions lift fully; every function the emulated boot reaches matches stock in lockstep |
 | 6.3 | External flash dump from a real radio | **todo** | SOIC-8 clip + CH341A; needed for 4.2 and 5.2 |
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
+| 6.5 | Lifter: whole stock app to C, checked against the stock code | **done** | `tools/lift/`, [LIFTER.md](LIFTER.md): all 2,032 code functions lift; every function the emulated boot reaches matches stock in lockstep |
+| 6.6 | Readable C of stock functions with a local model, each one checked by an equivalence test | **running** | `tools/lift/local_rewrite.py`; reference for porting, stays local (stock-derived) |
 
 ## Order of work
 
