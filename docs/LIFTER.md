@@ -17,10 +17,21 @@ tools are committed.
 | `tools/lift/func_test.py` | Per function, lockstep: the emulator boots the stock app and records each call (registers, every memory access tagged with the instruction-execution number, mask-ROM calls with their results). The lifted C replays each call: every read is served from the recording, and every write must be the same byte at the same instruction execution. Registers must match at the return. The first difference names the stock instruction. |
 
 ```
+python tools/setup.py                           # check and unpack your stock file(s) into build/
+python tools/disasm.py build/stock/unpacked/app.bin --isa ../pi32v2-isa   # build/app.dis
 python tools/lift/lift.py                       # build/lift/lifted.c (+ lift.h)
 python tools/lift/insn_test.py                  # every instruction form vs the ISA models
 python tools/lift/func_test.py --steps 3000000  # lifted functions vs the stock code, in lockstep
 ```
+
+NRFB radios (firmware V0.04): the same steps, into `build/nrfb/`:
+
+```
+python tools/disasm.py build/stock-nrfb/unpacked/app.bin --isa ../pi32v2-isa -o build/nrfb/app.dis --xrefs build/nrfb/xrefs.txt
+python tools/lift/lift.py --variant nrfb        # build/nrfb/lift/lifted.c
+```
+
+The tests (`insn_test.py`, `func_test.py`) and the emulator are NRF-only for now.
 
 ## Status (2026-11-19)
 

@@ -16,7 +16,7 @@ firmware. To see which one you have:
 | Suffix | Firmware | Stock file | Status here |
 | --- | --- | --- | --- |
 | `5RMINI NRF` | `V0.27` | [stock-nrf-v0.27.ufw](https://mega.nz/file/U5NSDIhZ#DqRVur6RPVay1ylKZFQsz2zrXnR3ZrAMBToPHgPnPvQ) | main target |
-| `5RMINI NRFB` | `V0.04` | [stock-nrfb-v0.04.ufw](https://mega.nz/file/NgFkWZTS#l4b9-Z6dSISLWBNc8OWMHYUfmzyFV_WT9f268APxnt0) | recognised and unpacked; tools and builds still NRF-only |
+| `5RMINI NRFB` | `V0.04` | [stock-nrfb-v0.04.ufw](https://mega.nz/file/NgFkWZTS#l4b9-Z6dSISLWBNc8OWMHYUfmzyFV_WT9f268APxnt0) | unpacked, disassembled and lifted to C; builds still NRF-only |
 
 The two builds differ only slightly. NRFB's app is 596 bytes bigger, and that moves the settings area along by
 4 KB. Never flash a file made for one kind onto the other.

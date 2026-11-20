@@ -78,7 +78,7 @@ firmware: they are never in the repo.
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
 | 6.5 | Lifter: turn the stock app into C on your own PC, checked against the stock code | **done** | `python tools/lift/lift.py` with your own stock `.ufw` unpacked; output goes to your `build/lift/` ([LIFTER.md](LIFTER.md)) |
 | 6.6 | Readable-C rewrite of the lifted functions with a local model (Ollama), each one tested | **done** (tool) | `python tools/lift/local_rewrite.py`; runs for hours on your PC, output in your `build/readable/` |
-| 6.7 | NRFB radios (firmware V0.04): the same firmware rebuilt, app 596 bytes bigger, settings area 4 KB further on | **partial** | `tools/setup.py` checks and unpacks it to `build/stock-nrfb/`; disassembly, lifter, builds and flasher patches are still NRF-only |
+| 6.7 | NRFB radios (firmware V0.04): the same firmware rebuilt, app 596 bytes bigger, settings area 4 KB further on | **partial** | `tools/setup.py` unpacks it; `tools/disasm.py` and `tools/lift/lift.py --variant nrfb` work (1,974 code functions, 100% lifted); tests, emulator, builds and flasher patches are still NRF-only |
 
 ## Order of work
 

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Lift the stock app (pi32v2 machine code) to compilable C, one C function per stock function.
 
-    python tools/lift/lift.py [--isa E:/pi32v2-isa] [--out build/lift]
+    python tools/lift/lift.py [--variant nrf|nrfb] [--isa E:/pi32v2-isa] [--out build/lift]
+
+--variant nrfb lifts the NRFB (firmware V0.04) app instead: build/stock-nrfb/unpacked/app.bin and build/nrfb/app.dis
+to build/nrfb/lift/ (unpack it with tools/setup.py, disassemble it with tools/disasm.py, see docs/LIFTER.md).
 
 The output is "register-level" C: every instruction becomes one C statement on a CPU state (S.r[0..15], S.sp,
 S.rets) and memory accessors (rd8/rd16/rd32, wr8/wr16/wr32). It is ugly but it is the whole firmware, it compiles,
@@ -663,7 +666,7 @@ def read_functions(dis_path):
 
 
 class Lifter:
-    def __init__(self, isa, app_bin):
+    def __init__(self, isa, app_bin, cache_dir=None):
         self.codec, table, self.check = load_isa(isa)
         self.tab = table.load()
         sys.path.insert(0, os.path.join(ROOT, 'emu'))
@@ -671,7 +674,7 @@ class Lifter:
         self.area = E.decrypt_area(open(app_bin, 'rb').read())
         self.cache = {}
         # decoding is the slow part: decoded instructions are kept in build/lift/decode.pickle, keyed by the app
-        self.disk_path = os.path.join(ROOT, 'build', 'lift', 'decode.pickle')
+        self.disk_path = os.path.join(cache_dir or os.path.join(ROOT, 'build', 'lift'), 'decode.pickle')
         self.disk, self.disk_dirty = {}, False
         key = hashlib.sha256(self.area).hexdigest()
         try:
@@ -1103,11 +1106,20 @@ def program_reachable(L, funcs, cache):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--isa', default=os.path.join(os.path.dirname(ROOT), 'pi32v2-isa'))
-    ap.add_argument('--app', default=os.path.join(ROOT, 'build', 'stock', 'unpacked', 'app.bin'))
-    ap.add_argument('--dis', default=os.path.join(ROOT, 'build', 'app.dis'))
-    ap.add_argument('--out', default=os.path.join(ROOT, 'build', 'lift'))
+    ap.add_argument('--variant', choices=['nrf', 'nrfb'], default='nrf',
+                    help='which stock firmware: nrf (V0.27, default) or nrfb (V0.04)')
+    ap.add_argument('--app')
+    ap.add_argument('--dis')
+    ap.add_argument('--out')
     a = ap.parse_args()
-    L = Lifter(a.isa, a.app)
+    nrfb = a.variant == 'nrfb'
+    a.app = a.app or os.path.join(ROOT, 'build', 'stock-nrfb' if nrfb else 'stock', 'unpacked', 'app.bin')
+    a.dis = a.dis or os.path.join(ROOT, 'build', 'nrfb', 'app.dis') if nrfb else a.dis or os.path.join(ROOT, 'build', 'app.dis')
+    a.out = a.out or os.path.join(ROOT, 'build', 'nrfb', 'lift') if nrfb else a.out or os.path.join(ROOT, 'build', 'lift')
+    for f in (a.app, a.dis):
+        if not os.path.exists(f):
+            sys.exit('missing %s: run tools/setup.py, then tools/disasm.py (see docs/LIFTER.md)' % f)
+    L = Lifter(a.isa, a.app, a.out)
     funcs, cache = discover(L, read_functions(a.dis))
     entries = {f[1] for f in funcs}
     os.makedirs(a.out, exist_ok=True)
