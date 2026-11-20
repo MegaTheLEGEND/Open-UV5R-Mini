@@ -19,12 +19,16 @@ code is used.
 
 ## Build
 
+Tested 2026-11-19 with pi32v2-llvm `pi32v2-23.1.5-5` (Windows x64 release, SHA-256 checked) and MSYS2 `make`:
+
 ```powershell
-make TOOLCHAIN=C:/pi32v2-llvm/bin
+make TOOLCHAIN=E:/toolchains/pi32v2-llvm/bin
 ```
 
-Needs the open [pi32v2-llvm](https://github.com/jvitkauskas/pi32v2-llvm/releases) package only.
-`make check` runs a host `gcc -fsyntax-only` pass without it.
+Result: `build/fw/firmware.bin`, 3,624 bytes (3,620 code + 4 data), no warnings. The image starts at
+0x01E00100 with `_start` (stacks, `.data` copy from flash to RAM 0, `.bss` clear, `main`), and the LCD D/C
+code calls the mask-ROM P33 routines at 0x02000058/0x020000A0 the way the stock firmware does.
+`make check` runs a host `gcc -fsyntax-only` pass without the pi32v2 toolchain.
 
 ## Open questions before the first flash
 
