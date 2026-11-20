@@ -419,6 +419,8 @@ def make_core(sim):
             self.sr = [0] * 16
             self.special = {
                 'li.sr_u32': self._li_sr, 'mov.sr_r': self._mov_sr_r, 'mov.r_sr': self._mov_r_sr,
+                # idle (wait for an interrupt): no interrupts are modelled yet, so it falls straight through
+                'idle': lambda op: None,
             }
 
         def get_sr(self, s):
