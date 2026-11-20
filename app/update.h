@@ -27,6 +27,15 @@
 #define UPDATE_PIN_TX         61u           /* USB D+ used as UART TX (stock table at 0x01E65538) */
 #define UPDATE_PIN_RX         62u           /* USB D- used as UART RX */
 
+/* Where the loader goes on an nrf-v0.27 radio (VM area 0x94000 + 0x6A000, settings banks 0x94000..0xA4000).
+ * Learnt by running the stock allocator sub_01E42AF2 in the emulator (emu/loader_store.py, docs/UPDATE-MODE.md):
+ * the loader sits at the top of the VM area, its 32-byte LOADER.BIN header 4 bytes below it, and a flash copy of
+ * the hand-over record in the last 256 bytes before BTIF (0xFE000). */
+#define UPDATE_VM_END         0xFE000u
+#define UPDATE_REC_FLASH      (UPDATE_VM_END - 0x100u)               /* 0xFDF00 */
+#define UPDATE_STORE_LO       0xFA000u      /* erased before the store: free top of the VM area */
+#define UPDATE_SETTINGS_END   0xA4000u      /* the settings banks end here: never touched */
+
 enum {
 	UPDATE_CMD_RATE   = 1,
 	UPDATE_CMD_READ   = 2,
@@ -48,8 +57,10 @@ typedef struct {
 	int  (*read)(uint8_t *buf, int max, uint32_t timeout_ms);
 	void (*write)(const uint8_t *buf, int len);
 	void (*set_baud)(uint32_t baud);
-	/* Store the packed loader where the bootloader will find it; *flash_addr gets its address. 0 = done. */
-	int  (*store_loader)(const uint8_t *loader, uint32_t len, uint32_t *flash_addr);
+	/* Internal flash (absolute flash addresses). 0 = done. Program never crosses a 256-byte page. */
+	int  (*flash_read)(uint32_t addr, uint8_t *buf, uint32_t len);
+	int  (*flash_erase_4k)(uint32_t addr);
+	int  (*flash_program)(uint32_t addr, const uint8_t *buf, uint32_t len);
 	/* Put the 112-byte record at UPDATE_RECORD_ADDR and reset. Does not return on the radio. */
 	void (*handover)(const uint8_t *record, uint32_t len);
 } UPDATE_Port;
@@ -66,6 +77,7 @@ int  UPDATE_Run(const UPDATE_Port *port);
 /* Helpers, exported for tests. */
 uint16_t UPDATE_Crc16(const uint8_t *p, uint32_t n, uint16_t crc);
 void     UPDATE_Decrypt(uint8_t *p, uint32_t n, uint16_t key);
+uint32_t UPDATE_StoreLoader(const uint8_t *loader, uint32_t len);
 void     UPDATE_BuildRecord(uint8_t rec[UPDATE_RECORD_SIZE], uint32_t loader_addr, uint32_t baud);
 
 #endif

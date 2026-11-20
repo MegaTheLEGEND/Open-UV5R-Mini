@@ -212,10 +212,9 @@ class Rom:
                 self.flash_log.append(('erase', a0, size))
             else:
                 self.log('ROM sfc_erase: unknown command %#x at %#x' % (r0, r1))
-        elif n == 'sfc_read_id':                    # the driver keeps the JEDEC id; 0x14 -> 1 MiB
-            self.bus.write(0x198C0 + 1412, bytes([0x14]))
-            self.bus.write(0x198C0 + 353 * 4, struct.pack('<I', 0x00144020))
-            ret = 0x00144020
+        elif n == 'sfc_read_id':                    # JEDEC id 20 40 14 kept as 0x204014: low byte 0x14 -> 1 MiB
+            self.bus.write(0x198C0 + 353 * 4, struct.pack('<I', 0x00204014))
+            ret = 0x00204014
         elif n in ('irq_save', 'irq_restore', 'udelay?', 'flush_dcache', 'flushinv_dcache', 'sfc_suspend',
                    'sfc_resume', 'nvram_set_boot_state', 'sem_pend', 'sem_post'):
             pass
@@ -449,8 +448,35 @@ def make_core(sim):
         def _mov_r_sr(self, op):
             self.R[op['r']] = self.get_sr(op['s']) & M
 
+        def _rep(self, insn, raw, size):
+            """rep / rep.i: run the next `body` bytes `count` times. The core's own model is a test pattern
+            (it only bumps r7), so the loop is run here. The register form runs at most 32 times and counts its
+            register down by the runs (hw/fm1-2026-11-15-excprobe); code loops back while it is non-zero."""
+            op = sim.check.operands(insn, raw)
+            if insn.id == 'rep':
+                count, body = min(self.R[op['r']], 32), op['n']
+                self.R[op['r']] = (self.R[op['r']] - count) & M
+            else:
+                count, body = op['n'], op['b']
+            start = self.pc + size
+            end = start + body
+            if self.after_then is not None:
+                self.after_then[0] -= 1
+            self.steps += 1
+            for _ in range(count):
+                self.pc = start
+                while self.pc != end:
+                    super().step()
+                    if not (start <= self.pc <= end):
+                        raise RuntimeError('%#x: jump out of a rep body' % self.pc)
+            self.pc = end
+            self.seq = end
+            self.check_then()
+
         def step(self):
             insn, raw, size = self.decode(self.pc)
+            if insn.id in ('rep', 'rep.i'):
+                return self._rep(insn, raw, size)
             h = self.special.get(insn.id)
             if h is None:
                 return super().step()

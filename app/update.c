@@ -163,6 +163,80 @@ void UPDATE_BuildRecord(uint8_t rec[UPDATE_RECORD_SIZE], uint32_t loader_addr, u
 	wr16(&rec[0], UPDATE_Crc16(&rec[2], 78, 0));
 }
 
+static int program(uint32_t addr, const uint8_t *p, uint32_t len)
+{
+	while (len) {
+		uint32_t n = 0x100u - (addr & 0xFFu);
+		if (n > len)
+			n = len;
+		if (g_port->flash_program(addr, p, n))
+			return -1;
+		addr += n;
+		p += n;
+		len -= n;
+	}
+	return 0;
+}
+
+static int verify(uint32_t addr, const uint8_t *p, uint32_t len)
+{
+	uint8_t b[64];
+	while (len) {
+		uint32_t n = len < sizeof(b) ? len : sizeof(b);
+		if (g_port->flash_read(addr, b, n))
+			return -1;
+		for (uint32_t i = 0; i < n; i++)
+			if (b[i] != p[i])
+				return -1;
+		addr += n;
+		p += n;
+		len -= n;
+	}
+	return 0;
+}
+
+/* Store the loader as the stock app does on an nrf-v0.27 radio. Returns its header address (ota_addr), 0 on error.
+ * Layout (matches what the stock allocator writes, checked by tests/update_host.py):
+ *   hdr  = REC_FLASH - (len + 32) - 4, 4-aligned     0xFA0F4 for the 15,848-byte L2 loader
+ *   hdr  : 00 00 FF FF | addr u32 | len+32 u32 | 00 FF FF FF | "LOADER.BIN" NUL-padded to 16
+ *   hdr+32: the loader
+ *   REC_FLASH (0xFDF00): the first 80 bytes of the hand-over record: FF FF 04 5A, FF..., ota_addr at +72
+ */
+uint32_t UPDATE_StoreLoader(const uint8_t *loader, uint32_t len)
+{
+	uint8_t h[32], r[80];
+	uint32_t hdr = (UPDATE_REC_FLASH - (len + 32u) - 4u) & ~3u;
+
+	if (len == 0 || len > UPDATE_MAX_LOADER || hdr < UPDATE_STORE_LO || UPDATE_STORE_LO < UPDATE_SETTINGS_END)
+		return 0;
+	for (uint32_t a = UPDATE_STORE_LO; a < UPDATE_VM_END; a += 0x1000u)
+		if (g_port->flash_erase_4k(a))
+			return 0;
+
+	for (uint32_t i = 0; i < sizeof(h); i++)
+		h[i] = 0;
+	wr16(&h[2], 0xFFFF);
+	wr32(&h[4], hdr);
+	wr32(&h[8], len + 32u);
+	h[13] = h[14] = h[15] = 0xFF;
+	{
+		static const char name[] = "LOADER.BIN";
+		for (uint32_t i = 0; name[i]; i++)
+			h[16 + i] = (uint8_t)name[i];
+	}
+	if (program(hdr, h, sizeof(h)) || program(hdr + 32u, loader, len)
+	    || verify(hdr, h, sizeof(h)) || verify(hdr + 32u, loader, len))
+		return 0;
+
+	for (uint32_t i = 0; i < sizeof(r); i++)
+		r[i] = 0xFF;
+	wr16(&r[2], 0x5A04);
+	wr32(&r[72], hdr);
+	if (program(UPDATE_REC_FLASH, r, sizeof(r)) || verify(UPDATE_REC_FLASH, r, sizeof(r)))
+		return 0;
+	return hdr;
+}
+
 static int fail(int code)
 {
 	send(UPDATE_CMD_RESULT, (const uint8_t[]){ (uint8_t)code }, 1);
@@ -215,10 +289,13 @@ static int download(void)
 	if (rd16(&ent[2]) != UPDATE_Crc16(g_loader, ll, 0))
 		return fail(UPDATE_ERR_FILE);
 
-	/* store it, then hand over to the bootloader */
-	if (g_port->store_loader(g_loader, ll, &addr))
+	/* store it, then hand over to the bootloader: the record goes to flash (survives a power cut) and RAM */
+	addr = UPDATE_StoreLoader(g_loader, ll);
+	if (!addr)
 		return fail(UPDATE_ERR_STORE);
 	UPDATE_BuildRecord(record, addr, g_baud);
+	if (program(UPDATE_REC_FLASH, record, 80) || verify(UPDATE_REC_FLASH, record, 80))
+		return fail(UPDATE_ERR_STORE);
 	g_port->handover(record, sizeof(record));
 	return UPDATE_OK;
 }

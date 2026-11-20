@@ -54,11 +54,37 @@ def main():
     m.observe[VM_INIT] = lambda c: seen.append(('vm_init', c.steps))
     m.observe[IOCTL] = lambda c: seen.append(('ioctl %#x(%#x)' % (c.R[0], c.R[1]), c.steps)) \
         if c.R[0] in (0x40045601, 0x40045602) else None
+    # Instead of booting: what the bootloader leaves for the app. The decrypted app-area directory sits at the
+    # start of the flash cache window, and boot info at RAM 0xD920 points at it (read by the mount at 0x01E18030).
+    area = open(os.path.join(os.path.dirname(a.app), 'app_area.dec.bin'), 'rb').read()
+    m.bus.flash[0:0x100] = area[0:0x100]
+    m.bus.write(0xD920, bytes(32))
+    m.bus.write(0xD920 + 16, struct.pack('<II', 0, E.FLASH_BASE))
+    m.cpu.sp = 0xD900
     try:
-        while m.cpu.steps < a.boot_steps:
-            m.step()
+        r = m.call(0x01E18030, [], stack=0xD900)
+        print('flash mount returned %#x' % r)
+        r = m.call(VM_INIT, [], stack=0xD900)
+        print('VM init returned %#x' % r)
+        print('VM state after init:', vm_state(m))
+        nops = len(m.rom.flash_log)
+        # as the closed library calls it at 0x01E691E8: r0 = VM length, r1 = loader length, r2 = VM address,
+        # r3 = &out2; stack: &out (the chosen address), r6, type (UART_UPDATA)
+        for cmd in (100, 101, 102, 103, 0x40045602):
+            m.bus.write(0xD010, bytes(16))
+            rr = m.call(IOCTL, [cmd, 0xD010], stack=0xD900)
+            print('ioctl %#x -> %#x, out %s' % (cmd, rr, m.bus.read(0xD010, 16).hex()))
+        OUT, OUT2 = 0xD000, 0xD004
+        m.bus.write(OUT, bytes(8))
+        r = m.call(ALLOC, [0x6A000, 15848, 0x94000, OUT2, OUT, 0, 0x5A04], stack=0xD900)
+        addr, out2 = struct.unpack('<II', m.bus.read(OUT, 8))
+        print('ALLOCATOR returned %#x: loader address %#x, out2 %#x' % (r, addr, out2))
+        nor = m.bus.nor
+        print('0xFA0F4:', nor[0xFA0F4:0xFA114].hex())
+        print('0xFDF00:', nor[0xFDF00:0xFDF50].hex())
+        print('flash ops by the allocator:', m.rom.flash_log[nops:nops + 40])
     except Exception as e:  # noqa: BLE001
-        print('boot stopped:', e)
+        print('stopped:', e, 'pc %#x' % m.cpu.pc)
     print('boot: %d instructions, pc %#x' % (m.cpu.steps, m.cpu.pc))
     for what, at in seen[:20]:
         print('  %-36s at %d' % (what, at))

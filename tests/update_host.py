@@ -28,14 +28,15 @@ import uv5r_flasher as F  # noqa: E402
 READ = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_uint32)
 WRITE = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int)
 BAUD = ctypes.CFUNCTYPE(None, ctypes.c_uint32)
-STORE = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32,
-                         ctypes.POINTER(ctypes.c_uint32))
+FREAD = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32)
+FERASE = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_uint32)
+FPROG = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32)
 HANDOVER = ctypes.CFUNCTYPE(None, ctypes.POINTER(ctypes.c_uint8), ctypes.c_uint32)
 
 
 class Port(ctypes.Structure):
-    _fields_ = [('read', READ), ('write', WRITE), ('set_baud', BAUD), ('store_loader', STORE),
-                ('handover', HANDOVER)]
+    _fields_ = [('read', READ), ('write', WRITE), ('set_baud', BAUD), ('flash_read', FREAD),
+                ('flash_erase_4k', FERASE), ('flash_program', FPROG), ('handover', HANDOVER)]
 
 
 def build_dll():
@@ -47,7 +48,22 @@ def build_dll():
     return ctypes.CDLL(dll)
 
 
-LOADER_ADDR = 0x7C000   # any address: the test only checks it is passed through
+LOADER_HDR = 0xFA0F4   # where the stock allocator puts the L2 loader's header (emu/loader_store.py)
+# What the stock allocator wrote, read out of the emulator: the LOADER.BIN header and the record's first page
+STOCK_HDR = bytes.fromhex('0000fffff4a00f00083e000000ffffff4c4f414445522e42494e000000000000')
+
+
+def internal_flash(stock):
+    """1 MiB internal flash as on a radio: stock flash.bin at 0x1000, settings banks with data, and an old loader
+    left at the top of the VM area by an earlier update (so the store has to erase)."""
+    nor = bytearray(bytes([255]) * 0x100000)
+    _, f = F.ufw_files(stock)
+    o, n, _ = f['flash.bin']
+    nor[0x1000:0x1000 + n] = stock[o:o + n]
+    nor[0x94000:0x94100] = bytes(range(256))          # settings
+    nor[0xFA0F4:0xFB000] = b'Z' * (0xFB000 - 0xFA0F4)   # an old loader
+    nor[0xFE000:0xFE040] = b'B' * 0x40              # BTIF
+    return nor
 
 
 def run_case(lib, stock, image, expect_ok):
@@ -78,9 +94,25 @@ def run_case(lib, stock, image, expect_ok):
     def c_baud(b):
         state['baud'] = b
 
-    def c_store(p, n, addr):
-        state['loader'] = ctypes.string_at(p, n)
-        addr[0] = LOADER_ADDR
+    nor = internal_flash(stock)
+    state['nor_before'] = bytes(nor)
+    state['nor'] = nor
+
+    def c_fread(addr, buf, n):
+        ctypes.memmove(buf, bytes(nor[addr:addr + n]), n)
+        return 0
+
+    def c_ferase(addr):
+        if addr & 0xFFF:
+            return -1
+        nor[addr:addr + 0x1000] = bytes([255]) * 0x1000
+        return 0
+
+    def c_fprog(addr, buf, n):
+        if (addr & 0xFF) + n > 0x100:
+            return -1                                   # crosses a page
+        for i, b in enumerate(ctypes.string_at(buf, n)):
+            nor[addr + i] &= b
         return 0
 
     def c_handover(p, n):
@@ -91,7 +123,8 @@ def run_case(lib, stock, image, expect_ok):
         radio._loader(resumed=False)
         state['done'] = True
 
-    port = Port(READ(c_read), WRITE(c_write), BAUD(c_baud), STORE(c_store), HANDOVER(c_handover))
+    port = Port(READ(c_read), WRITE(c_write), BAUD(c_baud), FREAD(c_fread), FERASE(c_ferase), FPROG(c_fprog),
+                HANDOVER(c_handover))
 
     def radio_thread():
         state['result'] = lib.UPDATE_Run(ctypes.byref(port))
@@ -125,13 +158,20 @@ def main():
     ota = image[oo:oo + on]
     lo, ll = struct.unpack_from('<II', ota, 4)
     check('update finished (result 0)', ok, msg)
-    check('C code fetched the pinned loader', st['loader'] == ota[lo:lo + ll]
-          and hashlib.sha256(st['loader'] or b'').hexdigest() in F.PINNED_L2)
+    nor, before = st['nor'], st['nor_before']
+    loader = bytes(nor[LOADER_HDR + 32:LOADER_HDR + 32 + ll])
+    check('loader stored at 0x%X, the pinned one' % (LOADER_HDR + 32), loader == ota[lo:lo + ll]
+          and hashlib.sha256(loader).hexdigest() in F.PINNED_L2)
+    check('LOADER.BIN header = what the stock allocator writes', bytes(nor[LOADER_HDR:LOADER_HDR + 32]) == STOCK_HDR)
+    changed = [i for i in range(len(nor)) if nor[i] != before[i]]
+    check('only 0xFA000..0xFE000 changed (settings, BTIF kept)', changed and min(changed) >= 0xFA000
+          and max(changed) < 0xFE000, '%#x..%#x' % (min(changed), max(changed)) if changed else '')
+    check('record in flash at 0xFDF00 = record in RAM', bytes(nor[0xFDF00:0xFDF00 + 80]) == (st['record'] or b'')[:80])
     rec = st['record'] or bytes(112)
     want = bytearray(112)
     struct.pack_into('<HHH', want, 2, 0x5A04, 0x5A01, 0x5441)
     struct.pack_into('<IIII', want, 40, 61, 62, 9600, 0)
-    struct.pack_into('<I', want, 72, LOADER_ADDR)
+    struct.pack_into('<I', want, 72, LOADER_HDR)
     struct.pack_into('<H', want, 0, F.crc16(bytes(want[2:80])))
     check('hand-over record has the stock layout', rec == bytes(want), rec[:80].hex() if rec != bytes(want) else '')
     fo, fn, _ = f['flash.bin']
