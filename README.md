@@ -11,7 +11,7 @@ possible without JieLi's closed compiler.
 
 ## Status
 
-Reverse engineering. See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
+Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
 [docs/RE-NOTES.md](docs/RE-NOTES.md) for hardware findings.
 
 ## Tools
