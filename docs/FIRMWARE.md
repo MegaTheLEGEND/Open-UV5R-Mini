@@ -29,3 +29,21 @@ JieLi "ENC": each byte is XORed with the low byte of a CRC16-CCITT LFSR, which t
 - Contains the JieLi soundbox SDK (Bluetooth HFP/A2DP, FM, USB audio) plus the radio application:
   menus `VFO Mode`, `RX CTCSS`, `RX DCS`, `Squelch`, `Scan Mode`, `PTT-ID`, `DTMF-ST`,
   `Wireless Cps`, … and the string `%s NRF`.
+
+## Checksums
+
+All are CRC16-CCITT, polynomial 0x1021, initial value 0 (XMODEM). Verified by `tools/mkufw.py`: repacking the
+stock `app.bin` reproduces `stock-nrf-v0.27.ufw` byte for byte, and `tools/ufwcheck.py` checks them all.
+
+| Field | Covers |
+| --- | --- |
+| `.ufw` header +0 | the header's decrypted bytes 2..0x3F (the header is one 0x40-byte ENC block) |
+| `.ufw` header +2 | the record table 0x40..0x40+0x50·n, as stored (encrypted) |
+| `.ufw` record +4 | that file's bytes, as stored |
+| `flash.bin` header +0 | its decrypted bytes 2..31 |
+| `flash.bin` entry +2 | the file's bytes as stored (checked for `isd_config.ini`; `uboot.boot` is not re-packed) |
+| app-area entry +0 | the entry's decrypted bytes 2..31 |
+| `app_area_head` +2 | the decrypted app area from 0x20 to its length field |
+| `app.bin` +2 | the decrypted `app.bin` |
+
+The app area after `app.bin` holds a `tone` resource directory (voice prompts); `mkufw.py` leaves it in place.

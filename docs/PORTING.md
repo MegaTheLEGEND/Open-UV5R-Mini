@@ -32,8 +32,9 @@ code calls the mask-ROM P33 routines at 0x02000058/0x020000A0 the way the stock 
 
 ## Open questions before the first flash
 
-1. **Packaging.** `build/fw/firmware.bin` has to go back into a `.ufw` (re-encrypt with the chip key, fix the
-   CRC16 fields in the headers). `tools/mkufw.py` is not written yet.
+1. **Packaging** is done: `make ufw` puts `firmware.bin` into the app slot of your stock `.ufw`
+   (`tools/mkufw.py`) and checks every CRC (`tools/ufwcheck.py`). Output: `build/open-uv5r-mini.ufw`.
+   Not yet tried on a radio. Keep the stock `.ufw` to flash back.
 2. **Entry and clocks.** The bootloader jumps to 0x01E00100; it is assumed the PLL and flash cache are set up
    by then, as the stock app does no clock setup before its own init.
 3. **Watchdog.** Not mapped. If the radio resets every few seconds, the watchdog needs clearing.

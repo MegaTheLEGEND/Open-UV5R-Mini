@@ -45,6 +45,14 @@ $(TARGET).elf: $(OBJ) firmware.ld
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
 
+# Flashable update: our app in the app.bin slot of your stock .ufw (kept outside git).
+#   make ufw BASE_UFW=firmware/stock-nrf-v0.27.ufw
+BASE_UFW ?= firmware/stock-nrf-v0.27.ufw
+PYTHON ?= python
+ufw: $(TARGET).bin
+	$(PYTHON) tools/mkufw.py --base $(BASE_UFW) --app $(TARGET).bin -o build/open-uv5r-mini.ufw
+	$(PYTHON) tools/ufwcheck.py build/open-uv5r-mini.ufw --app $(TARGET).bin
+
 # Host syntax check with any GCC/Clang (no pi32v2 toolchain needed).
 check:
 	gcc -fsyntax-only -std=c11 -Wall -Wextra -I. $(SRC)
@@ -52,4 +60,4 @@ check:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all check clean
+.PHONY: all check clean ufw

@@ -28,6 +28,8 @@ Bluetooth libraries from your own SDK copy; this repo never contains them. See [
 | --- | --- |
 | `tools/jl_ufw_unpack.py` | Decrypt and unpack a stock `.ufw` update into `flash.bin`, `uboot.boot`, `app.bin` |
 | `tools/disasm.py` | Disassemble `app.bin` with the pi32v2-isa table, with string cross-references |
+| `tools/mkufw.py` | Put a built app image into a stock `.ufw`, re-encrypting and fixing every CRC |
+| `tools/ufwcheck.py` | Verify every CRC in a `.ufw` |
 
 ```powershell
 python tools/jl_ufw_unpack.py stock-nrf-v0.27.ufw firmware/stock
