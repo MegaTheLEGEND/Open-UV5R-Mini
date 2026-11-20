@@ -24,7 +24,34 @@ Base **nrf-v0.27** only: Radio Info shows `Firmware:V0.27`, `Hardware:V1.7`, and
 - The stock `stock-nrf-v0.27.ufw` has **no loader** (its `ota.bin` is blank), so it can't be flashed as it is. Our
   flashable images carry the pinned L2 loader from MM9PDY's to-stock patch.
 
-## Steps
+## Open flasher (this project's GUI)
+
+```powershell
+pip install pyserial
+python tools/uv5r_flasher.py
+```
+
+Pick the stock `.ufw` and a firmware (a patch `.json` from `build_matching.py` or a flashable `.ufw`), then a radio:
+
+- **Emulated radio (built in):** start here. It runs the whole update session against an emulated nrf-v0.27 radio
+  with 1 MiB of emulated flash (starting as stock): app stage at 9600, loader hand-over at 38400, erase
+  0x4000–0x7C000, write, result. Tick *Cut the power* to stop the write partway, then press **Flash** again: the
+  emulated loader resumes from its record, like the real one. **Emu: boot check** decrypts the installed app and
+  checks every CRC as the bootloader would, and shows the start-up string and version. It emulates the protocol and
+  the flash, not the CPU: it does not run the firmware.
+- **A COM port:** the USB programming cable. It asks you to confirm, then waits for the radio in update mode.
+
+Before anything is sent, the image must pass every check: container, CRCs, a pinned nrf-v0.27 (L2) loader, area,
+stock bytes outside the app window, and **the stock update mode present in the app**, so a radio can always be flashed
+again. The flasher only ever sends image bytes the radio asked for, and echoes the radio's own frames.
+
+Headless: `python tools/uv5r_flasher.py --cli --firmware build/open-uv5r-mini-nrf-v0.27.patch.json --port emu [--cut 0.4]`.
+
+Tested against the emulator (2026-11-19): matching build, the demo build with a power cut at 40% and a resume (ending in
+`OPENUV` on the boot check), and a refusal of an image without update mode. The serial path speaks the same protocol
+but has **not been tried on a real radio yet**: for the first real flash, Codeplug Studio (below) is the proven tool.
+
+## Steps (Codeplug Studio)
 
 1. **Build:** `python tools/build_matching.py ...` (see [MATCHING.md](MATCHING.md)). It writes
    `build/open-uv5r-mini-<name>.patch.json` and stops if any check fails.

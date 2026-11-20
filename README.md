@@ -39,6 +39,7 @@ Bluetooth libraries from your own SDK copy; this repo never contains them. See [
 | `tools/mkasm.py` | Turn the stock `app.bin` into assembly that rebuilds byte for byte |
 | `tools/build_matching.py` | Matching build end to end: source, rebuild, `.ufw`, flashable image, checks, flasher patch |
 | `tools/flashcheck.py` | The flasher's image checks, run before anything goes near a radio |
+| `tools/uv5r_flasher.py` | GUI flasher with a built-in emulated radio (protocol + flash) for practice flashes |
 | `tools/ufwpatch.py` | Apply or make patches in the format Codeplug Studio's flasher reads |
 
 ```powershell
