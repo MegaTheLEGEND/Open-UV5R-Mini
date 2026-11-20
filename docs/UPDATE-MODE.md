@@ -35,6 +35,37 @@ the C build until they are done:
 
 Then: test on the CPU emulator ([EMULATOR.md](EMULATOR.md)), then on a radio with a case-open recovery path at hand.
 
+### Loader store: what is known (2026-11-19)
+
+The store runs inside the closed library, at 0x01E691BE–0x01E693D8:
+
+1. **Choose an address**: `sub_01E42AF2(…)` returns the destination in an out-parameter. It is **not a fixed
+   address**. It reads two flash queries through `sub_01E42264` (ioctl 0x40045602, and 103, likely the flash
+   size). It also reads the settings-store (VM) bank state at 0x198C0 + 4·{1523, 1526, 1677} and the bank
+   selector at 0x198C0 + 6713. Areas are aligned to 128 KB (`& 0xFFFE0000`), and sizes are rounded to the
+   flash's erase unit (`sub_01E42970`). When there isn't room, it **moves settings data in 512-byte chunks**
+   (`sub_01E425EC` read, `sub_01E425DE` write) to make space. Result codes: 0xFE / 0xFF for no room
+   (reported as 0x81 / 0x82).
+2. **Erase and write**: `sub_01E429AE(addr, len)` erases (4 KB sectors, or 256-byte pages for short tails, via
+   `sub_01E423A2(3, addr)`). The loader then goes in 512-byte chunks through `sub_01E425DE(addr, buf, len)`.
+3. **Verify**: it reads everything back (`sub_01E425EC`) through the hardware CRC unit at 0x1E3500 and compares
+   with the entry's data CRC. A mismatch gives result 0x83.
+4. **Report**: the state callback runs with status 2 and `{loader_saddr = address − 32, priv, write_hdl =
+   0x01E696C4}`. So `ota_addr` points at the 32-byte entry header, with the loader right after it. The app keeps
+   these at 0x198C0 + 572 (`sub_01E43692`) and puts `ota_addr` in the record at +72.
+
+Flash driver functions used: read `sub_01E421F6(buf, addr, len)`, write `sub_01E4256C`, erase command
+`sub_01E423A2(cmd, addr)`, ioctl `sub_01E42264(cmd, arg)`.
+
+So the address depends on the radio's current settings layout. It most likely falls in the VM area
+(0x94000–0xFE000 on nrf-v0.27). That fits MM9PDY's note that their 1.1.0 loaders "put the radio's settings
+back".
+
+**Plan:** run the stock allocator itself in the CPU emulator to learn the rule, instead of deriving it by hand.
+Replace the four flash-driver functions above with a Python flash model holding stock `flash.bin` plus a VM area.
+Run the app's VM initialisation, then `sub_01E42AF2`. Try it with an empty store, a small one and a full one.
+Port the rule to C only once the results agree with the disassembly.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:
