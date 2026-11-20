@@ -67,14 +67,17 @@ A radio running an app without these cannot be flashed again without opening the
 
 ## 6. Tooling and tests
 
+Tools that work on stock-derived files produce them on your own PC, in `build/`, from your own copy of the stock
+firmware: they are never in the repo.
+
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
 | 6.3 | External flash dump from a real radio | **todo** | SOIC-8 clip + CH341A; needed for 4.2 and 5.2 |
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
-| 6.5 | Lifter: whole stock app to C, checked against the stock code | **done** | `tools/lift/`, [LIFTER.md](LIFTER.md): all 2,032 code functions lift; every function the emulated boot reaches matches stock in lockstep |
-| 6.6 | Readable C of stock functions with a local model, each one checked by an equivalence test | **running** | `tools/lift/local_rewrite.py`; reference for porting, stays local (stock-derived) |
+| 6.5 | Lifter: turn the stock app into C on your own PC, checked against the stock code | **done** | `python tools/lift/lift.py` with your own stock `.ufw` unpacked; output goes to your `build/lift/` ([LIFTER.md](LIFTER.md)) |
+| 6.6 | Readable-C rewrite of the lifted functions with a local model (Ollama), each one tested | **done** (tool) | `python tools/lift/local_rewrite.py`; runs for hours on your PC, output in your `build/readable/` |
 
 ## Order of work
 
