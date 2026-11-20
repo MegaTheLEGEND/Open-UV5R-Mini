@@ -16,6 +16,8 @@ possible without JieLi's closed compiler.
 radio and for replacing functions with C. See [docs/MATCHING.md](docs/MATCHING.md) and
 [docs/TESTING.md](docs/TESTING.md).
 
+**C port:** early. What still has to be written before it is a working firmware, and in what order, is in the
+**[road map](docs/ROADMAP.md)**.
 
 Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the stock firmware format and
 [docs/RE-NOTES.md](docs/RE-NOTES.md) for hardware findings.
