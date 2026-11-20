@@ -25,14 +25,6 @@ python tools/lift/func_test.py --steps 3000000  # lifted functions vs the stock 
 ## Status (2026-11-19)
 
 - **Lift (update):** 100% of the code is lifted: 2,032 functions, 75,630 instructions, counted from the entry point through calls, jumps and function pointers (data the disassembly swept as code is left out). New forms in `tools/lift/special.py`; `copex`, `swi` and float compare-branches (no ISA model) are runtime hooks or IEEE C, unverified.
-- **Lift (first version):** 2,379 functions, 82,746 reachable instructions.
-  (93.6%) lift completely. The gaps:
-  - interrupt entry/exit (push/pop of reti/retx/rete, rte/rti)
-  - DSP multiply-accumulate and packed-half arithmetic
-  - add/subtract with carry, float compare-and-branch
-  - `swi`, `testset`
-  
-  A gap compiles to a runtime stop that names the instruction.
 - **Instruction forms:** 641 of 646 forms used by the app agree with the ISA models. The other 5 have no usable
   model here (host-defined special registers). The hardware facts this pinned down:
   - shift amounts use the low 8 bits of the register
