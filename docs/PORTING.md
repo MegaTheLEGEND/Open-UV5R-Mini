@@ -6,7 +6,7 @@ code is used.
 
 | Part | File | State |
 | --- | --- | --- |
-| Register map | `bsp/ac695n.h` | GPIO ports, SPI2 base, mask-ROM P33 accessors |
+| Register map | `bsp/ac695n.h` | GPIO ports, SPI1 base, mask-ROM P33 accessors |
 | GPIO | `driver/gpio.*` | done |
 | Delays | `driver/system.*` | busy loops, calibrated for ≤96 MHz (clock not known yet) |
 | BK4819 | `driver/bk4819.*` | bus, stock init sequence, RX/TX mode, frequency, RSSI, tone scan |
