@@ -130,8 +130,65 @@ Key codes (`u32` table at 0x01E65E94, 16 bytes per step; column 0 = PC2 … 3 = 
 | 3 (PA8) | 16 | 15 | 14 | 13 |
 | 4 (PA9) | 12 | 11 | 10 | 9 |
 
-Which physical key each code is still has to be worked out, from the key handler or by testing on a radio.
-PA4, PA12, PB2, PB11 are also pulled-up inputs (PTT / side keys candidates).
+### Key translation (`sub_01E4F1AA`, the 10 ms key/UI task)
+
+The scan code indexes two byte tables at 0x01E65A98 (`id`, the digit value) and 0x01E65AAD (`event`),
+and a 32-bit mask `0x000AEE00` marks the codes whose `id + '0'` is entered as a digit.
+Press/hold/release state lives at RAM 0x198C0 (`r5`): debounce counter at +0, long press at 100 ticks,
+repeat from 150 ticks (flags 16 = press, 32 = repeat, 64 = long, 128 = release).
+
+| Code | Matrix position | id | event | Key (confidence) |
+| --- | --- | --- | --- | --- |
+| 9 | PA9 × PC5 | 1 | 0x10 | **1** (certain) |
+| 10 | PA9 × PC4 | 2 | 0x10 | **2** (certain) |
+| 11 | PA9 × PC3 | 3 | 0x10 | **3** (certain) |
+| 13 | PA8 × PC5 | 4 | 0x10 | **4** (certain) |
+| 14 | PA8 × PC4 | 5 | 0x10 | **5** (certain) |
+| 15 | PA8 × PC3 | 6 | 0x10 | **6** (certain) |
+| 17 | PA7 × PC5 | 7 | 0x10 | **7** (certain) |
+| 18 | PA7 × PC4 | 8 | 0x67 | **8** (certain; has its own event, a second function) |
+| 19 | PA7 × PC3 | 9 | 0x10 | **9** (certain) |
+| 5 | PA6 × PC5 | 0 | 0x11 | `*` (inferred from the grid) |
+| 6 | PA6 × PC4 | 0 | 0x13 | **0** (inferred from the grid) |
+| 7 | PA6 × PC3 | 0 | 0x15 | `#` (inferred from the grid) |
+| 12 | PA9 × PC2 | 0 | 0x17 | 4th-column key, row 1 (unknown) |
+| 16 | PA8 × PC2 | 0 | 0x22 | 4th-column key, row 2 (unknown) |
+| 20 | PA7 × PC2 | 0 | 0x18 | 4th-column key, row 3 (unknown) |
+| 8 | PA6 × PC2 | 0 | 0x12 | 4th-column key, row 4 (unknown) |
+| 0 | direct, PC2 | 0 | 0x50 | direct key (unknown; held with PA4 at power-on enters a special boot mode) |
+| 3 | direct, PC3 | 0 | 0x1E | direct key (unknown) |
+| 4 | direct, PC4 | 0 | 0x08 | direct key (unknown) |
+| 2 | direct, PC5 | 0 | 0x1F | direct key (unknown) |
+
+The digits form a 3×3 grid (columns PC5/PC4/PC3, rows PA9/PA8/PA7) with the PA6 row below it, so
+`*`/`0`/`#` on PA6 follows the usual phone layout. The eight unknowns are MENU, EXIT, UP, DOWN and the
+other function keys; pressing each on a radio running a key-test build will settle them.
+
+### PTT, side keys and power
+
+| Pin | Role | Evidence |
+| --- | --- | --- |
+| **PA4** | PTT (main / VFO A) | `sub_01E4D5BC` (PTT handler) starts TX when PA4 or PA12 is low; PA4 + direct key 0 at power-on enters a special mode (`sub_01E492C0`) |
+| **PA12** | second PTT (VFO B) | same handler; flag RAM 0x198C0+2849 = 1 when PA12 is the one pressed, then it switches the active VFO (0x198C0+5878) to match before keying |
+| **PB11** | power-off sense | `sub_01E4C978`: low for 25 ms → save state, drop PB10, wait 250 ms, halt |
+| **PB10** | power hold latch (high = stay on) | driven high in board init, low on power-off |
+| PB2 | pulled-up input, no reader found yet | |
+
+Which of PA4/PA12 is the physical PTT and which is a side key needs a check on hardware.
+
+### TX/RX switching
+
+`sub_01E3FC64(mode)` writes BK4819 REG_30 (egzumer's values):
+
+| mode | REG_30 | Meaning |
+| --- | --- | --- |
+| 0 | 0x0000 | off |
+| 1 | 0xBFF1 | RX on (`BK4819_RX_TurnOn`) |
+| 2 | 0xC1FE | TX on (`BK4819_PrepareTransmit`) |
+| 3 | 0x0302 | (unknown, short mode) |
+| 4 | 0xC3FA | TX for tones/DTMF (assumed) |
+
+The key task enters TX at 0x01E5051E: REG_51 = 0, REG_7D tweak, then mode 2.
 
 ## GPIO setup (board init `sub_01E485EC`)
 
@@ -167,5 +224,5 @@ Generated with `python tools/re/gpio_init.py build/app.dis sub_01E485EC`:
 | 37 | PC5 | in | 1 | 0 | - |
 | 39 | PC7 | out | 0 | 0 | - |
 
-Known roles so far: PA6–PA9 keypad rows, PC2–PC5 keypad columns, PA10/PC0/PC1 BK4819 SCK/SDATA/SCN,
-PB4 LCD reset, PB5 LCD CS.
+Known roles so far: PA4 PTT, PA12 second PTT, PA6–PA9 keypad rows, PC2–PC5 keypad columns,
+PA10/PC0/PC1 BK4819 SCK/SDATA/SCN, PB4 LCD reset, PB5 LCD CS, PB10 power hold, PB11 power-off sense.
