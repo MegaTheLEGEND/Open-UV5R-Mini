@@ -155,8 +155,8 @@ void UPDATE_BuildRecord(uint8_t rec[UPDATE_RECORD_SIZE], uint32_t loader_addr, u
 	wr16(&rec[2], 0x5A04);            /* parm_type: UART_UPDATA */
 	wr16(&rec[4], 0x5A01);            /* parm_result: UPDATA_READY */
 	wr16(&rec[6], 0x5441);            /* magic */
-	wr32(&rec[40], UPDATE_PIN_TX);    /* parm_priv: UPDATA_UART {tx, rx, baud, timeout} */
-	wr32(&rec[44], UPDATE_PIN_RX);
+	wr32(&rec[40], UPDATE_PIN_RX);    /* parm_priv: sub_01E43590 writes h[0x198C0+520] = 61 here, */
+	wr32(&rec[44], UPDATE_PIN_TX);    /* and h[0x198C0+518] = 62 here */
 	wr32(&rec[48], baud);
 	wr32(&rec[52], 0);
 	wr32(&rec[72], loader_addr);      /* ota_addr: where the loader was stored */

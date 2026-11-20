@@ -24,8 +24,10 @@
 #define UPDATE_MAX_LOADER     0x4000u       /* the pinned loaders are 15,648 and 15,848 bytes packed */
 #define UPDATE_RECORD_ADDR    0x2FF88u      /* UPDATA_FLAG_ADDR in the stock app (UPDATA_BEG 0x2FF80 + 8) */
 #define UPDATE_RECORD_SIZE    112u
-#define UPDATE_PIN_TX         61u           /* USB D+ used as UART TX (stock table at 0x01E65538) */
-#define UPDATE_PIN_RX         62u           /* USB D- used as UART RX */
+/* The cable UART's pins (stock table at 0x01E65538 = {62, 61}). Run in the emulator (emu/uart_pins.py), the stock
+ * entry sub_01E492C0 makes 61 an input and maps it to the UART's RX, and makes 62 an output driven by its TX. */
+#define UPDATE_PIN_RX         61u           /* USB D+ */
+#define UPDATE_PIN_TX         62u           /* USB D- */
 
 /* Where the loader goes on an nrf-v0.27 radio (VM area 0x94000 + 0x6A000, settings banks 0x94000..0xA4000).
  * Learnt by running the stock allocator sub_01E42AF2 in the emulator (emu/loader_store.py, docs/UPDATE-MODE.md):

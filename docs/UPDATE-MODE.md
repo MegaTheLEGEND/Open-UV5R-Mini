@@ -25,13 +25,12 @@ C code hands over, the flasher's emulated loader finishes the update. Checked:
 **On the radio: not flashable yet.** Two pieces are open, and `tools/mkufw.py` refuses to make a flashable image of
 the C build until they are done:
 
-1. **Storing the loader.** The stock app does this inside JieLi's closed update library (0x01E686C4–0x01E69ECC).
-   That code parses the container, picks out `uart_user.bin`, writes it to flash and reports its address as
-   `ota_addr`. The address and the flash routine are not known yet. Until then `store_loader` refuses with
-   result 0x86. The radio stays in `UPDATE...` and nothing is erased or written.
-2. **Routing the UART to the USB pins.** The stock app routes UART TX to pin 61 (USB D+) and RX to pin 62 (USB D−)
-   through `sub_01E001D2`…`sub_01E003B8` and the IO map (`sub_01E4856C`, `sub_01E484B6`). `driver/uart.c` sets up
-   the UART itself from the stock register use, but not this routing.
+1. **Storing the loader.** Done: `UPDATE_StoreLoader` writes the same bytes, at the same addresses, as the stock
+   allocator `sub_01E42AF2` (learnt by running it in the emulator, `emu/loader_store.py`); `tests/update_host.py`
+   checks it.
+2. **Routing the UART to the USB pins.** Done: the stock entry receives on pin 61 (USB D+) and transmits on pin 62
+   (USB D−). `emu/uart_pins.py` runs the stock pin setup in the emulator and prints every bit it sets or clears;
+   `driver/uart.c` (`route_usb_pins`) does the same.
 
 Then: test on the CPU emulator ([EMULATOR.md](EMULATOR.md)), then on a radio with a case-open recovery path at hand.
 
@@ -114,8 +113,8 @@ The loader is packed. Its own header gives an unpacked size of 18,112 and 0x9000
 | +2 | type 0x5A04 (UART) |
 | +4 | result 0x5A01 (ready) |
 | +6 | magic 0x5441 |
-| +40 | TX pin 61 |
-| +44 | RX pin 62 |
+| +40 | pin 61 (USB D+, the UART's RX) |
+| +44 | pin 62 (USB D−, the UART's TX) |
 | +48 | baud |
 | +52 | time-out 0 |
 | +72 | `ota_addr` |

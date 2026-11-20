@@ -36,12 +36,27 @@ void UART_SetBaud(uint32_t baud)
 	OTCNT = CLOCK_HZ / baud * 20;        /* ~2 character times of silence ends a burst */
 }
 
+#define SFR(a)      (*(volatile uint32_t *)(uintptr_t)(a))
+#define RMW(a, set, clr)  (SFR(a) = (SFR(a) & ~(uint32_t)(clr)) | (uint32_t)(set))
+
+/* Put the UART on the USB pins: RX on 61 (D+), TX on 62 (D-). This is what the stock entry sub_01E492C0 does with
+ * the GPIO helpers sub_01E001D2..sub_01E003B8 and the IO map sub_01E4856C / sub_01E484B6, as recorded by running it
+ * in the emulator (emu/uart_pins.py). Each bit the stock code sets or clears is listed; every other bit is kept. */
+static void route_usb_pins(void)
+{
+	SFR(0x1E1800u) = 0;                          /* USB controller off: the pins become GPIO */
+	RMW(0x1E5100u, 0x00000F58u, 0x000000A7u);    /* USB-pin direction, pulls, input enable, function */
+	RMW(0x1E5120u, 0x0000003Eu, 0x00000001u);    /* output channel 0 <- pin 62 */
+	RMW(0x1E5124u, 0x00100040u, 0x00E00030u);    /* UART RX input <- pin 61 */
+}
+
 void UART_Init(uint32_t baud)
 {
 	CON1 = 0;
 	CON0 = 0x3400;                       /* off, all pending flags cleared */
 	UART_SetBaud(baud);
 	rx_arm();
+	route_usb_pins();
 	s_have = s_pos = 0;
 	CON0 |= 0x41;                        /* enable, RX DMA (stock: 0x6D, with the TX/RX/time-out irqs) */
 }
