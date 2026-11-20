@@ -8,8 +8,22 @@ as a reference for how the hardware works.
 
 ## Which radio
 
-Only the **NRF** model: Radio Info shows `Firmware:V0.27` and `Hardware:V1.7`, and holding **8** while switching
-on shows `5RMINI NRF`. Radios on `NRFB V0.04` have a different flash layout: don't flash anything from here on them.
+There are two kinds of UV-5R Mini with `Hardware:V1.7`. They are the same radio, with two builds of the same stock
+firmware. To see which one you have:
+- **MENU › Radio Info** shows the Firmware line.
+- Switch the radio off, then hold **8** while you switch it on. For about a second the screen shows the suffix.
+
+| Suffix | Firmware | Stock file | Status here |
+| --- | --- | --- | --- |
+| `5RMINI NRF` | `V0.27` | [stock-nrf-v0.27.ufw](https://mega.nz/file/U5NSDIhZ#DqRVur6RPVay1ylKZFQsz2zrXnR3ZrAMBToPHgPnPvQ) | main target |
+| `5RMINI NRFB` | `V0.04` | [stock-nrfb-v0.04.ufw](https://mega.nz/file/NgFkWZTS#l4b9-Z6dSISLWBNc8OWMHYUfmzyFV_WT9f268APxnt0) | recognised and unpacked; tools and builds still NRF-only |
+
+The two builds differ only slightly. NRFB's app is 596 bytes bigger, and that moves the settings area along by
+4 KB. Never flash a file made for one kind onto the other.
+
+The stock files are unofficial copies shared by a third party, the same ones
+[Codeplug Studio](https://codeplug.mm9pdy.net) links to. This repo only links to them. `tools/setup.py` checks
+the file against its pinned SHA-256 and refuses any other file.
 
 ## How far it is
 
@@ -45,11 +59,11 @@ Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Getting started
 
-You need your own copy of the stock firmware, `stock-nrf-v0.27.ufw`. It isn't in this repo, because it's Baofeng's
-code. Put it in `firmware/`.
+Download the stock file for your radio (links above) into `firmware/`. It isn't in this repo, because it's
+Baofeng's code.
 
 ```powershell
-python tools/jl_ufw_unpack.py firmware/stock-nrf-v0.27.ufw firmware/stock   # look inside the stock firmware
+python tools/setup.py                                                      # check and unpack it into build/
 python tools/build_matching.py --toolchain <pi32v2-llvm>/bin --isa <pi32v2-isa>  # rebuild stock from source
 python tools/uv5r_flasher.py                                               # flasher, with an emulated radio to practise on
 ```
