@@ -3,7 +3,10 @@
 #
 #   make TOOLCHAIN=/path/to/pi32v2-llvm/bin
 #
-# Output: build/firmware.elf and build/firmware.bin (raw image for the app.bin slot at 0x01E00100).
+# Output: build/fw/firmware.elf and build/fw/firmware.bin (raw image for the app.bin slot at 0x01E00100).
+#
+# This is the fully open build, without Bluetooth. The optional Bluetooth edition is built inside your own
+# JieLi SDK copy instead; see docs/BLUETOOTH.md.
 
 TOOLCHAIN ?=
 CC      := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)clang

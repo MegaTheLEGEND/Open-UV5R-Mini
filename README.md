@@ -19,6 +19,9 @@ Reverse engineering. RF chip identified as **BK4819** (same as UV-K5). See [docs
 The first image is a key-test screen built on egzumer-style drivers for the BK4819, ST7735S LCD and keypad.
 See [docs/PORTING.md](docs/PORTING.md) for status, build steps and what is still unknown.
 
+The default build is fully open and has no Bluetooth. An optional Bluetooth edition links JieLi's closed
+Bluetooth libraries from your own SDK copy; this repo never contains them. See [docs/BLUETOOTH.md](docs/BLUETOOTH.md).
+
 ## Tools
 
 | Tool | What |

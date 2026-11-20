@@ -13,7 +13,9 @@ code is used.
 | ST7735S | `driver/st7735s.*` | stock init sequence; bit-banged on PB0/PB1 for now |
 | Keypad, PTT | `driver/keyboard.*` | stock scan algorithm and key codes |
 | Text | `ui/font.*`, `ui/helper.*` | 5×7 font, scalable |
-| App | `main.c` | key-test screen: key code, PTT A/B, BK4819 REG_00, RSSI. Never transmits. |
+| App | `app/app.c` | key-test screen: key code, PTT A/B, BK4819 REG_00, RSSI, Bluetooth state. Never transmits. |
+| Entry (open build) | `main.c`, `start.S` | bare-metal loop calling `APP_Tick()` every 10 ms |
+| Bluetooth | `bt/`, `platform/jl_sdk/` | optional edition using JieLi's closed libraries from your own SDK; see [BLUETOOTH.md](BLUETOOTH.md) |
 
 ## Build
 
