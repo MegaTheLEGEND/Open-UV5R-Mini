@@ -279,3 +279,27 @@ So the stock app has no free space: a patch-based mod must replace something, su
 - The settings area is ~424 KB, much more than channels need; the update also stores its loader there.
 - A from-scratch firmware without the JieLi audio SDK should be far smaller than stock. The UV-K5's open firmware
   is about 60 KB. JieLi's full Bluetooth would take an estimated 150–250 KB of it ([BLUETOOTH.md](BLUETOOTH.md)).
+
+## The board (from photos)
+
+Board photos by **briand**: [briand/uv5r_mini_hardware](https://github.com/briand/uv5r_mini_hardware) (CC0). Thank
+you! What the photos show, set against what the firmware told us:
+
+| On the board | Marking | Matches the firmware? |
+| --- | --- | --- |
+| MCU, QFP-48, with a PCB-trace Bluetooth antenna near the bottom edge | sanded off | yes: the `.ufw` names the chip `AC695N`, which has built-in Bluetooth |
+| Radio chip, QFN-32, with its own crystal | `FD6818 CS4144XA` | the firmware drives it exactly as a BK4819, so it's probably a rebranded or compatible part. Keep an eye out for registers that behave differently from BK4819 notes |
+| SOP-8 next to the radio chip | `516A-UGL` | probably the external SPI flash (CS PA3); the size is unknown, possibly 16 Mbit (2 MB) |
+| Square colour LCD | – | yes: ST7735S, 128×128 |
+| Two-pin K-plug jacks | – | the cable; the firmware routes the cable UART to the USB pins (D+ 61, D− 62) |
+| Clear LED at the top | – | the flashlight |
+| Dual op-amp | `3PEAK LM2904B` | not seen in the firmware (analogue: audio or sensing) |
+| MCU crystal | `R24 BfC2` | possibly 24 MHz; not checked |
+| Speaker | `16Ω 1W` | – |
+
+- **Board label: `5R_MINI V1.6 2025/06/09`.** Radio Info's `Hardware: V1.7` is a fixed string in the app, not read
+  from the board, so the version on screen doesn't identify the board.
+- **Pads `V G M P` near the bottom edge** (top side, beside the Bluetooth antenna). The guess: USB, with V = VBUS,
+  G = ground, M = D−, P = D+. If so, they're the way into the chip's ROM download mode for a case-open recovery
+  ([TESTING.md](TESTING.md#if-the-app-itself-doesnt-start-not-verified)). Not confirmed: check with a multimeter
+  (continuity to the MCU's USB pins) before relying on it.
