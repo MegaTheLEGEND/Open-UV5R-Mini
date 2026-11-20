@@ -32,15 +32,17 @@ M = 0xFFFFFFFF
 FLASH_BASE = 0x01E00000
 ROM_BASE = 0x02000000
 SFR_LO, SFR_HI = 0x1E0000, 0x200000
+NOR_WINDOW = 0x05000000   # emulator-only window onto the raw internal flash (what ROM 0x020004AC maps to here)
 
 
 class Bus:
     """The memory map. read/write take any address and length (the CPU core works in bytes and words)."""
 
-    def __init__(self, area, periph):
+    def __init__(self, area, periph, nor=None):
         self.ram = bytearray(0x40000)
         self.ram2 = bytearray(0x10000)
         self.flash = bytearray(area)
+        self.nor = nor if nor is not None else bytearray(b'\xFF' * 0x100000)   # internal flash, raw
         self.periph = periph
         self.unmapped = Counter()
 
@@ -51,6 +53,8 @@ class Bus:
             return self.ram2, a - 0x800000
         if FLASH_BASE <= a < FLASH_BASE + len(self.flash):
             return self.flash, a - FLASH_BASE
+        if NOR_WINDOW <= a < NOR_WINDOW + len(self.nor):
+            return self.nor, a - NOR_WINDOW
         return None, a
 
     def read(self, a, n):
@@ -124,13 +128,21 @@ class Rom:
     NAMES = {  # worked out from the call sites (docs/EMULATOR.md)
         0x02000058: 'p33_rx', 0x020000A0: 'p33_tx', 0x02000156: 'p33_or', 0x0200084A: 'p33_and',
         0x020012BE: 'irq_save', 0x020012DA: 'irq_restore', 0x02000040: 'udelay?',
+        # internal-flash driver (docs/UPDATE-MODE.md): called by sub_01E421F6 read, sub_01E4256C write,
+        # sub_01E42264 ioctl (erase 0xC8/0xC9/0xCC, JEDEC id)
+        0x0200048C: 'sfc_read', 0x020004AC: 'sfc_map', 0x02000772: 'sfc_program', 0x020006BC: 'sfc_erase',
+        0x02000526: 'sfc_read_id',
+        # RTOS semaphore calls the flash driver brackets itself with (single task here: always free)
+        0x02002824: 'sem_pend', 0x0200288E: 'sem_post',
     }
+    ERASE = {0xC9: 0x10000, 0xC8: 0x1000, 0xCC: 0x100}
 
     def __init__(self, bus, log):
         self.bus, self.log = bus, log
         self.p33 = defaultdict(int)
         self.calls = Counter()
         self.unknown = Counter()
+        self.flash_log = []
 
     def name(self, a):
         return self.LIBC.get(a) or self.NAMES.get(a) or 'rom_%07x' % a
@@ -179,8 +191,33 @@ class Rom:
             self.p33[r0 & 0xFF] |= r1 & 0xFF
         elif n == 'p33_and':
             self.p33[r0 & 0xFF] &= r1 & 0xFF
+        elif n == 'sfc_read':                       # (buf, addr, len)
+            nor = self.bus.nor
+            wr(r0, bytes(nor[r1 % len(nor):r1 % len(nor) + r2]))
+            self.flash_log.append(('read', r1, r2))
+            ret = r2
+        elif n == 'sfc_map':                        # (addr) -> pointer to read it through
+            ret = NOR_WINDOW + (r0 % len(self.bus.nor))
+        elif n == 'sfc_program':                    # (buf, addr, len): NOR programming only clears bits
+            nor = self.bus.nor
+            data = rd(r0, r2)
+            for i, b in enumerate(data):
+                nor[(r1 + i) % len(nor)] &= b
+            self.flash_log.append(('program', r1, r2))
+        elif n == 'sfc_erase':                      # (cmd, addr)
+            size = self.ERASE.get(r0 & 0xFF)
+            if size:
+                a0 = r1 & ~(size - 1)
+                self.bus.nor[a0:a0 + size] = b'\xFF' * size
+                self.flash_log.append(('erase', a0, size))
+            else:
+                self.log('ROM sfc_erase: unknown command %#x at %#x' % (r0, r1))
+        elif n == 'sfc_read_id':                    # the driver keeps the JEDEC id; 0x14 -> 1 MiB
+            self.bus.write(0x198C0 + 1412, bytes([0x14]))
+            self.bus.write(0x198C0 + 353 * 4, struct.pack('<I', 0x00144020))
+            ret = 0x00144020
         elif n in ('irq_save', 'irq_restore', 'udelay?', 'flush_dcache', 'flushinv_dcache', 'sfc_suspend',
-                   'sfc_resume', 'nvram_set_boot_state'):
+                   'sfc_resume', 'nvram_set_boot_state', 'sem_pend', 'sem_post'):
             pass
         else:
             if not self.unknown[n]:
@@ -433,6 +470,63 @@ def decrypt_area(app_bin):
     return b'\xFF' * 0x100 + app_bin
 
 
+class Machine:
+    """CPU + memory map + peripherals + ROM stand-ins, ready to run from the app's start."""
+
+    def __init__(self, isa, app_path, extflash=None, nor=None, log=print):
+        self.sim = load_core(isa)
+        self.log = log
+        self.periph = periph = Peripherals(log)
+        self.lcd = lcd = ST7735S()
+        add_timers(periph)
+        add_misc(periph)
+        self.bus = bus = Bus(decrypt_area(open(app_path, 'rb').read()), periph, nor)
+        self.ext = SpiFlash(open(extflash, 'rb').read() if extflash else None)
+        add_spi1(periph, bus, lcd, self.ext)
+        self.cpu = cpu = make_core(self.sim)
+        # PC observers: app functions whose arguments the board model needs (they still run normally)
+        self.observe = {
+            0x01E5714E: lambda c: setattr(lcd, 'dc', c.R[1] & 1) if c.R[0] == 1 else None,   # P33_SetPrBit
+        }
+        self.rom = Rom(bus, log)
+        periph.cpu = cpu
+        cpu.mem = bus
+        cpu.pc = FLASH_BASE + 0x100
+        cpu.sp = 0
+
+    def step(self):
+        cpu = self.cpu
+        if cpu.pc >= ROM_BASE:
+            self.rom.call(cpu)
+            return
+        ob = self.observe.get(cpu.pc)
+        if ob:
+            ob(cpu)
+        cpu.step()
+
+    def call(self, addr, args, limit=20_000_000, stack=None):
+        """Call an app function with r0..r3 = args (more go on the stack); returns r0."""
+        cpu = self.cpu
+        RET = 0x01FFFFF0
+        if stack is not None:
+            cpu.sp = stack
+        regs, extra = list(args[:4]), list(args[4:])
+        cpu.sp -= 4 * len(extra)
+        for k, v in enumerate(extra):
+            self.bus.write(cpu.sp + 4 * k, struct.pack('<I', v & M))
+        for k, v in enumerate(regs):
+            cpu.R[k] = v & M
+        cpu.rets = RET
+        cpu.pc = addr
+        start = cpu.steps
+        while cpu.pc != RET:
+            self.step()
+            if cpu.steps - start > limit:
+                raise RuntimeError('call %#x: too many steps (pc %#x)' % (addr, cpu.pc))
+        cpu.sp += 4 * len(extra)
+        return cpu.R[0]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--isa', default=os.path.join(os.path.dirname(ROOT), 'pi32v2-isa'))
@@ -443,27 +537,11 @@ def main():
     ap.add_argument('--trace', type=int, default=0, help='print the last N pcs on a stop')
     a = ap.parse_args()
 
-    sim = load_core(a.isa)
-    log = print
-    periph = Peripherals(log)
-    lcd = ST7735S()
-    add_timers(periph)
-    add_misc(periph)
-    bus = Bus(decrypt_area(open(a.app, 'rb').read()), periph)
-    ext = SpiFlash(open(a.extflash, 'rb').read() if a.extflash else None)
-    add_spi1(periph, bus, lcd, ext)
-    cpu = make_core(sim)
-    # PC observers: app functions whose arguments the board model needs (they still run normally)
-    observe = {
-        0x01E5714E: lambda c: setattr(lcd, 'dc', c.R[1] & 1) if c.R[0] == 1 else None,   # P33_SetPrBit(pin, v)
-    }
-    rom = Rom(bus, log)
-    periph.cpu = cpu
+    m = Machine(a.isa, a.app, a.extflash)
+    cpu, bus, rom, periph, lcd, ext, observe = m.cpu, m.bus, m.rom, m.periph, m.lcd, m.ext, m.observe
+    log = m.log
     if a.watch:
         periph.watch = [int(x, 16) for x in a.watch.split('-')]
-    cpu.mem = bus
-    cpu.pc = FLASH_BASE + 0x100
-    cpu.sp = 0
     hist = []
     t0 = time.time()
     err = None
