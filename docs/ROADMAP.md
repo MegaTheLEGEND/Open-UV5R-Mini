@@ -5,6 +5,20 @@ What still has to be written before the C build can replace stock v0.27 on a rad
 Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
 **unknown** = needs reverse-engineering first.
 
+## Approach
+
+- **Written from scratch.** The firmware is our own C. The stock firmware is the reference for how the hardware
+  works: pins, timings, register values. The lifter and the emulator make it quick to read.
+- **Borrow from the UV-K5's open firmware where it fits.** It drives the same radio chip (BK4819), so most of the
+  radio and UI code can be ported, with the chip layer replaced. DualTachyon's firmware and egzumer's fork are
+  Apache-2.0 (check each repo's LICENSE): keep their copyright headers and include their licence and NOTICE. This
+  repo's own licence is still to be chosen; Apache-2.0 would match.
+- **First image: a welcome screen and the update mode only**, with the update check as the first thing the app does.
+  Before it goes on a radio, prove a recovery route ([TESTING.md](TESTING.md#if-the-app-itself-doesnt-start-not-verified)).
+- **Transmit limited to the legal bands by default**, with wide receive, as UV-K5 builds usually do.
+- **Both kinds of radio (NRF and NRFB):** the hardware is the same as far as the code shows, but the settings area
+  sits in a different place, so builds need a setting for each ([RE-NOTES.md](RE-NOTES.md#nrf-v027-and-nrfb-v004)).
+
 ## 1. Before the first flash (safety)
 
 A radio running an app without these cannot be flashed again without opening the case.
@@ -79,6 +93,7 @@ firmware: they are never in the repo.
 | 6.5 | Lifter: turn the stock app into C on your own PC, checked against the stock code | **done** | `python tools/lift/lift.py` with your own stock `.ufw` unpacked; output goes to your `build/lift/` ([LIFTER.md](LIFTER.md)) |
 | 6.6 | Readable-C rewrite of the lifted functions with a local model (Ollama), each one tested | **done** (tool) | `python tools/lift/local_rewrite.py`; runs for hours on your PC, output in your `build/readable/` |
 | 6.7 | NRFB radios (firmware V0.04): the same firmware rebuilt, app 596 bytes bigger, settings area 4 KB further on | **partial** | `tools/setup.py` unpacks it; `tools/disasm.py` and `tools/lift/lift.py --variant nrfb` work (1,974 code functions, 100% lifted); tests, emulator, builds and flasher patches are still NRF-only |
+| 6.8 | Compare NRF and NRFB function by function | **done** | `tools/variant_diff.py` (needs both lifted) |
 
 ## Order of work
 

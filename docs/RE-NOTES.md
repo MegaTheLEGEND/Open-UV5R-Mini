@@ -228,3 +228,54 @@ Generated with `python tools/re/gpio_init.py build/app.dis sub_01E485EC`:
 
 Known roles so far: PA4 PTT, PA12 second PTT, PA6–PA9 keypad rows, PC2–PC5 keypad columns,
 PA10/PC0/PC1 BK4819 SCK/SDATA/SCN, PB4 LCD reset, PB5 LCD CS, PB10 power hold, PB11 power-off sense.
+
+## NRF (V0.27) and NRFB (V0.04)
+
+Both are `Hardware:V1.7`. Found by unpacking both stock files (`tools/setup.py`), lifting both
+(`tools/lift/lift.py --variant nrfb`) and matching functions with addresses blanked out (`tools/variant_diff.py`).
+
+| | NRF V0.27 | NRFB V0.04 |
+| --- | --- | --- |
+| `.ufw` size, SHA-256 | 504,832, `811b4b37…9128` | 520,192, `02419efb…f74e` |
+| `app.bin` length | 0x77AC8 | 0x77D1C (+596 bytes) |
+| `PRCT` (protected, includes calibration) | @0x1000 len 0x93000 | @0x1000 len 0x94000 |
+| `VM` (settings) | @0x94000 len 0x6A000 | @0x95000 len 0x68000 |
+| `ota.bin` (loader) | blank, 0x200 | a loader, 0x3D27 |
+| `uboot.boot`, `isd_config.ini` | identical | identical |
+| Code functions (lifted) | 2,032 | 1,974 |
+
+- **The same code, apart from the radio app.** 1,803 NRF functions are identical in NRFB, with only addresses
+  different: all of the JieLi SDK (Bluetooth, audio, RTOS, USB, flash). About 168 changed and about 61 small NRF
+  functions are gone, which looks like inlining by a different compiler setting. The changes cluster in
+  0x01E4C000–0x01E52000, the radio app. Among the named ones: `APP_PowerOnInit` (also the `V0.27`/`V0.04` text),
+  `BOARD_Init`, `APP_TimeSlice10ms`, `KEYBOARD_Poll`, `BK4819_TxRxSwitch`, `BK4819_SetAF`,
+  `BK4819_GetCxCSSScanResult`, `BOOT_CheckSpecialMode`, `UI_FramebufferPut`.
+- **The same board, as far as the code shows.** `BOARD_Init` has the same instructions; only RAM offsets differ by
+  1–4 bytes. The keypad and BK4819 pins are the same.
+- **One BK4819 setting differs.** `BK4819_TxRxSwitch` writes 0x1D0F on NRF and 0x9D1F on NRFB (two more bits set).
+  `KEYBOARD_Poll` gains a constant 0x309.
+- **Never flash one kind's file on the other.** The update refuses it (MM9PDY), and the settings and the end of the
+  protected area sit 4 KB apart: a cross-flashed radio could lose its settings or its calibration.
+- **Version numbers are two separate lines**, not one sequence: there's no evidence which is newer, and neither
+  image holds a build date.
+
+## How MM9PDY's patches make room (1.1.0, NRF)
+
+[MM9PDY's mod](https://github.com/pskillen/mm9pdy-firmware) patches the stock app. Applying its NRF 1.1.0 patch to
+the stock file and comparing the two apps showed:
+
+- **The app keeps its size** (0x77AC8), and 67 places change, about 13 KB in all.
+- **Most of the new code, about 11.6 KB, overwrites a stock image** at 0x01E5E21E. It's RGB565 data, mostly the
+  pixel 0x1082, part of one block that runs to 0x01E633C0 and is referenced from the code at 0x01E5441E. The rest
+  of the changes are short hooks into the stock code.
+- **Their own loader `uart_user.bin` is appended** to the `.ufw` (520,704 bytes after patching).
+
+So the stock app has no free space: a patch-based mod must replace something, such as image data.
+
+## Room in flash
+
+- The stock app (~479 KB) fills its space; the bytes after it up to the settings area at 0x94000 look unused (about
+  80–100 KB on NRF). This is worked out from the layout only; check it before putting anything there.
+- The settings area is ~424 KB, much more than channels need; the update also stores its loader there.
+- A from-scratch firmware without the JieLi audio SDK should be far smaller than stock. The UV-K5's open firmware
+  is about 60 KB. JieLi's full Bluetooth would take an estimated 150–250 KB of it ([BLUETOOTH.md](BLUETOOTH.md)).

@@ -52,3 +52,20 @@ Steps:
 | Key-test app | shows the Bluetooth state and echoes received bytes back (loopback test) |
 | Wireless CPS protocol | unknown; needs the stock firmware's CPS handler reverse-engineered or a capture from the stock app |
 | SDK integration script | not written; steps above are manual |
+
+## A smaller option: BLE only (idea, not started)
+
+To control the radio from a phone you only need Bluetooth Low Energy with one data service, like a wireless serial
+cable. Calls (HFP), music (A2DP) and classic pairing make up most of the size of JieLi's stack, and none of them
+are needed for that.
+
+- **Controller** (the radio packets): JieLi's own, part in ROM and part in its `btctrler` library (the name is in the
+  stock firmware). It has to come from JieLi.
+- **Host** (pairing, connections, the data service): small open ones exist. NimBLE (Apache-2.0, Apache Mynewt) is
+  about 50 KB in a minimal setup. BTstack is small too, but free only for non-commercial use.
+- **The open question:** does JieLi's controller use the standard host interface (HCI)? If it does, NimBLE on top
+  could make Bluetooth control about 60–100 KB. If not, JieLi's SDK can build BLE-only, which also leaves the
+  audio profiles out. To find out, trace how the stock code calls the `btctrler` functions (lifted C,
+  [LIFTER.md](LIFTER.md)).
+
+Rough sizes: full stock-style Bluetooth about 150–250 KB; BLE-only about 60–100 KB. Both are estimates.

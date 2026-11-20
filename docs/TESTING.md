@@ -81,6 +81,20 @@ as **Back to stock**, and Studio's own Back to stock gives the same bytes.
 - **Back to stock:** flash the `nrf-v0.27` matching patch, or use Studio's *Back to stock* with MM9PDY's to-stock file.
 - A power cut in the last moment of the write can need a case-open repair: keep the battery charged.
 
+### If the app itself doesn't start (not verified)
+
+- **The cable update mode is part of the app.** The app checks PTT-A + `=` at power-on and then hands over to the
+  loader. An app that crashes before that check can't be updated with the cable. That is why a new app must run
+  its update check first, before anything else.
+- **A cut update is different:** the bootloader resumes it without the app (the dark screen above).
+- **Last resort: the chip's ROM download mode.** JieLi chips have a factory programming mode in mask ROM that
+  doesn't need the app. Community tools talk to it over USB, for example kagaimiq's `jl-uboot-tool`. On this radio,
+  entering it probably needs the case open, to reach the USB data lines or a test pad. Not tried yet.
+- **No flash clip:** the AC695N's flash is inside the chip package, so there's no flash chip to clip a programmer
+  onto.
+- MM9PDY's recovery page says some failures need a case-open repair, without saying how. Prove a recovery route on
+  a radio before flashing any app of our own.
+
 ## Never flash the bare-metal C build
 
 `build/fw/firmware.bin` (the key-test app) has no update mode. A radio running it could not enter `UPDATE...`, so it
