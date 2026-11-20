@@ -88,7 +88,7 @@ firmware: they are never in the repo.
 | --- | --- | --- | --- |
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
-| 6.3 | External flash dump from a real radio | **todo** | SOIC-8 clip + CH341A; needed for 4.2 and 5.2 |
+| 6.3 | External flash dump from a real radio | **partial** | the chip is a GT25Q16A (2 MB); a 1 MB dump (probably the first half) is in [briand/uv5r_mini_hardware#2](https://github.com/briand/uv5r_mini_hardware/issues/2); needed for 4.2 and 5.2 |
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
 | 6.5 | Lifter: turn the stock app into C on your own PC, checked against the stock code | **done** | `python tools/lift/lift.py` with your own stock `.ufw` unpacked; output goes to your `build/lift/` ([LIFTER.md](LIFTER.md)) |
 | 6.6 | Readable-C rewrite of the lifted functions with a local model (Ollama), each one tested | **done** (tool) | `python tools/lift/local_rewrite.py`; runs for hours on your PC, output in your `build/readable/` |

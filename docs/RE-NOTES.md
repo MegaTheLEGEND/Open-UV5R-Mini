@@ -289,7 +289,7 @@ you! What the photos show, set against what the firmware told us:
 | --- | --- | --- |
 | MCU, QFP-48, with a PCB-trace Bluetooth antenna near the bottom edge | sanded off | yes: the `.ufw` names the chip `AC695N`, which has built-in Bluetooth |
 | Radio chip, QFN-32, with its own crystal | `FD6818 CS4144XA` | the firmware drives it exactly as a BK4819, so it's probably a rebranded or compatible part. Keep an eye out for registers that behave differently from BK4819 notes |
-| SOP-8 next to the radio chip | `516A-UGL` | probably the external SPI flash (CS PA3); the size is unknown, possibly 16 Mbit (2 MB) |
+| SOP-8 next to the radio chip | `516A-UGL` | the external SPI flash (CS PA3): Giantec **GT25Q16A**, 16 Mbit (2 MB), identified by SourceDiver42 in [issue #2](https://github.com/briand/uv5r_mini_hardware/issues/2) |
 | Square colour LCD | – | yes: ST7735S, 128×128 |
 | Two-pin K-plug jacks | – | the cable; the firmware routes the cable UART to the USB pins (D+ 61, D− 62) |
 | Clear LED at the top | – | the flashlight |
@@ -303,3 +303,15 @@ you! What the photos show, set against what the firmware told us:
   G = ground, M = D−, P = D+. If so, they're the way into the chip's ROM download mode for a case-open recovery
   ([TESTING.md](TESTING.md#if-the-app-itself-doesnt-start-not-verified)). Not confirmed: check with a multimeter
   (continuity to the MCU's USB pins) before relying on it.
+
+### From the issues on briand's repo
+
+- **MCU:** [issue #3](https://github.com/briand/uv5r_mini_hardware/issues/3) suggests an Artery AT32WB415 (ARM),
+  as in the UV-5RM and UV-5RH. The firmware rules that out for these radios. The `.ufw` names the chip `AC695N`,
+  the app is pi32v2 code (not ARM), our open pi32v2 build rebuilds the stock image byte for byte, and the emulator
+  runs it as pi32v2. The MCU is a JieLi AC695N.
+- **External flash dump:** [issue #2](https://github.com/briand/uv5r_mini_hardware/issues/2) has a dump of the SPI
+  flash, read with the programmer set to A25L80P (8 Mbit). It holds channel memory. The chip is 16 Mbit, so the
+  dump is probably only its first half: read it again set to GT25Q16A to get all 2 MB.
+- **Update mode:** [issue #4](https://github.com/briand/uv5r_mini_hardware/issues/4): A and `=` at power-on are
+  enough. That's PTT-A + `=`, as the firmware checks.
