@@ -137,6 +137,12 @@ erases and writes go through `driver/flash.c`, and the hand-over is our own:
 assumes a 48 MHz clock, and our start-up doesn't set clocks; `tools/uart_ping.py --scan` pings over the cable
 (nothing else) and tells which rate the radio answers at.
 
+**First cable test on a radio (2026-11-21).** Our app in update mode (PTT A + `=` at power-on), K1 cable (Prolific
+PL2303) on the PC: `tools/uart_ping.py` got a clean answer at 9600 baud on the first ping, `aa 55 01 00 01 a5 82`.
+So the UART reaches the USB pins as stock routes them, and its clock is 48 MHz without our own clock set-up. With the
+K1 cable plugged in, the ROM USB rescue mode doesn't start (the plug's sleeve sits on D− through about 100 Ω):
+unplug it first.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:
