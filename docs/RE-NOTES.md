@@ -299,10 +299,36 @@ you! What the photos show, set against what the firmware told us:
 
 - **Board label: `5R_MINI V1.6 2025/06/09`.** Radio Info's `Hardware: V1.7` is a fixed string in the app, not read
   from the board, so the version on screen doesn't identify the board.
-- **Pads `V G M P` near the bottom edge** (top side, beside the Bluetooth antenna). The guess: USB, with V = VBUS,
-  G = ground, M = D−, P = D+. If so, they're the way into the chip's ROM download mode for a case-open recovery
-  ([TESTING.md](TESTING.md#if-the-app-itself-doesnt-start-not-verified)). Not confirmed: check with a multimeter
-  (continuity to the MCU's USB pins) before relying on it.
+- **Pads `V G M P` near the bottom edge** (top side, beside the Bluetooth antenna): the chip's USB port. Measured,
+  see below.
+
+### Measured with a multimeter (V1.6 board, battery out)
+
+Measured by MegaTheLEGEND on 2026-11-20. Chip pin numbers are from the AC6951C datasheet's LQFP48 7×7 pinout,
+which the board matches: pin 23 = USBDM, pin 24 = USBDP. SourceDiver42's traces in
+[issue #3](https://github.com/briand/uv5r_mini_hardware/issues/3) agree: pin 24 to `P`, pin 12 (BT_RF) to the
+antenna, pins 14–15 (BT_OSCI/OSCO) to the crystal.
+
+| From | To | Result | Means |
+| --- | --- | --- | --- |
+| `P` | MCU pin 24 | continuity | `P` = USB D+ |
+| `M` | MCU pin 23 | continuity | `M` = USB D− |
+| `G` | battery minus | continuity | `G` = ground |
+| `M` | `P` | open | separate lines |
+| `M` | 3.5 mm jack sleeve | 99.5 Ω | the cable reaches D− through a ~100 Ω resistor |
+| `P` | every jack contact | open | the cable doesn't reach D+ |
+| Battery USB-C port | – | charge only, no data lines | no USB route there |
+
+`V` was not traced; it is probably VBUS. What this means:
+
+- The cable uses one wire (D−, pin 62 in the firmware's GPIO numbering) for the update-mode UART. How RX gets
+  in on the same wire, or elsewhere, is still to work out.
+- A USB connection to the chip (for JieLi's ROM download mode) needs wires on `G`, `M` and `P`, with the case open.
+  Leave `V` unconnected: the battery powers the chip.
+- How to enter the ROM download mode on this radio is still unknown.
+
+Every pin the firmware uses exists on the LQFP48 package: keypad PA6–PA9 and PC2–PC5, BK4819 PA10, PC0, PC1,
+LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12.
 
 ### From the issues on briand's repo
 

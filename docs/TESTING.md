@@ -89,9 +89,10 @@ as **Back to stock**, and Studio's own Back to stock gives the same bytes.
 - **A cut update is different:** the bootloader resumes it without the app (the dark screen above).
 - **Last resort: the chip's ROM download mode.** JieLi chips have a factory programming mode in mask ROM that
   doesn't need the app. Community tools talk to it over USB, for example kagaimiq's `jl-uboot-tool`. On this radio,
-  entering it probably needs the case open, to reach the USB data lines or a test pad. Not tried yet.
-  The board has four pads labelled `V G M P` that look like USB (VBUS, GND, D−, D+): see
-  [RE-NOTES.md](RE-NOTES.md#the-board-from-photos).
+  this needs the case open: the K-plug reaches only USB D−, and the battery's USB-C port is charge-only. The pads
+  `G M P` are ground, D− and D+, checked with a multimeter
+  ([RE-NOTES.md](RE-NOTES.md#measured-with-a-multimeter-v16-board-battery-out)). Wire those three; leave `V`
+  unconnected. How to make the chip enter the mode is not known yet, and it hasn't been tried.
 - **No flash clip:** the AC695N's flash is inside the chip package, so there's no flash chip to clip a programmer
   onto.
 - MM9PDY's recovery page says some failures need a case-open repair, without saying how. Prove a recovery route on
