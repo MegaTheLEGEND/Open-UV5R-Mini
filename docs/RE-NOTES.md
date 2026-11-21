@@ -327,7 +327,7 @@ antenna, pins 14–15 (BT_OSCI/OSCO) to the crystal.
   Leave `V` unconnected: the battery powers the chip.
 - How to enter the ROM download mode on this radio is still unknown.
 
-### ROM USB download mode: works (read only so far)
+### ROM USB download mode: works (read and write)
 
 Done on 2026-11-21 on an NRF V0.27 radio, case open, with [tools/jl_usbkey](../tools/jl_usbkey/README.md) (an
 ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool):
@@ -351,7 +351,9 @@ ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com
   So no stock file holds a radio's calibration or its voice prompts: a backup from the radio itself is the only copy.
 - Switching the radio off and on afterwards starts it normally.
 
-Writing through this route is not tried. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
+**Writing works too** (2026-11-21): on one blank 4 KB sector (`0xF1000`, in the empty part of `VM`), the loader
+erased it, wrote a test pattern that read back the same, and erased it again; the whole flash then read back
+byte for byte equal to the backup. Restoring a whole backup is not tried yet. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
 holds Baofeng's code and the radio's own calibration.
 
 ### External SPI flash, read (2026-11-21)
