@@ -12,7 +12,9 @@
  *   unlock (boot ROM 0x1127D8): SPI0 CON &= ~1, SFC CON |= 1.
  *   CS (stock 0x020001CA): DIR bit cleared, OUT bit low = selected; PD3, or PA13 when a flag at 0x198C0+1401 is set.
  *   byte out (0x02000226): CON |= 0x8, CON &= ~0x1000, BUF = byte, wait CON bit 15, CON |= 0x4000, CON &= ~0x8.
- *   byte in  (0x020002BE): CON |= 0x1000 first; BUF = 0xFF, wait CON bit 15, CON |= 0x4000, the byte is in BUF.
+ *   byte in, one data line (0x020002BE, used for the status byte): CON |= 0x8 | 0x1000, BUF = 0xFF, wait CON bit 15,
+ *     CON |= 0x4000, the byte is in BUF, CON &= ~0x8. (The bulk read for the two- and four-line modes leaves 0x8 off
+ *     and sets 0x400/0x800; with 0x8 off our one-line read gave FFFFFF on a radio.)
  *   continuous read: SFC modes 6 and 7 (CON bits 8-11) keep the flash in a mode where it takes no command byte. We
  *   don't leave and re-enter it yet; FLASH_ReadId just reports it.
  * Every wait has a time-out, so a wrong guess comes back as an error rather than hanging (the watchdog would then
@@ -52,9 +54,11 @@
 
 #define SPI_IN(v, ok)                                      \
 	do {                                                   \
+		SPI0_CON |= 0x8u | 0x1000u;                        \
 		SPI0_BUF = 0xFFu;                                  \
 		SPI_WAIT(ok);                                      \
 		(v) = SPI0_BUF & 0xFFu;                            \
+		SPI0_CON &= ~0x8u;                                 \
 	} while (0)
 
 RAMFUNC uint32_t FLASH_ReadId(uint32_t cs)
@@ -85,11 +89,11 @@ RAMFUNC uint32_t FLASH_ReadId(uint32_t cs)
 	port[0] &= ~bit;        /* CS low: selected */
 
 	SPI_OUT(0x9Fu, ok);
-	SPI0_CON |= 0x1000u;
 	SPI_IN(v, ok); id = v << 16;
 	SPI_IN(v, ok); id |= v << 8;
 	SPI_IN(v, ok); id |= v;
 
+	SPI0_CON &= ~0x1000u;
 	port[0] |= bit;         /* CS high */
 	port[2] = dir;
 	port[0] = out;
