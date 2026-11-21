@@ -252,6 +252,33 @@ void BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level)
 	BK4819_WriteRegister(BK4819_REG_08, (uint16_t)(0x8000u | (word >> 12 & 0xFFFu)));
 }
 
+/* Sub-audio scan (stock: mode off, REG_51 = 0x0300, mode RX; the 0x01E4FCE6 path of the tone scan). */
+void BK4819_CssScanStart(void)
+{
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_51, 0x0300);
+	BK4819_WriteRegister(BK4819_REG_30, 0xBFF1);
+}
+
+/* What the scan heard, as stock sub_01E4ECB4 reads it: REG_69 bit 15 clear = a DCS word (REG_69 low 12 bits above
+ * REG_6A low 12 bits); else REG_68 bit 15 clear = a CTCSS frequency, returned here in 0.1 Hz (stock: raw * 100000 /
+ * 206489, the inverse of BK4819_SetCtcss). */
+BK4819_Tone_t BK4819_CssScanRead(uint32_t *value)
+{
+	uint16_t hi = BK4819_ReadRegister(BK4819_REG_69), r;
+
+	if (!(hi & 0x8000u)) {
+		*value = (uint32_t)(hi & 0xFFFu) << 12 | (BK4819_ReadRegister(BK4819_REG_6A) & 0xFFFu);
+		return BK4819_TONE_DCS_N;
+	}
+	r = BK4819_ReadRegister(BK4819_REG_68);
+	if (!(r & 0x8000u)) {
+		*value = (uint32_t)(r & 0x1FFFu) * 100000u / 206489u;
+		return BK4819_TONE_CTCSS;
+	}
+	return BK4819_TONE_OFF;
+}
+
 void BK4819_CssOff(void)
 {
 	BK4819_WriteRegister(BK4819_REG_51, 0x0000);

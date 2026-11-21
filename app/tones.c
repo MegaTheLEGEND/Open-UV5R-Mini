@@ -86,6 +86,37 @@ uint16_t TONE_Step(uint16_t t, int dir)
 	return (uint16_t)(pos - (int)TONE_CTCSS_COUNT);
 }
 
+uint16_t TONE_FromCtcss(uint32_t tenths)
+{
+	for (unsigned i = 0; i < TONE_CTCSS_COUNT; i++) {
+		uint32_t t = TONE_Ctcss[i], d = t > tenths ? t - tenths : tenths - t;
+		if (d <= 9u)
+			return (uint16_t)t;
+	}
+	return 0;
+}
+
+static int rotation_of(uint32_t word, uint32_t want)
+{
+	for (int r = 0; r < 23; r++) {
+		if (word == want)
+			return 1;
+		word = (word << 1 & 0x7FFFFFu) | (word >> 22 & 1u);
+	}
+	return 0;
+}
+
+uint16_t TONE_FromDcsWord(uint32_t word)
+{
+	word &= 0x7FFFFFu;
+	/* normal codes first, in table order, as stock (some codes alias others under rotation) */
+	for (unsigned inv = 0; inv < 2; inv++)
+		for (unsigned i = 0; i < TONE_DCS_COUNT; i++)
+			if (rotation_of(inv ? word ^ 0x7FFFFFu : word, TONE_Golay(TONE_DcsCodes[i])))
+				return (uint16_t)(i + 1u + (inv ? TONE_DCS_COUNT : 0u));
+	return 0;
+}
+
 char *TONE_Format(char *b, uint16_t t)
 {
 	char *p = b;

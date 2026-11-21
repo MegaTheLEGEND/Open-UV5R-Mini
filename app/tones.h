@@ -27,5 +27,10 @@ uint16_t   TONE_DcsCode(uint16_t t);                    /* the code (023 for D02
 uint32_t   TONE_Golay(uint16_t code);                   /* the 23-bit DCS word: code | 0x800, 11 check bits above */
 uint16_t   TONE_Step(uint16_t t, int dir);              /* OFF, the CTCSS tones, DCS normal, DCS inverted, OFF */
 char      *TONE_Format(char *b, uint16_t t);            /* "OFF", "88.5", "D023N", "D023I"; b >= 7 bytes */
+/* Tone scan results to a tone. CTCSS: the table tone within 0.9 Hz (stock CTCSS_FindNearest, 0x01E4ED34);
+ * DCS: the code whose word, in any of its 23 rotations, is the word heard (stock DCS_FindCode, 0x01E4EE64),
+ * or its inverse (then an inverted code). 0 if none. */
+uint16_t   TONE_FromCtcss(uint32_t tenths);
+uint16_t   TONE_FromDcsWord(uint32_t word);
 
 #endif

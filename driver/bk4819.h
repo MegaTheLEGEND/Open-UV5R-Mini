@@ -63,6 +63,9 @@ void     BK4819_Sleep(void);
 void     BK4819_SetCtcss(uint16_t tenths, uint8_t level);
 void     BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level);
 void     BK4819_CssOff(void);
+void     BK4819_CssScanStart(void);
+/* BK4819_TONE_DCS_N: *value = the 23-bit word heard; BK4819_TONE_CTCSS: *value = 0.1 Hz; BK4819_TONE_OFF: nothing */
+BK4819_Tone_t BK4819_CssScanRead(uint32_t *value);
 bool     BK4819_CssHeard(BK4819_Tone_t kind);
 void     BK4819_SetPa(uint8_t bias, uint8_t gain);
 void     BK4819_TxMute(bool on);

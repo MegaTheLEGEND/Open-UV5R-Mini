@@ -19,7 +19,7 @@ code was copied from it.
 | Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red and blinking below the second calibrated threshold, as stock blinks its icon |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
 | BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
-| Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c` |
+| Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c`; MENU → TONE SCAN finds the tone a signal carries (kept in RX, TX or both by TSCAN SAVE, the stock setting) |
 | Calibration | `app/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
 | Stock settings | `app/settings.c` | the stock VFO A/B and settings logs (external flash `0x8010`, `0x9010`), read only: start-up squelch, key beep, VFO and channel mode as stock left them |
 | Channels | `app/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
@@ -92,6 +92,8 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 10. Look at the bottom right: the battery volts. Compare with the stock power-on voltage screen. If it shows
     nothing, the ADC didn't answer.
 11. Set MENU → RX TONE to the tone a second radio sends (e.g. 88.5). The speaker should open only with that tone.
+    Then MENU → TONE SCAN and key the second radio: it should beep and show the tone. (A DCS code may show as its
+    alias, e.g. D023I as D047N; stock does the same.)
 12. MENU → SCAN. `SCAN` shows top right and the frequency or channel moves; it stops on a signal (green), and any
     key ends it.
 13. Look under the frequency: the other side (B or A). MENU → A/B swaps them. Key a second radio on the other
@@ -105,5 +107,5 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 - **Persistence:** our own settings. Not in the external flash: writing there risks the channels and calibration.
 - **Squelch:** the calibrated thresholds go to `REG_78` too; the BK4819's own squelch status could replace the RSSI
   compare once a radio shows which works better.
-- **Not built yet:** tone scan, priority scan, low-battery warning, the timer tick instead of the
+- **Not built yet:** priority scan, low-battery warning, the timer tick instead of the
   delay loop, and FM broadcast radio.

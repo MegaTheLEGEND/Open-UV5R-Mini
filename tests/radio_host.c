@@ -126,6 +126,25 @@ int main(void)
 			}
 		}
 
+		/* tone scan lookups */
+		{
+			uint32_t w = TONE_Golay(023), r = w;
+			for (int i = 0; i < 5; i++)
+				r = (r << 1 & 0x7FFFFFu) | (r >> 22 & 1u);
+			CHECK(TONE_FromCtcss(886) == 885 && TONE_FromCtcss(894) == 885 && TONE_FromCtcss(900) == 0
+			      && TONE_FromCtcss(630) == 630 && TONE_FromCtcss(500) == 0, "nearest CTCSS within 0.9 Hz");
+			CHECK(TONE_FromDcsWord(w) == 1 && TONE_FromDcsWord(r) == 1, "D023 word, and rotated");
+			/* inverted D023 is normal D047 rotated (a known DCS alias): normal codes are checked first, as stock */
+			CHECK(TONE_DcsCode(TONE_FromDcsWord(r ^ 0x7FFFFFu)) == 047 && TONE_Kind(TONE_FromDcsWord(r ^ 0x7FFFFFu)) == TONE_DCS_N,
+			      "inverted D023 found as D047N (%u)", TONE_FromDcsWord(r ^ 0x7FFFFFu));
+			CHECK(TONE_FromDcsWord(0x123456) == 0 || TONE_Kind(TONE_FromDcsWord(0x123456)) != TONE_NONE, "junk");
+			int miss = 0;
+			for (unsigned i = 0; i < TONE_DCS_COUNT; i++)
+				if (TONE_DcsCode(TONE_FromDcsWord(TONE_Golay(TONE_DcsCodes[i]))) == 0)
+					miss++;
+			CHECK(!miss, "every code's word found: %d missed", miss);
+		}
+
 		gVfo.squelch = 3;
 		gVfo.rx_tone = 885;
 		at(14552000u);

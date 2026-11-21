@@ -70,6 +70,11 @@ static bool     s_peek;                  /* dual watch: tuned to the other side 
 static bool     s_peek_held;             /* ... and it opened */
 static uint32_t s_shown_other = 0xFFFFFFFFu;
 static void side_save(void);
+static bool     s_tscan;                 /* tone scan running */
+static uint16_t s_tscan_last, s_tscan_ms;
+static uint8_t  s_tscan_same;
+static void     draw_tscan(void);
+static void     tscan_start(void);
 static void side_switch(void);
 static void dw_end(void);
 
@@ -311,17 +316,18 @@ static void draw_main(void)
 		draw_main_static();
 	draw_battery();
 	draw_scan();
+	draw_tscan();
 	draw_status();
 	draw_freq();
 	draw_signal();
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER,
-       M_KEYTEST, M_COUNT };
+enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_TSCAN,
+       M_TSCANSAVE, M_POWER, M_KEYTEST, M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
 	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
-	"RX TONE", "TX TONE", "TX POWER", "KEY TEST",
+	"RX TONE", "TX TONE", "TONE SCAN", "TSCAN SAVE", "TX POWER", "KEY TEST",
 };
 #define MENU_ROWS 8                      /* rows on screen; the list scrolls */
 
@@ -334,6 +340,11 @@ static const char *menu_value(int i, char *b)
 	case M_DW:      return gStock.raw[SET_DUAL_WATCH] ? "ON" : "OFF";
 	case M_MEM:     return s_mr ? "CHANNELS" : "VFO";
 	case M_SCAN:    return "START";
+	case M_TSCAN:   return "START";
+	case M_TSCANSAVE: {
+		static const char *const TS[] = { "RX+TX", "RX", "TX" };
+		return TS[gStock.raw[0x2B] <= 2 ? gStock.raw[0x2B] : 0];
+	}
 	case M_SCANMODE: {
 		static const char *const SM[] = { "TIME", "CARRIER", "SEARCH" };
 		return SM[gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1];
@@ -369,6 +380,9 @@ static void menu_change(int i, int dir)
 		return;
 	case M_DW:
 		gStock.raw[SET_DUAL_WATCH] = !gStock.raw[SET_DUAL_WATCH];
+		break;
+	case M_TSCANSAVE:
+		gStock.raw[0x2B] = (uint8_t)(((gStock.raw[0x2B] <= 2 ? gStock.raw[0x2B] : 0) + 3 + dir) % 3);
 		break;
 	case M_SCANMODE:
 		gStock.raw[SET_SCAN_MODE] = (uint8_t)(((gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1)
@@ -485,6 +499,69 @@ static void entry_finish(void)
 	s_redraw = true;
 }
 
+/* ------------------------------------------------------------------------------------------- tone scan
+ * As the stock tone scan: the chip's sub-audio scan, read every 100 ms; a result read twice in a row is kept, in
+ * the receive tone, the transmit tone or both by stock setting 0x2B (0 both, 1 receive, 2 transmit). */
+static void tscan_start(void)
+{
+	SCAN_Stop();
+	gVfo.rx_tone = 0;                    /* no tone squelch while looking */
+	RADIO_Apply();
+	BK4819_CssScanStart();
+	s_tscan = true;
+	s_tscan_last = s_tscan_ms = 0;
+	s_tscan_same = 0;
+	s_entry_len = 0;
+}
+
+static void tscan_stop(void)
+{
+	if (!s_tscan)
+		return;
+	s_tscan = false;
+	RADIO_Apply();                       /* REG_51 back to the VFO's own tone */
+	s_shown_status = -1;
+}
+
+static void tscan_tick(void)
+{
+	uint32_t v;
+	uint16_t t = 0;
+
+	if (!s_tscan || (s_tscan_ms += APP_TICK_MS) < 100u)
+		return;
+	s_tscan_ms = 0;
+	switch (BK4819_CssScanRead(&v)) {
+	case BK4819_TONE_CTCSS: t = TONE_FromCtcss(v); break;
+	case BK4819_TONE_DCS_N: t = TONE_FromDcsWord(v); break;
+	default: break;
+	}
+	if (!t) {
+		s_tscan_same = 0;
+		return;
+	}
+	s_tscan_same = t == s_tscan_last ? (uint8_t)(s_tscan_same + 1) : 1;
+	s_tscan_last = t;
+	if (s_tscan_same < 2)
+		return;
+	if (gStock.raw[0x2B] != 2)
+		gVfo.rx_tone = t;
+	if (gStock.raw[0x2B] != 1)
+		gVfo.tx_tone = t;
+	tscan_stop();
+	RADIO_Beep(1200, 120);
+}
+
+static void draw_tscan(void)
+{
+	char b[8];
+
+	if (!s_tscan)
+		return;
+	UI_PrintString("TONE SCAN", 0, 12, YELLOW, BLACK, 1);
+	UI_PrintString(s_tscan_last ? TONE_Format(b, s_tscan_last) : "     ", 60, 12, WHITE, BLACK, 1);
+}
+
 /* ------------------------------------------------------------------------------------------- scanning */
 /* The stock VFO scan range, whole MHz (setting bytes 0x2C-0x2F); stock defaults 400-470. */
 static void scan_range(uint32_t *lo, uint32_t *hi)
@@ -539,6 +616,10 @@ static void key_main(KEY_Code_t k)
 {
 	int d = KEY_Digit(k);
 
+	if (s_tscan) {                       /* any key ends the tone scan */
+		tscan_stop();
+		return;
+	}
 	if (SCAN_Active()) {                 /* any key ends the scan; UP/DOWN turn it round */
 		if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
 			scan_start(k == KEY_ACT_UP ? +1 : -1);
@@ -590,6 +671,11 @@ static void key_menu(KEY_Code_t k)
 			KEYTEST_Run();
 		if (s_menu_sel == M_SCAN) {
 			scan_start(+1);
+			go(SCREEN_MAIN);
+			return;
+		}
+		if (s_menu_sel == M_TSCAN) {
+			tscan_start();
 			go(SCREEN_MAIN);
 			return;
 		}
@@ -857,8 +943,10 @@ void APP_Tick(void)
 			side_switch();
 		ptt = true;
 	}
-	if (ptt)
+	if (ptt) {
 		dw_end();
+		tscan_stop();
+	}
 	if (ptt && !s_ptt_down) {
 		light_wake();
 		s_tot_hit = false;
@@ -875,7 +963,8 @@ void APP_Tick(void)
 
 	RADIO_Tick();
 	tot_tick();
-	dw_tick(ptt || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
+	tscan_tick();
+	dw_tick(ptt || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();
 	else
