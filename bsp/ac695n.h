@@ -85,6 +85,15 @@ static inline uint8_t P33_Read(uint16_t reg)
 	return v;
 }
 
+static inline void P33_Or(uint16_t reg, uint8_t mask)
+{
+	P33_Begin(reg);
+	P33_Xfer((uint8_t)(((reg >> 8) & 3u) | 0x20u));
+	P33_Xfer((uint8_t)reg);
+	P33_Xfer(mask);
+	P33_End();
+}
+
 static inline void P33_Write(uint16_t reg, uint8_t val)
 {
 	P33_Begin(reg);
