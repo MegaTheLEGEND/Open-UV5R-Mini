@@ -65,6 +65,33 @@ Replace the four flash-driver functions above with a Python flash model holding 
 Run the app's VM initialisation, then `sub_01E42AF2`. Try it with an empty store, a small one and a full one.
 Port the rule to C only once the results agree with the disassembly.
 
+## Our own flash driver and hand-over: what's needed (2026-11-21)
+
+On a radio our app now runs (RE-NOTES, "First boot"), but the update mode can't work yet: the stock routines it
+called at `0x0200xxxx` (flash read `0x0200048C`, program `0x02000772`, erase `0x020006BC`, `0x0200083A`, hand-over
+`0x020011E6`) are the stock app's RAM code, which our app doesn't have. What they do, read from the stock RAM code
+(flash `0x01E6AAAC` copied to RAM 0, run at `0x02000000`), to write our own:
+
+| Step | Stock | What it does |
+| --- | --- | --- |
+| Lock | `0x020001A0` / `0x02000474` | interrupts off, then calls `0x021127D4` / `0x021127D8` with 1 (a real ROM above the RAM alias; probably pauses and resumes the flash controller's own use of the bus). To work out |
+| Leave continuous read | `0x020004C8` | if the SFC (`0x1F0200`, bits 8–11) is in mode 6 or 7, send `FF FF` with CS low |
+| CS | `0x020001CA` | GPIO: PD3 (`0x1E50C0` bit 3) or PA13 (`0x1E5000` bit 13), chosen by a flag at `0x198C0 + 1401` |
+| Byte out | `0x02000226` | SPI0 `0x1E1C00`: CON \|= 0x8, CON &= ~0x1000, BUF (+8) = byte, wait CON bit 15, CON \|= 0x4000, CON &= ~0x8 |
+| Byte in | `0x020002BE` | CON \|= 0x8 \| 0x1000, BUF = 0xFF, wait, read BUF |
+| Write enable | `0x020005BE` | CS, `06`, CS off |
+| Erase | `0x020006BC(cmd, addr)` | cmd 200 = 4 KB (`0x20`), 201 = 64 KB (`0xD8`), 204 = page (`0x81`); WREN, cmd + 24-bit address |
+| Program | `0x02000772(buf, addr, len, dma)` | WREN, `0x02` + address + bytes |
+| Cache | `0x020005D2` | drops the instruction-cache lines for the range (tags at `0xFC000`, 128 sets of 4) |
+| Wait | `0x0200068E` | `05` until bit 0 clears |
+| Back to continuous read | `0x02000512` | when it was left above |
+| Hand-over | `0x020011E6` | stacks at `0x10C20`, three clean-up calls, all registers 0, `rti` to `0x110000` (the boot ROM) |
+
+All of it must run from RAM, since the CPU can't fetch from the flash while it's being written. Plan: put our
+routines in a section run at `0x02000000 + offset` and copied to RAM at start-up, as stock does. Test step by step on
+a radio, with the USB rescue mode ready: first the flash's JEDEC ID (read only), then erase, write and read back a
+blank settings sector, then the whole update.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:
