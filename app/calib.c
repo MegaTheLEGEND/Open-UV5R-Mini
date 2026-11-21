@@ -38,6 +38,22 @@ uint8_t CALIB_PaBias(uint32_t freq_10hz, uint8_t power)
 	return s_cal[FRAME[power] + row + i];
 }
 
+uint8_t CALIB_Byte(uint16_t offset)
+{
+	return offset < CALIB_LEN ? s_cal[offset] : 0xFF;
+}
+
+/* Sub-audio levels (REG_51 low 7 bits). Not calibrated: the BK4819 notes' usual values. */
+uint8_t CALIB_CtcssLevel(void)
+{
+	return s_present && s_cal[0x211] < 0x80u ? s_cal[0x211] : 0x4A;
+}
+
+uint8_t CALIB_DcsLevel(void)
+{
+	return s_present && s_cal[0x212] != 0xFFu ? (uint8_t)(s_cal[0x212] & 0x7Fu) : 0x33;
+}
+
 uint8_t CALIB_PaGain(uint8_t power)
 {
 	return power == POWER_LOW ? 0xD7 : 0xFF;

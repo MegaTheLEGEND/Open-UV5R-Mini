@@ -12,6 +12,7 @@
 #include "app/keys.h"
 #include "app/keytest.h"
 #include "app/radio.h"
+#include "app/tones.h"
 #include "app/update.h"
 #include "board.h"
 #include "bt/bt.h"
@@ -39,6 +40,7 @@ static bool     s_redraw = true;         /* whole screen */
 static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
+static int      s_menu_top = -1;
 static uint16_t s_off_ticks;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
@@ -66,23 +68,6 @@ static char *fmt_freq(char *b, uint32_t f)        /* 10 Hz units -> "145.52000" 
 	for (uint32_t d = 10000u; d; d /= 10) {
 		*p++ = (char)('0' + rest / d % 10);
 	}
-	*p = 0;
-	return b;
-}
-
-static char *fmt_tenths(char *b, uint32_t v)      /* 885 -> "88.5" */
-{
-	char *p = b, t[8];
-	int n = 0;
-	uint32_t w = v / 10;
-
-	do
-		t[n++] = (char)('0' + w % 10);
-	while ((w /= 10) && n < 6);
-	while (n)
-		*p++ = t[--n];
-	*p++ = '.';
-	*p++ = (char)('0' + v % 10);
 	*p = 0;
 	return b;
 }
@@ -120,7 +105,7 @@ static void draw_status(void)
 {
 	char b[12];
 	int st = gVfo.squelch | gVfo.volume << 4 | gVfo.narrow << 8 | RADIO_IsAm() << 9 | gVfo.step << 10
-	         | IO_LampIsOn() << 14 | gVfo.power << 15 | (int)gVfo.ctcss_tx << 16;
+	         | IO_LampIsOn() << 14 | gVfo.power << 15 | (int)(gVfo.tx_tone ^ gVfo.rx_tone << 3) << 16;
 
 	if (st == s_shown_status && !s_redraw)
 		return;
@@ -146,11 +131,15 @@ static void draw_status(void)
 		UI_PrintString("STEP", 0, 55, GREY, BLACK, 1);
 		UI_PrintString(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, BLACK, 1);
 	}
-	if (gVfo.ctcss_tx) {
-		UI_PrintString("CT", 0, 12, GREY, BLACK, 1);
-		UI_PrintString(fmt_tenths(b, gVfo.ctcss_tx), 14, 12, WHITE, BLACK, 1);
-	} else
-		ST7735S_FillRect(0, 12, 60, 8, BLACK);
+	ST7735S_FillRect(0, 12, 128, 8, BLACK);
+	if (gVfo.rx_tone) {
+		UI_PrintString("R", 0, 12, GREY, BLACK, 1);
+		UI_PrintString(TONE_Format(b, gVfo.rx_tone), 8, 12, WHITE, BLACK, 1);
+	}
+	if (gVfo.tx_tone) {
+		UI_PrintString("T", 60, 12, GREY, BLACK, 1);
+		UI_PrintString(TONE_Format(b, gVfo.tx_tone), 68, 12, WHITE, BLACK, 1);
+	}
 }
 
 static void draw_freq(void)
@@ -245,10 +234,12 @@ static void draw_main(void)
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_MEM, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_CTCSS, M_POWER, M_KEYTEST, M_COUNT };
+enum { M_MEM, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER, M_KEYTEST, M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
-	"MEMORY", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "CTCSS TX", "TX POWER", "KEY TEST",
+	"MEMORY", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "RX TONE", "TX TONE", "TX POWER",
+	"KEY TEST",
 };
+#define MENU_ROWS 8                      /* rows on screen; the list scrolls */
 
 static const char *menu_value(int i, char *b)
 {
@@ -261,24 +252,14 @@ static const char *menu_value(int i, char *b)
 	case M_STEP:    return fmt_step(b, RADIO_Steps[gVfo.step]);
 	case M_BW:      return gVfo.narrow ? "NARROW" : "WIDE";
 	case M_MOD:     return MOD[gVfo.mod];
-	case M_CTCSS:   return gVfo.ctcss_tx ? fmt_tenths(b, gVfo.ctcss_tx) : "OFF";
+	case M_RXTONE:  return TONE_Format(b, gVfo.rx_tone);
+	case M_TXTONE:  return TONE_Format(b, gVfo.tx_tone);
 	case M_POWER:   return gVfo.power == POWER_LOW ? "LOW" : "HIGH";
 	default:        return "";
 	}
 }
 
 static void channel_show(int n);
-
-static void ctcss_step(int dir)
-{
-	int i, n = RADIO_CtcssCount + 1, cur = 0;
-
-	for (i = 0; i < RADIO_CtcssCount; i++)
-		if (RADIO_Ctcss[i] == gVfo.ctcss_tx)
-			cur = i + 1;
-	cur = (cur + n + dir) % n;
-	gVfo.ctcss_tx = cur ? RADIO_Ctcss[cur - 1] : 0;
-}
 
 static void menu_change(int i, int dir)
 {
@@ -297,7 +278,8 @@ static void menu_change(int i, int dir)
 	case M_STEP:  gVfo.step = (uint8_t)((gVfo.step + RADIO_StepCount + dir) % RADIO_StepCount); break;
 	case M_BW:    gVfo.narrow = !gVfo.narrow; break;
 	case M_MOD:   gVfo.mod = (Modulation_t)((gVfo.mod + 3 + dir) % 3); break;
-	case M_CTCSS: ctcss_step(dir); break;
+	case M_RXTONE: gVfo.rx_tone = TONE_Step(gVfo.rx_tone, dir); break;
+	case M_TXTONE: gVfo.tx_tone = TONE_Step(gVfo.tx_tone, dir); break;
 	case M_POWER: gVfo.power = gVfo.power == POWER_LOW ? POWER_HIGH : POWER_LOW; break;
 	default: break;
 	}
@@ -313,8 +295,14 @@ static void draw_menu(void)
 		UI_PrintString("MENU", 52, 2, YELLOW, BLACK, 1);
 		UI_PrintString("UP/DN MENU EXIT", 0, 120, GREY, BLACK, 1);
 	}
-	for (int i = 0; i < M_COUNT; i++) {
-		uint8_t y = (uint8_t)(16 + 12 * i);
+	int top = s_menu_sel < MENU_ROWS ? 0 : s_menu_sel - MENU_ROWS + 1;
+
+	if (top != s_menu_top) {
+		s_menu_top = top;
+		ST7735S_FillRect(0, 14, 128, 12 * MENU_ROWS + 2, BLACK);
+	}
+	for (int i = top; i < M_COUNT && i < top + MENU_ROWS; i++) {
+		uint8_t y = (uint8_t)(16 + 12 * (i - top));
 		bool sel = i == s_menu_sel;
 		uint16_t bg = sel ? RGB565(40, 40, 90) : BLACK;
 		ST7735S_FillRect(0, y - 1, 128, 10, bg);
@@ -362,7 +350,8 @@ static void channel_show(int n)
 	gVfo.freq = ch.rx;
 	gVfo.tx_freq = ch.tx;
 	gVfo.rx_only = ch.tx == 0;
-	gVfo.ctcss_tx = ch.tx_ctcss;
+	gVfo.rx_tone = ch.rx_tone;
+	gVfo.tx_tone = ch.tx_tone;
 	gVfo.power = ch.low_power ? POWER_LOW : POWER_HIGH;
 	gVfo.narrow = ch.narrow;
 	RADIO_Apply();

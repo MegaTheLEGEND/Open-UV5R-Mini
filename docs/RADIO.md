@@ -14,7 +14,8 @@ code was copied from it.
 | Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); software squelch on the RSSI; speaker amp, AF unmute and green LED when it opens; key beeps |
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
-| BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, sub-tone, PA, TX on, beep |
+| BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
+| Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c` |
 | Calibration | `app/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
 | Channels | `app/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
 | External flash | `driver/extflash.c` | read only: no erase or write code exists |
@@ -23,7 +24,7 @@ code was copied from it.
 
 Settings are not saved yet: each power-on starts at 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
 own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
-frequencies, CTCSS on transmit, power and width are used. Checked against a dump of one radio on the PC: 76 channels
+frequencies, RX and TX tones (CTCSS or DCS), power and width are used. Checked against a dump of one radio on the PC: 76 channels
 decoded with their names. If the external flash doesn't answer, MEMORY stays on VFO and the status line shows
 `NOCAL`.
 
@@ -80,8 +81,9 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 7. Press `#`. The lamp should toggle.
 8. MENU → MEMORY. UP/DOWN should walk your stock channels, with their names.
 9. Press PTT. It should beep and say `NO TX` (transmit is compiled off).
-10. Turn the power knob off. The radio should switch off.
-11. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
+10. Set MENU → RX TONE to the tone a second radio sends (e.g. 88.5). The speaker should open only with that tone.
+11. Turn the power knob off. The radio should switch off.
+12. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
 
 ## Still to do
 
@@ -89,5 +91,5 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 - **Persistence:** our own settings. Not in the external flash: writing there risks the channels and calibration.
 - **Squelch:** the calibrated thresholds go to `REG_78` too; the BK4819's own squelch status could replace the RSSI
   compare once a radio shows which works better.
-- **Not built yet:** CTCSS/DCS on receive, dual watch and scanning, battery level, the timer tick instead of the
+- **Not built yet:** tone scan, dual watch and scanning, battery level, the timer tick instead of the
   delay loop, and FM broadcast radio.

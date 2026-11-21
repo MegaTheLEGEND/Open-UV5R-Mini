@@ -29,7 +29,8 @@ typedef struct {
 	uint8_t      volume;      /* 0 .. 15 */
 	bool         narrow;
 	Modulation_t mod;
-	uint16_t     ctcss_tx;    /* 0.1 Hz, 0 = off */
+	uint16_t     rx_tone;     /* app/tones.h encoding (stock): 0 none, CTCSS 0.1 Hz, DCS index */
+	uint16_t     tx_tone;
 	uint8_t      power;       /* POWER_HIGH / POWER_LOW (app/calib.h) */
 	uint32_t     tx_freq;     /* 10 Hz; 0 = same as freq */
 	bool         rx_only;     /* a channel with no TX frequency */
@@ -38,12 +39,11 @@ typedef struct {
 extern Vfo_t gVfo;
 extern const uint16_t RADIO_Steps[];    /* 10 Hz units */
 extern const uint8_t  RADIO_StepCount;
-extern const uint16_t RADIO_Ctcss[];    /* 0.1 Hz units */
-extern const uint8_t  RADIO_CtcssCount;
 
 void         RADIO_Init(void);
 void         RADIO_Apply(void);            /* after any change to gVfo */
 void         RADIO_Tick(void);             /* every 10 ms: squelch */
+bool         RADIO_ToneHeard(void);        /* the receive tone is heard (true with no receive tone) */
 RadioState_t RADIO_State(void);
 uint16_t     RADIO_Rssi(void);             /* last raw RSSI (dBm = raw / 2 - 160) */
 bool         RADIO_IsAm(void);

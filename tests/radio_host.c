@@ -6,6 +6,7 @@
 #include "app/radio.h"
 #include "app/calib.h"
 #include "app/channels.h"
+#include "app/tones.h"
 #include "board.h"
 #include "driver/bk4819.h"
 #include "driver/io.h"
@@ -24,7 +25,13 @@ void BK4819_SetFilterBandwidth(bool n) { (void)n; }
 void BK4819_SetVolume(uint8_t v) { (void)v; }
 void BK4819_SetGpio(uint8_t m, bool on) { reg33 = (uint16_t)(on ? (reg33 | m) : (reg33 & ~m)); }
 void BK4819_SetPa(uint8_t bias, uint8_t gain) { reg36 = bias ? (uint16_t)(bias << 8 | gain) : 0x7F; }
-void BK4819_SetTxCtcss(uint16_t c) { (void)c; }
+static uint16_t css_tenths, css_heard_mask;
+static uint32_t css_word;
+static int css_mode;     /* 0 off, 1 CTCSS, 2 DCS N, 3 DCS I */
+void BK4819_SetCtcss(uint16_t t, uint8_t l) { (void)l; css_mode = 1; css_tenths = t; }
+void BK4819_SetDcs(uint32_t w, bool inv, uint8_t l) { (void)l; css_mode = inv ? 3 : 2; css_word = w; }
+void BK4819_CssOff(void) { css_mode = 0; }
+bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
 void BK4819_TxMute(bool on) { (void)on; }
@@ -91,6 +98,63 @@ int main(void)
 	ticks(2);
 	CHECK(af == BK4819_AF_AM, "airband is AM");
 	gVfo.squelch = 3;
+
+	/* tones: the stock encoding, the DCS word, tone squelch */
+	{
+		char b[8];
+		CHECK(TONE_Golay(023) == 0x763813u, "D023 word %06lX", (unsigned long)TONE_Golay(023));
+		CHECK(TONE_Kind(1) == TONE_DCS_N && TONE_DcsCode(1) == 023, "index 1 = D023N");
+		CHECK(TONE_Kind(106) == TONE_DCS_I && TONE_DcsCode(106) == 023, "index 106 = D023I");
+		CHECK(TONE_DcsCode(94) == 0645, "index 94 = D645");
+		CHECK(!strcmp(TONE_Format(b, 106), "D023I") && !strcmp(TONE_Format(b, 885), "88.5")
+		      && !strcmp(TONE_Format(b, 0xFFFF), "OFF"), "formats");
+		CHECK(TONE_Kind(0xFFFF) == TONE_NONE && TONE_Kind(300) == TONE_NONE && TONE_Normalise(250) == 0, "none");
+		CHECK(TONE_Step(0, 1) == 630 && TONE_Step(630, -1) == 0 && TONE_Step(2541, 1) == 1
+		      && TONE_Step(105, 1) == 106 && TONE_Step(210, 1) == 0 && TONE_Step(0, -1) == 210, "tone steps");
+		for (unsigned i = 0; i < TONE_DCS_COUNT; i++) {
+			uint32_t w = TONE_Golay(TONE_DcsCodes[i]), r = w & 0xFFFu;   /* data in bits 0-11, check bits 12-22 */
+			uint32_t v = r << 11 | (w >> 12);                               /* as a polynomial: data * x^11 + check */
+			for (int bit = 22; bit >= 11; bit--)
+				if (v & (1u << bit))
+					v ^= 0xC75u << (bit - 11);
+			if (v) {
+				CHECK(0, "DCS %03o word not a code word", TONE_DcsCodes[i]);
+				break;
+			}
+		}
+
+		gVfo.squelch = 3;
+		gVfo.rx_tone = 885;
+		at(14552000u);
+		CHECK(css_mode == 1 && css_tenths == 885, "CTCSS set for receive");
+		rssi = 200;
+		css_heard_mask = 0;
+		ticks(10);
+		CHECK(RADIO_State() == RADIO_RX && !amp, "carrier without the tone: stays shut");
+		css_heard_mask = 1u << BK4819_TONE_CTCSS;
+		ticks(5);
+		CHECK(RADIO_State() == RADIO_RX_OPEN && amp, "tone heard: opens");
+		css_heard_mask = 0;
+		ticks(10);
+		CHECK(RADIO_State() == RADIO_RX_OPEN, "short drop-out: still open");
+		ticks(15);
+		CHECK(RADIO_State() == RADIO_RX && !amp, "tone gone: shuts");
+		gVfo.rx_tone = 106;
+		at(14552000u);
+		CHECK(css_mode == 3 && css_word == 0x763813u, "DCS 023 inverted set");
+		css_heard_mask = 1u << BK4819_TONE_DCS_N;
+		ticks(10);
+		CHECK(RADIO_State() == RADIO_RX, "normal DCS heard, inverted wanted: shut");
+		css_heard_mask = 1u << BK4819_TONE_DCS_I;
+		ticks(5);
+		CHECK(RADIO_State() == RADIO_RX_OPEN, "inverted DCS heard: open");
+		gVfo.rx_tone = 0;
+		at(14552000u);
+		CHECK(css_mode == 0, "no tone: sub-audio off");
+		rssi = 60;
+		css_heard_mask = 0;
+		ticks(30);
+	}
 
 	/* no calibration: never transmit */
 	at(14552000u);
@@ -175,7 +239,12 @@ int main(void)
 		uint8_t r2[32];
 		Channel_t ch;
 		CHECK(CHANNEL_Decode(rec, &ch) && ch.rx == 46256250u && ch.tx == 46256250u, "BCD frequencies");
-		CHECK(ch.tx_ctcss == 885 && ch.rx_ctcss == 0, "tones %u %u", ch.tx_ctcss, ch.rx_ctcss);
+		CHECK(ch.tx_tone == 885 && ch.rx_tone == 0, "tones %u %u", ch.tx_tone, ch.rx_tone);
+		memcpy(r2, rec, 32);
+		r2[8] = 0x6A;            /* index 106 = D023I */
+		r2[10] = 0x01;           /* index 1 = D023N */
+		r2[11] = 0x00;
+		CHECK(CHANNEL_Decode(r2, &ch) && ch.rx_tone == 106 && ch.tx_tone == 1, "DCS tones %u %u", ch.rx_tone, ch.tx_tone);
 		CHECK(ch.narrow && ch.scan && ch.low_power && !strcmp(ch.name, "FRS1"), "flags and name '%s'", ch.name);
 		memcpy(r2, rec, 32);
 		memset(r2 + 4, 0xFF, 4);

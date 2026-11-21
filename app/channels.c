@@ -1,5 +1,6 @@
 /* Open-UV5R-Mini: stock channel memory, read only. See app/channels.h. */
 #include "app/channels.h"
+#include "app/tones.h"
 #ifndef CHANNELS_HOST_TEST
 #include "driver/extflash.h"
 #else
@@ -22,9 +23,7 @@ static bool bcd32(const uint8_t *p, uint32_t *out)
 
 static uint16_t tone(const uint8_t *p)
 {
-	uint16_t t = (uint16_t)(p[0] | p[1] << 8);
-
-	return t >= 0x258u && t != 0xFFFFu ? t : 0;
+	return TONE_Normalise((uint16_t)(p[0] | p[1] << 8));
 }
 
 bool CHANNEL_Decode(const uint8_t rec[CHANNEL_SIZE], Channel_t *ch)
@@ -37,8 +36,8 @@ bool CHANNEL_Decode(const uint8_t rec[CHANNEL_SIZE], Channel_t *ch)
 		ch->tx = 0;
 	else if (ch->tx == 0)
 		ch->tx = ch->rx;                 /* 00 00 00 00 read as simplex */
-	ch->rx_ctcss = tone(rec + 8);
-	ch->tx_ctcss = tone(rec + 10);
+	ch->rx_tone = tone(rec + 8);
+	ch->tx_tone = tone(rec + 10);
 	ch->low_power = (rec[14] & 3u) != 0;
 	ch->narrow = (rec[15] & 0x40u) != 0;
 	ch->scan = (rec[15] & 0x04u) != 0;

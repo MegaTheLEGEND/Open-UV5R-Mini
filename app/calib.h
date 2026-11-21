@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #define CALIB_ADDR 0xF000u
-#define CALIB_LEN  0x220u
+#define CALIB_LEN  0x220u     /* through 0xF21F: battery 0xF200, mic 0xF210, CTCSS/DCS level 0xF211/0xF212 */
 
 enum { POWER_HIGH = 0, POWER_LOW = 1 };
 
@@ -28,5 +28,8 @@ bool    CALIB_Present(void);
 uint8_t CALIB_PaBias(uint32_t freq_10hz, uint8_t power);
 uint8_t CALIB_PaGain(uint8_t power);
 void    CALIB_Squelch(uint32_t freq_10hz, uint8_t level, uint8_t *open, uint8_t *close);
+uint8_t CALIB_CtcssLevel(void);                     /* 0xF211, sub-audio deviation for CTCSS */
+uint8_t CALIB_DcsLevel(void);                       /* 0xF212, for DCS */
+uint8_t CALIB_Byte(uint16_t offset);                /* raw byte at CALIB_ADDR + offset, 0xFF past the end */
 
 #endif

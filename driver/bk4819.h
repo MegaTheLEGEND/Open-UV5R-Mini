@@ -28,6 +28,8 @@ typedef enum {
 	BK4819_AF_AM   = 6,  /* stock value on this radio (0x6640) */
 } BK4819_AF_t;
 
+typedef enum { BK4819_TONE_OFF = 0, BK4819_TONE_CTCSS, BK4819_TONE_DCS_N, BK4819_TONE_DCS_I } BK4819_Tone_t;
+
 /* REG_02 / REG_3F interrupt bits */
 #define BK4819_INT_SQUELCH_LOST  (1u << 2)
 #define BK4819_INT_SQUELCH_FOUND (1u << 3)
@@ -58,8 +60,10 @@ void     BK4819_SetInterrupts(uint16_t mask);
 uint16_t BK4819_TakeInterrupts(void);
 void     BK4819_RxOn(void);
 void     BK4819_Sleep(void);
-void     BK4819_SetTxCtcss(uint16_t ctcss_10hz);
-void     BK4819_SetRxCtcss(uint16_t ctcss_10hz);
+void     BK4819_SetCtcss(uint16_t tenths, uint8_t level);
+void     BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level);
+void     BK4819_CssOff(void);
+bool     BK4819_CssHeard(BK4819_Tone_t kind);
 void     BK4819_SetPa(uint8_t bias, uint8_t gain);
 void     BK4819_TxMute(bool on);
 void     BK4819_TxOn(void);

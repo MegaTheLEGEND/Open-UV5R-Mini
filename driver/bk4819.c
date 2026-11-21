@@ -230,22 +230,44 @@ void BK4819_Sleep(void)
 	BK4819_WriteRegister(BK4819_REG_37, 0x1D00);
 }
 
-/* Sub-audio on transmit. ctcss_10hz e.g. 885 = 88.5 Hz; 0 = off. REG_51 and the REG_07 control word as in the
- * reference (word = Hz * 20.64888); the stock writes REG_07/REG_51 in sub_01E4D880 / sub_01E4D97A. */
-void BK4819_SetTxCtcss(uint16_t ctcss_10hz)
+/* Sub-audio, CTCSS. The same setting serves transmit (the tone is sent) and receive (REG_0C bit 10 says the tone
+ * is heard), as stock sub_01E4D97A: REG_51 = (level | 0x9000) & 0x907F, REG_07 = tenths * 206489 / 100000 (CTC1),
+ * REG_07 = 0x21CD (CTC2, the squelch-tail tone), REG_52 = 0x0292. level is the radio's own (calibration 0xF211). */
+void BK4819_SetCtcss(uint16_t tenths, uint8_t level)
 {
-	if (!ctcss_10hz) {
-		BK4819_WriteRegister(BK4819_REG_51, 0x0000);
-		return;
-	}
-	BK4819_WriteRegister(BK4819_REG_51, 0x904A);
-	BK4819_WriteRegister(BK4819_REG_07, (uint16_t)(((uint32_t)ctcss_10hz * 2065u) / 1000u));
+	BK4819_WriteRegister(BK4819_REG_51, (uint16_t)((level | 0x9000u) & 0x907Fu));
+	BK4819_WriteRegister(BK4819_REG_07, (uint16_t)(((uint32_t)tenths * 206489u) / 100000u));
+	BK4819_WriteRegister(BK4819_REG_07, 0x21CD);
+	BK4819_WriteRegister(BK4819_REG_52, 0x0292);
 }
 
-/* RX sub-audio detection: the same tone generator setting, read back through the CTCSS scan registers. */
-void BK4819_SetRxCtcss(uint16_t ctcss_10hz)
+/* Sub-audio, DCS, as stock sub_01E4D880: REG_51 = 0x8000 (normal) or 0xA000 (inverted) | level (calibration
+ * 0xF212, bit 7 cleared), REG_07 = 2775, then the 23-bit word in two halves through REG_08. Receive: REG_0C bit 14
+ * (normal) or 15 (inverted) says the code is heard. */
+void BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level)
 {
-	BK4819_SetTxCtcss(ctcss_10hz);
+	BK4819_WriteRegister(BK4819_REG_51, (uint16_t)((inverted ? 0xA000u : 0x8000u) | (level & 0x7Fu)));
+	BK4819_WriteRegister(BK4819_REG_07, 2775);
+	BK4819_WriteRegister(BK4819_REG_08, (uint16_t)(word & 0xFFFu));
+	BK4819_WriteRegister(BK4819_REG_08, (uint16_t)(0x8000u | (word >> 12 & 0xFFFu)));
+}
+
+void BK4819_CssOff(void)
+{
+	BK4819_WriteRegister(BK4819_REG_51, 0x0000);
+}
+
+/* Which sub-audio is heard now, from REG_0C as stock sub_01E4DE5E reads it. */
+bool BK4819_CssHeard(BK4819_Tone_t kind)
+{
+	uint16_t r = BK4819_ReadRegister(BK4819_REG_0C);
+
+	switch (kind) {
+	case BK4819_TONE_CTCSS:  return (r & 0x0400u) != 0;
+	case BK4819_TONE_DCS_N:  return (r & 0x4000u) != 0;
+	case BK4819_TONE_DCS_I:  return (r & 0x8000u) != 0;
+	default:                return true;
+	}
 }
 
 /* PA: REG_36 = bias << 8 | gain byte (stock sub_01E4DA78: the gain byte comes from a table by power level, 0xFF or
