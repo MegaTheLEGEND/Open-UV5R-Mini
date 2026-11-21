@@ -67,7 +67,7 @@ Written to the internal flash over the ROM download mode (`tools/mkflashimg.py`)
 - **Speed** after the bootloader: about 0.75 turns of a volatile delay loop per µs.
 - **The watchdog runs after the bootloader.** Without clears our app restarted at the same point each time;
   with `p33_or(0x80, 0x40)` through our own P33 access it **runs stably**.
-- The automatic power-off (PB11 low) is off in the key-test app until PB11's meaning is confirmed.
+- PB11 reads **high** when the power switch is turned off (seen on a radio, 2026-11-21: our first screen showed it the wrong way round; stock `sub_01E4C978` tests the same bit). The key-test app now powers off after 0.2 s high.
 - The cable update mode still calls the stock RAM-code flash and hand-over routines, so it **does not work yet**.
 
 ## Startup
@@ -191,7 +191,7 @@ other function keys; pressing each on a radio running a key-test build will sett
 | --- | --- | --- |
 | **PA4** | PTT (main / VFO A) | `sub_01E4D5BC` (PTT handler) starts TX when PA4 or PA12 is low; PA4 + direct key 0 at power-on enters a special mode (`sub_01E492C0`) |
 | **PA12** | second PTT (VFO B) | same handler; flag RAM 0x198C0+2849 = 1 when PA12 is the one pressed, then it switches the active VFO (0x198C0+5878) to match before keying |
-| **PB11** | power-off sense | `sub_01E4C978`: low for 25 ms → save state, drop PB10, wait 250 ms, halt |
+| **PB11** | power-off sense | `sub_01E4C978`: high for 25 ms (bit 11 of the IN register set) → save state, drop PB10, wait 250 ms, halt |
 | **PB10** | power hold latch (high = stay on) | driven high in board init, low on power-off |
 | PB2 | pulled-up input, no reader found yet | |
 

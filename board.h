@@ -31,7 +31,7 @@
 #define PIN_PTT          IO_PORTA(4)    /* main PTT (to confirm on hardware) */
 #define PIN_PTT2         IO_PORTA(12)   /* second PTT / VFO B (to confirm) */
 #define PIN_POWER_HOLD   IO_PORTB(10)   /* high keeps the radio on */
-#define PIN_POWER_SENSE  IO_PORTB(11)   /* low = power switch turned off */
+#define PIN_POWER_SENSE  IO_PORTB(11)   /* high = power switch turned off (stock sub_01E4C978) */
 
 void BOARD_Init(void);
 void BOARD_PowerOff(void);

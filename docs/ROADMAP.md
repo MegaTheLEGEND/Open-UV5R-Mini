@@ -40,7 +40,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | runs on a radio (2026-11-21): `start.S` keeps the boot record and puts the stacks at 0xD910 as stock; the CPU runs at about 0.75 delay-loop turns per µs (slow: clocks not set up yet) |
 | 2.2 | Watchdog | **partial** | runs after the bootloader; cleared with `p33_or(0x80, 0x40)` through our own P33 access, which keeps our app running on a radio; timeout to find |
-| 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known, `BOARD_PowerOff` written, untested |
+| 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known; PB11 high = off (seen on a radio); power-off in the key-test app, not yet tried on a radio |
 | 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** | stock uses `APP_TimeSlice10ms` 0x01E4F1AA |
 | 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **unknown** | channel and divider to find |
 | 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7 known; LED pins unknown |

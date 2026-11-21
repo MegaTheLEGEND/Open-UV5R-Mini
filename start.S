@@ -29,7 +29,19 @@ _start:
 	d[r1+32] = r3_r2
 	sp = 0xD910
 	ssp = 0xD910
-	r1 = __data_load
+	r1 = __ramfunc_load            /* RAM code: copy to RAM (run address - 0x02000000) */
+	r2 = __ramfunc_start
+	r3 = __ramfunc_end
+	r0 = 0x02000000
+	r2 = r2 - r0
+	r3 = r3 - r0
+6:	if (r2 >= r3) goto 7f
+	r0 = [r1+0]
+	[r2+0] = r0
+	r1 = r1 + 4
+	r2 = r2 + 4
+	goto 6b
+7:	r1 = __data_load
 	r2 = __data_start
 	r3 = __data_end
 1:	if (r2 >= r3) goto 2f

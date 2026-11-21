@@ -18,7 +18,7 @@ BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
 SRC := main.c board.c app/app.c app/update.c app/update_radio.c driver/uart.c bt/bt_none.c \
-       driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c \
+       driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c driver/flash.c \
        ui/font.c ui/helper.c
 ASM := start.S
 
