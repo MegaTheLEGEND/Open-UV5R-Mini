@@ -39,28 +39,28 @@ A radio running an app without these cannot be flashed again without opening the
 
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
-| 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | runs on a radio (2026-11-21): `start.S` keeps the boot record and puts the stacks at 0xD910 as stock; the CPU runs at about 0.75 delay-loop turns per µs (slow: clocks not set up yet) |
-| 2.2 | Watchdog | **partial** | runs after the bootloader; cleared with `p33_or(0x80, 0x40)` through our own P33 access, which keeps our app running on a radio; timeout to find |
+| 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | runs on a radio (2026-11-21): `start.S` keeps the boot record and puts the stacks at 0xD910 as stock; the CPU runs slow (clocks not set up yet). Found in stock: 24 MHz crystal, `clk_set("sys", hz)` at `sub_01E69AAC` (max 240 MHz), 24 MHz idle (RE-NOTES, peripheral sweep) |
+| 2.2 | Watchdog | **partial** | runs after the bootloader; cleared with `p33_or(0x80, 0x40)` through our own P33 access, which keeps our app running on a radio. Stock writes `WDT_CON` (P33 `0x80`) = 0, then 12 early in `main` (4 s if JieLi's usual table holds) |
 | 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known; PB11 high = off (seen on a radio); power-off in the key-test app, not yet tried on a radio |
-| 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** | stock uses `APP_TimeSlice10ms` 0x01E4F1AA |
-| 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **unknown** | channel and divider to find |
-| 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7 known; LED pins unknown |
-| 2.7 | Audio: speaker amplifier enable, routing BK4819 audio to the speaker, beeps and tones | **unknown** | amplifier pin still open (RE-NOTES) |
-| 2.8 | External SPI flash driver (CS PA3 on SPI1) | **todo** | protocol known (`03` read); contents unknown: needs a dump from a radio |
+| 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** (located) | stock tick: timer at `0x1E0500`, interrupt 5, handler `0x01E568C4`; `APP_TimeSlice10ms` 0x01E4F1AA |
+| 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **partial** | two analog inputs set up by stock: PA1 (ADC channel 0) and PB3 (channel 6); which is the battery, the ADC registers and the divider are still to find |
+| 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7; likely green RX LED = PB9, red TX LED = PR0; flashlight = PB6 (RE-NOTES). Not tried on a radio |
+| 2.7 | Audio: speaker amplifier enable, routing BK4819 audio to the speaker, beeps and tones | **partial** | amp enable PB8 (high = on), shared by six audio sources in stock; RX audio needs only `BK4819_SetAF` + PB8; beeps and voice prompts use the MCU's DAC (audio block `0x1E2F00`, analog `0x1E19C0`). Not tried on a radio |
+| 2.8 | External SPI flash driver (CS PA3 on SPI1) | **todo** | protocol known (`03` read); contents mapped from a dump (RE-NOTES): channels, settings, calibration at `0xF000`, fonts, pictures |
 
 ## 3. Radio (BK4819)
 
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
 | 3.1 | Register access, RX/TX switch, set frequency | **done** (basic) | `driver/bk4819.c` |
-| 3.2 | Band and filter switching (VHF/UHF LNA and PA select pins), TX power levels | **unknown** | GPIOs and register values to find |
-| 3.3 | Per-radio calibration (record sector at 0x93000): TX power, squelch, battery | **unknown** | read-only; must never be erased |
+| 3.2 | Band and filter switching (VHF/UHF LNA and PA select pins), TX power levels | **partial** | found (RE-NOTES): BK4819 GPIO3 = VHF TX path, GPIO4 = UHF TX path, PC7 + GPIO5 = RX front end, five bands by frequency; TX power levels still to find (likely calibration rows) |
+| 3.3 | Per-radio calibration: TX power, squelch, battery | **partial** | it's in the **external** flash at `0xF000`–`0xF27F`, plain, read by `sub_01E48E22` (not the internal `0x93000` sector); band edges at `0xF230`; meaning of each row to work out. Read-only; never erased |
 | 3.4 | Squelch (RSSI, noise, glitch), S-meter | **todo** | |
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | lookups found in stock (`CTCSS_FindNearest`, `DCS_GolayEncode`) |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
 | 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | PTT handler located (`PTT_Handler`) |
 | 3.8 | Dual watch, scanning (channel, frequency, priority) | **todo** | |
-| 3.9 | FM broadcast radio | **unknown** | which chip receives it to find |
+| 3.9 | FM broadcast radio | **partial** | the AC695N's own FM receiver (`fm_inside`), 87.5–108 MHz, played through the DAC; its registers to find |
 
 ## 4. User interface
 
@@ -92,7 +92,7 @@ firmware: they are never in the repo.
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
 | 6.3 | External flash dump from a real radio | **done** | read whole (2 MB, ID `C46015`) over USB with [tools/jl_extflash](../tools/jl_extflash/README.md); layout in RE-NOTES (channels, settings, fonts, pictures; top 1 MB blank). Next: decode for 4.2 and 5.2 |
-| 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | a radio and a multimeter, or more RE |
+| 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | candidates from the stock code: amp PB8, LEDs PB9/PR0, lamp PB6, ADC PA1/PB3; a key-test build or a multimeter will settle them |
 | 6.5 | Lifter: turn the stock app into C on your own PC, checked against the stock code | **done** | `python tools/lift/lift.py` with your own stock `.ufw` unpacked; output goes to your `build/lift/` ([LIFTER.md](LIFTER.md)) |
 | 6.6 | Readable-C rewrite of the lifted functions with a local model (Ollama), each one tested | **done** (tool) | `python tools/lift/local_rewrite.py`; runs for hours on your PC, output in your `build/readable/` |
 | 6.7 | NRFB radios (firmware V0.04): the same firmware rebuilt, app 596 bytes bigger, settings area 4 KB further on | **partial** | `tools/setup.py` unpacks it; `tools/disasm.py` and `tools/lift/lift.py --variant nrfb` work (1,974 code functions, 100% lifted); tests, emulator, builds and flasher patches are still NRF-only |

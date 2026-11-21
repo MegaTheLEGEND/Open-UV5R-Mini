@@ -247,6 +247,91 @@ Generated with `python tools/re/gpio_init.py build/app.dis sub_01E485EC`:
 
 Known roles so far: PA4 PTT, PA12 second PTT, PA6–PA9 keypad rows, PC2–PC5 keypad columns,
 PA10/PC0/PC1 BK4819 SCK/SDATA/SCN, PB4 LCD reset, PB5 LCD CS, PB10 power hold, PB11 power-off sense.
+The rest are in the next section.
+
+## Peripheral sweep of the stock code (2026-11-21)
+
+Every GPIO and peripheral the stock app touches, from a static scan of `build/app.dis`. Made with three small
+scripts in `tools/re/`: `periph_scan.py` (pins and SFR bases per function), `pin_uses.py` (what each pin set-up
+does to the port registers) and `callers.py` (every call with its constant arguments). None of this has been tried
+on a radio yet: each row says how sure it is.
+
+### Pin map, the rest of the pins
+
+| Pin | Role | How sure | Evidence |
+| --- | --- | --- | --- |
+| **PB8** | speaker amplifier enable (high = on) | strong | `sub_01E400D6(n)` keeps six "wants audio" flags at RAM `0x19137`–`0x1913C` (odd `n` sets flag `(n-1)/2`, even `n` clears it, 0 clears all) and drives PB8 high while any is set. The tone player (`sub_01E4A67A`, `res/tone/B4`) sets PB8 directly; power-off (`sub_01E4C89C`) drops it |
+| **PB6** | flashlight (LAMP) | strong | `sub_01E41906(0/1/2)` = off/on/toggle, state at `0x19136`. The key task toggles it when the side-key setting (`0x198C0+2831`) is 2, the third entry of the list `FM RADIO, VOX, LAMP, SOS` |
+| **PB9** | green RX LED | likely | `sub_01E40CE0(0/1/2)` = off/on/toggle, state at `0x19135`. Switched on with `BK4819_SetAF(on)` and amp flag 2 when the squelch opens (`sub_01E4E408`), off on every return to RX and on TX |
+| **PR0** | red TX LED | likely | `sub_01E418E0(0/1/2)` sets PR0 through P33 (`sub_01E5714E(0, x)`), state at `0x19134`. Switched on right after the TX checks pass (`0x01E5061A`) |
+| **PC7** | receive front-end select (with BK4819 GPIO5) | strong for the switching, the names are guesses | `sub_01E41382(band, mode)`, below |
+| **PA1** | analog input, ADC channel 0 | strong (that it's analog) | `sub_01E4698A` (board init) clears DIE, pulls and output on PA1 and adds channel 0 to the ADC scan list (`sub_01E46964`, list at RAM `0x1A1D4`, 10 entries) |
+| **PB3** | analog input, ADC channel 6 | strong (that it's analog) | same function, channel 6. One of PA1/PB3 is the battery; which is still open |
+| **PA3** | external flash chip select | known | the external-flash routines; see "External SPI flash" |
+| PB2 | pulled-up input | unknown | set in board init; no reader found (maybe the earphone or charge detect) |
+| PA0, PA2, PA5, PA11, PA15, PD5 | low-power settings only | – | touched only by the sleep and power-off pin set-ups (`sub_01E48246`, `sub_01E48318`, `sub_01E483DC`, `sub_01E69ECC`, `sub_01E4751E`) |
+
+The three LED/lamp helpers have the same shape: 0 = off, 1 = on, anything else = toggle. In SOS/alarm mode
+(`sub_01E52FAE` at `0x01E53B48`) the stock code flips PB9, PB6 and PR0 once a second, PB9 and PB6 together and PR0
+the other way.
+
+### Band switching: BK4819 GPIOs plus PC7
+
+`sub_01E4135C(mask, on)` sets BK4819 GPIO pins through `REG_33` (read it, clear `mask << 8` to make the pin an
+output, set or clear `mask` in the low byte). The band comes from the frequency (`sub_01E3F682`/`sub_01E3F6AA`,
+frequency in 10 Hz units) into RAM `0x198C0+5918`:
+
+| Band | Range | RX: PC7 / GPIO5 (0x20) | TX: GPIO3 (0x08) / GPIO4 (0x10) |
+| --- | --- | --- | --- |
+| 0 | below 200 MHz | high / 0 | 1 / 0 |
+| 4 | 108.000–135.999 MHz (airband) | high / 0 | 0 / 0 (no TX path) |
+| 2 | 200–300 MHz | high / 0 | 0 / 0 |
+| 3 | 300–400 MHz | low / 1 | 0 / 1 |
+| 1 | 400 MHz and up | low / 1 | 0 / 1 |
+
+`mode` is 0 = idle (GPIO3 = GPIO4 = 0, PC7 high, GPIO5 = 1), 1 = RX, 2 = TX. So GPIO3 is the VHF transmit path and
+GPIO4 the UHF one; PC7 and GPIO5 pick the receive front end. Bands 2 and 4 get no transmit path at all.
+
+### Calibration: in the external flash, not at `0x93000`
+
+The calibration is a plain (unencrypted) table at **external flash `0xF000`–`0xF27F`**, read row by row at
+power-on by `sub_01E48E22` (16-byte rows into RAM `0x198C0+27384` and on; read with `sub_01E3EAEE(addr, buf, len)`).
+Its shape matches per-band tables: rows of 13 values with three zero bytes, e.g. `d2 d2 d2 … cd cd d2 …`,
+`96 96 …`, and two 10-entry rows `6a 6b … 72` / `69 6a … 71` at `0xF0C0`/`0xF0D0`. At `0xF230` and `0xF270` are BCD band
+edges, `0136 0174 0400 0520 0220 0260` (136–174, 400–520, 220–260 MHz; read by `sub_01E4CCDA`). Which row is
+which (TX power per level, squelch, battery) is still to work out. It is unique to each radio: our code must
+never write the external flash below `0x10000` without a backup.
+
+Internal flash `0x93000` (the sector before `VM`) is 4 KB of high-entropy data, not this table, and the app
+never reads it directly. It may be JieLi's own factory data. `VM` itself holds only a few short JieLi records
+(`0x94000`–`0x94174` on this radio). Keep both untouched (AGENTS.md rule 6).
+
+### Audio: the MCU's DAC, FM radio inside the MCU
+
+- **Audio DAC: used.** The voice prompts and tones (`res/tone/*.wtg`, `*.sin` in the internal flash at
+  `0x7C000`) are decoded by JieLi's audio code and played through the AC695N's own DAC. Audio set-up:
+  `sub_01E48CB4` (reads DAC trims from `VM` items 88 and 92). Registers: digital volume at `0x1E2F20`/`0x1E2F24`
+  (four 16-bit channels, `sub_01E37C72`), analog gain 5 bits per channel at `0x1E19C4` (`sub_01E37C08`), DAC
+  enable bit 31 of `0x1E19C8` (`sub_01E37CDA`). So the audio block is at `0x1E2F00` and its analog side at
+  `0x1E19C0`.
+- **Receive audio** goes from the BK4819 to the speaker without the MCU: stock only unmutes the BK4819
+  (`BK4819_SetAF`), asks for the amp (PB8) and lights PB9. The LM2904 dual op-amp is probably where the BK4819
+  audio and the MCU's DAC are mixed before the amp (not traced on the board).
+- **MCU audio input (mic/line-in ADC): not seen in use.** The SDK's `mic_demo`, `audio_adc_demo` and
+  `adc_linein` code is linked in, but nothing in the radio app was found calling it. VOX, tones and DTMF are all
+  done by the BK4819. Whether a BK4819 audio pin reaches an MCU ADC pin is a board question (multimeter).
+- **FM broadcast radio: the AC695N's built-in FM receiver** (`fm_inside`, `sub_01E4B3D0`/`sub_01E4B49A`/`sub_01E4B688`),
+  87.5–108.0 MHz in 100 kHz steps (frequency at `0x198C0+104`, set by `sub_01E3DE8E`), heard through the DAC.
+
+### Clocks, timer tick, watchdog
+
+| What | Found |
+| --- | --- |
+| Crystal | 24 MHz (`sub_01E69C62` starts the PLL from 24,000,000) |
+| System clock | `clk_set("sys", hz)` = `sub_01E69AAC`, capped at 240 MHz. Stock picks the speed from JieLi's clock-manager table at `0x01E670B0` (24 MHz idle, more for decoders and FM); `sub_01E43174` sets 24 MHz |
+| UART clock | 48 MHz (`sub_01E4317C`, matches the 9600 baud seen on the cable) |
+| Tick | timer at `0x1E0500`, interrupt 5, handler `0x01E568C4` (clears pending with CON `|= 0x4000`, counts in RAM `0x199E4`); set up by `sub_01E46946` |
+| Watchdog | P33 `0x80` (`WDT_CON`). Early in `main` stock clears its enable bit (`p33_and(0x80, 0xEF)`), writes 0 and then 12 (`sub_01E46924`); clear = `p33_or(0x80, 0x40)`. 12 is 4 s in JieLi's usual table (not checked) |
 
 ## NRF (V0.27) and NRFB (V0.04)
 
@@ -363,7 +448,7 @@ ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com
   | Where | What |
   | --- | --- |
   | `0x7C000`–`0x93000` | Sound resources: a directory of about 186 JieLi `.wtg` (compressed voice) and `.sin` (tone) files, named like `C32.wtg` and `E0.wtg` (probably the Chinese and English voice prompts). Encrypted with the app's key stream (chip key, block key counted from `0x4000`). Written at the factory |
-  | `0x93000` | One sector of structured data: the calibration record (roadmap 3.3). Unique to each radio |
+  | `0x93000` | One sector of high-entropy data, unique to each radio. Not the radio calibration after all: that is in the external flash at `0xF000` (peripheral sweep) |
   | `0x94000` | Start of `VM` (settings); the rest of `VM` was blank |
   | `0xFE000` | `BTIF` (Bluetooth info) |
 
@@ -388,6 +473,7 @@ Two reads identical. The contents are **not encrypted**.
 | --- | --- |
 | `0x000000`–`0x009000` | channel memory: 32-byte records, the frequency first in BCD (`50622546` = 462.5625 MHz), names such as `FRS 1` and `GMRS 1` |
 | `0x009000`–`0x010000` | settings |
+| `0x00F000`–`0x00F280` | per-radio calibration (inside the settings range; see the peripheral sweep) |
 | `0x010000`–`0x08C000` | font and icon bitmaps |
 | `0x0C4000`–`0x0D0000` | RGB565 picture data |
 | `0x100000`–`0x200000` | blank |
