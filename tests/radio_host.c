@@ -7,6 +7,7 @@
 #include "app/battery.h"
 #include "app/calib.h"
 #include "app/channels.h"
+#include "app/scan.h"
 #include "app/tones.h"
 #include "board.h"
 #include "driver/bk4819.h"
@@ -185,6 +186,37 @@ int main(void)
 		rssi = 0x6B - 4;
 		ticks(20);
 		CHECK(RADIO_State() == RADIO_RX, "closes below the calibrated close level");
+	}
+
+	/* scan timing: hop every dwell, the three resume modes */
+	{
+		int hops = 0, i;
+		SCAN_Start(+1, SCAN_RESUME_CARRIER, 10);
+		for (i = 0; i < 60; i++)
+			hops += SCAN_Tick(false) == SCAN_HOP;
+		CHECK(hops == 10, "hops in 600 ms: %d", hops);
+		CHECK(SCAN_Tick(true) == SCAN_NONE && SCAN_Holding(), "stops on a signal");
+		for (i = 0, hops = 0; i < 1000; i++)
+			hops += SCAN_Tick(true) == SCAN_HOP;
+		CHECK(!hops && SCAN_Holding(), "CARRIER: stays while the signal is there");
+		for (i = 0; i < 199; i++)
+			hops += SCAN_Tick(false) == SCAN_HOP;
+		CHECK(!hops, "CARRIER: still holding at 1.99 s");
+		CHECK(SCAN_Tick(false) == SCAN_HOP && !SCAN_Holding(), "CARRIER: moves on 2 s after it goes");
+
+		SCAN_Start(-1, SCAN_RESUME_TIME, 10);
+		SCAN_Tick(true);
+		for (i = 0, hops = 0; i < 499; i++)
+			hops += SCAN_Tick(true) == SCAN_HOP;
+		CHECK(!hops && SCAN_Dir() == -1, "TIME: holding until 5 s");
+		CHECK(SCAN_Tick(true) == SCAN_HOP, "TIME: moves on at 5 s with the signal still there");
+
+		SCAN_Start(+1, SCAN_RESUME_SEARCH, 10);
+		SCAN_Tick(false);
+		CHECK(SCAN_Tick(true) == SCAN_IDLE && !SCAN_Active(), "SEARCH: ends on the first signal");
+		SCAN_Start(+1, SCAN_RESUME_TIME, 10);
+		SCAN_Stop();
+		CHECK(SCAN_Tick(false) == SCAN_IDLE, "stopped");
 	}
 
 	/* battery: the stock scale and the calibrated thresholds (made up here) */

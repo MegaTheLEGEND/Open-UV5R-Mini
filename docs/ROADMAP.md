@@ -59,7 +59,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | encode and decode done the stock way (`app/tones.c`, `BK4819_SetCtcss` / `SetDcs` / `CssHeard`): the stock tables (51 CTCSS, 105 DCS), the stock tone encoding, the Golay word checked against the stock routine for all 105 codes, the sub-audio level from the radio's calibration, tone squelch on receive; PC-tested only. Tone and code scan todo |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
 | 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | `app/radio.c`: PTT A starts TX only inside 144–148 / 420–450 MHz, low power, never AM; **compiled off** (`RADIO_ENABLE_TX 0`) until receive works on a radio and the PA calibration is understood; PC-tested by `tests/radio_host.py` |
-| 3.8 | Dual watch, scanning (channel, frequency, priority) | **todo** | |
+| 3.8 | Dual watch, scanning (channel, frequency, priority) | **partial** | scanning (`app/scan.c`): VFO over the stock scan range (settings `0x2C`–`0x2F`), channels with the scan flag, the stock resume modes TIME / CARRIER / SEARCH (setting `0x0A`); PC-tested only. Dual watch and priority todo |
 | 3.9 | FM broadcast radio | **partial** | the AC695N's own FM receiver (`fm_inside`), 87.5–108 MHz, played through the DAC; its registers to find |
 
 ## 4. User interface
@@ -70,7 +70,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
 | 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix done (`driver/keyboard.c`); layers todo |
 | 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | one VFO: frequency, RSSI bar, squelch, volume, bandwidth, step, CTCSS (`app/app.c`); not tried on a radio |
-| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
+| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): memory, scan, scan mode, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
 | 4.6 | VFO entry, channel store/delete, power-on screen and messages | **partial** | 6-digit frequency entry; no channels yet (need the external-flash driver, 2.8) |
 
 ## 5. Data and compatibility

@@ -13,6 +13,7 @@
 #include "app/keys.h"
 #include "app/keytest.h"
 #include "app/radio.h"
+#include "app/scan.h"
 #include "app/settings.h"
 #include "app/tones.h"
 #include "app/update.h"
@@ -45,7 +46,7 @@ static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
 static int      s_menu_top = -1;
 static uint16_t s_off_ticks, s_batt_ticks;
-static int      s_shown_batt = -1;
+static int      s_shown_batt = -1, s_shown_scan = -1;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
@@ -103,7 +104,7 @@ static void draw_main_static(void)
 {
 	ST7735S_FillRect(0, 0, 128, 128, BLACK);
 	UI_PrintString("MENU *BW #LAMP", 0, 120, GREY, BLACK, 1);
-	s_shown_batt = -1;
+	s_shown_batt = s_shown_scan = -1;
 }
 
 static void draw_status(void)
@@ -136,7 +137,7 @@ static void draw_status(void)
 		UI_PrintString("STEP", 0, 55, GREY, BLACK, 1);
 		UI_PrintString(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, BLACK, 1);
 	}
-	ST7735S_FillRect(0, 12, 128, 8, BLACK);
+	ST7735S_FillRect(0, 12, 100, 8, BLACK);
 	if (gVfo.rx_tone) {
 		UI_PrintString("R", 0, 12, GREY, BLACK, 1);
 		UI_PrintString(TONE_Format(b, gVfo.rx_tone), 8, 12, WHITE, BLACK, 1);
@@ -246,21 +247,36 @@ static void draw_battery(void)
 	UI_PrintString(BATTERY_Raw() ? b : "    ", 104, 120, lvl == 0 ? RED : GREEN, BLACK, 1);
 }
 
+static void draw_scan(void)
+{
+	int sc = SCAN_Active() + SCAN_Holding();
+
+	if (sc == s_shown_scan)
+		return;
+	s_shown_scan = sc;
+	if (sc)
+		UI_PrintString("SCAN", 100, 12, sc == 2 ? GREEN : YELLOW, BLACK, 1);
+	else
+		ST7735S_FillRect(100, 12, 28, 8, BLACK);
+}
+
 static void draw_main(void)
 {
 	if (s_redraw)
 		draw_main_static();
 	draw_battery();
+	draw_scan();
 	draw_status();
 	draw_freq();
 	draw_signal();
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_MEM, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER, M_KEYTEST, M_COUNT };
+enum { M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER, M_KEYTEST,
+       M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
-	"MEMORY", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "RX TONE", "TX TONE", "TX POWER",
-	"KEY TEST",
+	"MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "RX TONE", "TX TONE",
+	"TX POWER", "KEY TEST",
 };
 #define MENU_ROWS 8                      /* rows on screen; the list scrolls */
 
@@ -270,6 +286,11 @@ static const char *menu_value(int i, char *b)
 
 	switch (i) {
 	case M_MEM:     return s_mr ? "CHANNELS" : "VFO";
+	case M_SCAN:    return "START";
+	case M_SCANMODE: {
+		static const char *const SM[] = { "TIME", "CARRIER", "SEARCH" };
+		return SM[gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1];
+	}
 	case M_SQL:     return UI_FormatDec(b, gVfo.squelch, 1);
 	case M_VOL:     return UI_FormatDec(b, gVfo.volume, 2);
 	case M_STEP:    return fmt_step(b, RADIO_Steps[gVfo.step]);
@@ -295,6 +316,10 @@ static void menu_change(int i, int dir)
 			gVfo.tx_freq = 0;
 			gVfo.rx_only = false;
 		}
+		break;
+	case M_SCANMODE:
+		gStock.raw[SET_SCAN_MODE] = (uint8_t)(((gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1)
+		                                       + 3 + dir) % 3);
 		break;
 	case M_SQL:   gVfo.squelch = (uint8_t)((gVfo.squelch + 10 + dir) % 10); break;
 	case M_VOL:   gVfo.volume = (uint8_t)((gVfo.volume + 16 + dir) % 16); break;
@@ -407,9 +432,67 @@ static void entry_finish(void)
 	s_redraw = true;
 }
 
+/* ------------------------------------------------------------------------------------------- scanning */
+/* The stock VFO scan range, whole MHz (setting bytes 0x2C-0x2F); stock defaults 400-470. */
+static void scan_range(uint32_t *lo, uint32_t *hi)
+{
+	uint32_t l = (uint32_t)(gStock.raw[0x2C] | gStock.raw[0x2D] << 8), h = (uint32_t)(gStock.raw[0x2E] | gStock.raw[0x2F] << 8);
+
+	if (!l || h <= l || h > FREQ_MAX / 100000u) {
+		l = 400;
+		h = 470;
+	}
+	*lo = l * 100000u;
+	*hi = h * 100000u;
+}
+
+static void scan_hop(void)
+{
+	if (s_mr) {
+		int n = s_ch;
+		for (unsigned i = 0; i < CHANNEL_COUNT; i++) {
+			Channel_t ch;
+			n = CHANNEL_Next(n, SCAN_Dir());
+			if (n < 0)
+				break;
+			if (CHANNEL_Load((uint16_t)n, &ch) && ch.scan) {
+				channel_show(n);
+				return;
+			}
+		}
+		SCAN_Stop();                     /* no channel to scan */
+		RADIO_Beep(400, 150);
+		return;
+	}
+	uint32_t lo, hi, st = RADIO_Steps[gVfo.step], f;
+	scan_range(&lo, &hi);
+	f = gVfo.freq - gVfo.freq % st;
+	f = SCAN_Dir() > 0 ? f + st : f - st;
+	if (f < lo || f > hi || gVfo.freq < lo || gVfo.freq > hi)
+		f = SCAN_Dir() > 0 ? lo : hi;
+	gVfo.freq = f;
+	RADIO_Apply();
+}
+
+static void scan_start(int dir)
+{
+	uint8_t m = gStock.raw[SET_SCAN_MODE];
+
+	SCAN_Start(dir, (ScanResume_t)(m <= 2 ? m : 1), APP_TICK_MS);
+	s_entry_len = 0;
+}
+
 static void key_main(KEY_Code_t k)
 {
 	int d = KEY_Digit(k);
+
+	if (SCAN_Active()) {                 /* any key ends the scan; UP/DOWN turn it round */
+		if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
+			scan_start(k == KEY_ACT_UP ? +1 : -1);
+		else
+			SCAN_Stop();
+		return;
+	}
 
 	if (d >= 0) {
 		if (s_entry_len < 6)
@@ -452,6 +535,11 @@ static void key_menu(KEY_Code_t k)
 	} else if (k == KEY_ACT_MENU) {
 		if (s_menu_sel == M_KEYTEST)
 			KEYTEST_Run();
+		if (s_menu_sel == M_SCAN) {
+			scan_start(+1);
+			go(SCREEN_MAIN);
+			return;
+		}
 		s_menu_edit = !s_menu_edit;
 	} else if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
 		int dir = k == KEY_ACT_UP ? -1 : 1;
@@ -569,6 +657,10 @@ void APP_Tick(void)
 	s_ptt_down = ptt;
 
 	RADIO_Tick();
+	if (ptt)
+		SCAN_Stop();
+	else if (SCAN_Tick(RADIO_State() == RADIO_RX_OPEN) == SCAN_HOP)
+		scan_hop();
 
 	/* battery about once a second, never while transmitting (the voltage sags) */
 	if (++s_batt_ticks >= 1000 / APP_TICK_MS && RADIO_State() != RADIO_TX) {
