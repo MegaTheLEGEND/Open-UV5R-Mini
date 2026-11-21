@@ -354,6 +354,22 @@ ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com
 Writing through this route is not tried. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
 holds Baofeng's code and the radio's own calibration.
 
+### External SPI flash, read (2026-11-21)
+
+Read in the same ROM download mode with [tools/jl_extflash](../tools/jl_extflash/README.md): a 350-byte RAM
+program of ours bit-bangs the flash (CS PA3, SCK PB0, MOSI PB1, MISO PB2). JEDEC ID **`C46015`**: Giantec, 2 MB.
+Two reads identical. The contents are **not encrypted**.
+
+| Flash | What |
+| --- | --- |
+| `0x000000`–`0x009000` | channel memory: 32-byte records, the frequency first in BCD (`50622546` = 462.5625 MHz), names such as `FRS 1` and `GMRS 1` |
+| `0x009000`–`0x010000` | settings |
+| `0x010000`–`0x08C000` | font and icon bitmaps |
+| `0x0C4000`–`0x0D0000` | RGB565 picture data |
+| `0x100000`–`0x200000` | blank |
+
+The top megabyte is blank, so the 1 MB dump in briand's issue #2 likely has everything after all.
+
 Every pin the firmware uses exists on the LQFP48 package: keypad PA6–PA9 and PC2–PC5, BK4819 PA10, PC0, PC1,
 LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12.
 
@@ -365,6 +381,6 @@ LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12
   runs it as pi32v2. The MCU is a JieLi AC695N.
 - **External flash dump:** [issue #2](https://github.com/briand/uv5r_mini_hardware/issues/2) has a dump of the SPI
   flash, read with the programmer set to A25L80P (8 Mbit). It holds channel memory. The chip is 16 Mbit, so the
-  dump is probably only its first half: read it again set to GT25Q16A to get all 2 MB.
+  dump is only its first half, but our full read shows the top half is blank, so it likely holds everything.
 - **Update mode:** [issue #4](https://github.com/briand/uv5r_mini_hardware/issues/4): A and `=` at power-on are
   enough. That's PTT-A + `=`, as the firmware checks.
