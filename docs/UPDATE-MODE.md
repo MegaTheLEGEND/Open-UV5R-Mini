@@ -123,6 +123,20 @@ key-test app's second PTT A press erased, programmed and read back `0x40000` (un
 the original bytes back: **`WR OK`**, all 4096 bytes matched both times. Status register `00` (no block protection).
 Our own erase and program work without any stock code.
 
+**Update mode switched over (2026-11-21).** `app/update_radio.c` no longer calls any stock RAM code: flash reads,
+erases and writes go through `driver/flash.c`, and the hand-over is our own:
+
+| Step | Ours | Stock it follows |
+| --- | --- | --- |
+| Interrupts off, `0x10F1A8` = 6 | `port_handover` | `0x020012BE` |
+| Record to `0x2FF88`, RAM protection opened | `port_handover` | as before |
+| P33 register `0x32` = 8 if `0x1E511C` bit 5, else 4 | `port_handover` | `0x0200083A` |
+| Stacks `0x10C20`/`0x11020`; `0x100300` bit 0 off; `0x1E0008` bits 8–10 = 3; flash controller off; `0x1E000C` \|= 3, wait, &= ~0x1C0; `0x1E0040` bit 0 off; `0x1E0008` = 0; registers 0; `rti` to `0x110000` | `app/handover.S` (RAM) | `0x020011E6` with `0x02000F18`, `0x02000F00`, `0x02000AF0` and the boot ROM's lock(0) |
+
+`tests/update_host.py` passes against the real flasher host. On a radio: not yet. Open question: the UART baud
+assumes a 48 MHz clock, and our start-up doesn't set clocks; `tools/uart_ping.py --scan` pings over the cable
+(nothing else) and tells which rate the radio answers at.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:

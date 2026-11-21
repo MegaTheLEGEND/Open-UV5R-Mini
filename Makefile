@@ -20,7 +20,7 @@ TARGET := $(BUILD)/firmware
 SRC := main.c board.c app/app.c app/update.c app/update_radio.c driver/uart.c bt/bt_none.c \
        driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c driver/flash.c \
        ui/font.c ui/helper.c
-ASM := start.S
+ASM := start.S app/handover.S
 
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
           -std=c11 -Wall -Wextra -I.

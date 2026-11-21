@@ -66,9 +66,11 @@
 #define CS_LOW()  (GPIOA->OUT &= ~(1u << 13))
 #define CS_HIGH() (GPIOA->OUT |= 1u << 13)
 
-/* Only the app area that an update writes (0x1000..0x7C000) may be erased or programmed. The voice prompts, PRCT
- * (calibration) and VM (settings) above it are never touched (AGENTS.md rule 6). */
-#define WRITABLE(a, n) ((a) >= 0x1000u && (a) < 0x7C000u && (n) <= 0x7C000u - (a))
+/* Only two areas may be erased or programmed: the app area that an update writes (0x1000..0x7C000), and the update
+ * loader's slot at the free top of VM (0xFA000..0xFE000, app/update.h; NRF layout). The voice prompts, PRCT
+ * (calibration) and the rest of VM (settings) are never touched (AGENTS.md rule 6). */
+#define IN_AREA(a, n, lo, hi) ((a) >= (lo) && (a) < (hi) && (n) <= (hi) - (a))
+#define WRITABLE(a, n) (IN_AREA(a, n, 0x1000u, 0x7C000u) || IN_AREA(a, n, 0xFA000u, 0xFE000u))
 
 #define BUSY_LOOPS 3000000u
 
