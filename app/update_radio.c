@@ -50,11 +50,41 @@ static void debug_draw(void)
 		UI_PrintString(UI_FormatHex(b, s_last[i], 2), (uint8_t)(4 + 15 * i), 108, 0xFFE0, 0x0000, 1);
 }
 
+/* The same over the cable, as a frame with cmd 0x7F (the flasher logs and ignores it): CON0, HRXCNT, RXCNT, bytes
+ * received, frames sent, the last 8 bytes received, and a count of these frames. The LCD may not be usable once the
+ * UART is set up, so this is the reliable view. */
+static void debug_send(void)
+{
+	static uint32_t count;
+	uint8_t f[5 + 36 + 2];
+	uint32_t v[7] = { UART_Reg(0), UART_Reg(40), UART_Reg(36), s_rx_total, s_tx_frames, 0, ++count };
+	uint16_t crc;
+
+	f[0] = 0xAA;
+	f[1] = 0x55;
+	f[2] = 37;
+	f[3] = 0;
+	f[4] = 0x7F;
+	for (int i = 0; i < 7; i++)
+		for (int j = 0; j < 4; j++)
+			f[5 + 4 * i + j] = (uint8_t)(v[i] >> (8 * j));
+	for (int i = 0; i < 8; i++)
+		f[5 + 28 + i] = s_last[i];
+	crc = UPDATE_Crc16(f, 5 + 36, 0);
+	f[41] = (uint8_t)crc;
+	f[42] = (uint8_t)(crc >> 8);
+	UART_Send(f, sizeof f);
+}
+
+/* Wait in 50 ms slices: between them, act on the power switch (update mode is left waiting for the host until the
+ * radio is switched off; without this the switch did nothing, seen on a radio 2026-11-21) and, once a second, show
+ * and send the debug state. */
 static int port_read(uint8_t *buf, int max, uint32_t timeout_ms)
 {
-	/* wait in slices so the screen can show the state while nothing comes */
+	static uint32_t idle_ms, off_ms;
+
 	for (uint32_t waited = 0;;) {
-		uint32_t slice = timeout_ms - waited < 300u ? timeout_ms - waited : 300u;
+		uint32_t slice = timeout_ms - waited < 50u ? timeout_ms - waited : 50u;
 		int n = UART_Receive(buf, max, slice);
 		if (n > 0) {
 			for (int i = 0; i < n; i++) {
@@ -63,11 +93,19 @@ static int port_read(uint8_t *buf, int max, uint32_t timeout_ms)
 				s_last[7] = buf[i];
 			}
 			s_rx_total += (uint32_t)n;
-			debug_draw();
 			return n;
 		}
 		waited += slice;
-		debug_draw();
+		if (GPIO_CheckBit(PIN_POWER_SENSE)) {        /* high = switched off (board.h) */
+			if ((off_ms += slice) >= 200u)
+				BOARD_PowerOff();
+		} else
+			off_ms = 0;
+		if ((idle_ms += slice) >= 1000u) {
+			idle_ms = 0;
+			debug_draw();
+			debug_send();
+		}
 		if (waited >= timeout_ms)
 			return 0;
 	}
@@ -76,7 +114,6 @@ static int port_read(uint8_t *buf, int max, uint32_t timeout_ms)
 static void port_write(const uint8_t *buf, int len)
 {
 	s_tx_frames++;
-	debug_draw();
 	UART_Send(buf, (uint32_t)len);
 }
 static void port_baud(uint32_t baud) { UART_SetBaud(baud); }
