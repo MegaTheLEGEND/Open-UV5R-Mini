@@ -158,12 +158,30 @@ transmissions coming back on the RX line. Nothing was written to the radio by an
 the image). The radio was then put back on stock through the ROM USB rescue mode (`uv5r_restore.ps1`): all 256
 sectors, equal to the backup byte for byte.
 
+**Why it went silent, and the new receive path (2026-11-21, PC-tested only).** In JieLi's UART, `HRXCNT` holds a
+count only after CON0 bit 7 (`RDC`) is written: the stock ISR writes bit 7, then bit 10, then reads `HRXCNT`; the
+BR23 SDK's driver does the same. The `690b169` backstop read `HRXCNT` without it, so it acted on a stale count (the
+bootloader leaves one behind) every 20 ms, re-arming the DMA again and again and handing on whatever was in the
+buffer. `driver/uart.c` now:
+
+| Step | How |
+| --- | --- |
+| End of a burst | time-out flag (bit 11) or buffer full (bit 14), or 20 ms without either (backstop) |
+| Take the bytes | RDC, clear the flags, read `HRXCNT`, copy that many bytes into a FIFO at once, re-arm and reload OTCNT |
+| Echo | bytes that arrive while we send are dropped (the protocol is half duplex; stray `FF`s were seen) |
+| Waits | the TX wait has a time-out too |
+
+The frame parser (`app/update.c`) also no longer drops a whole frame's worth of bytes after a bad CRC (it moves one
+byte on, so a false `AA 55` can't swallow the real frame), and drops a part frame that goes quiet. Tested with
+`python tests/uart_host.py`, a PC model of the UART (stale `HRXCNT`, missing time-out flag, 15 queued pings, a full
+buffer, echo), and `tests/update_host.py` still passes. Not yet on a radio.
+
 Next, in order:
-1. Find why `690b169` is silent: compare with `490be10`, which sent debug frames, one change at a time.
-2. Get ping, rate and the loader reads through, with the probe (no answers to reads, so nothing is written).
-3. Only then a real flasher run, sending the stock image with the pinned loader (`build/stock-flashable-reference.ufw`),
+1. On a radio: `tools/uart_ping.py`, then ping, rate and the loader reads with the read-only probe (no answers to
+   reads, so nothing is written).
+2. Only then a real flasher run, sending the stock image with the pinned loader (`build/stock-flashable-reference.ufw`),
    started by Sean, rescue route ready.
-4. Roadmap 1.9: the flasher's guard for our own update mode.
+3. Roadmap 1.9: the flasher's guard for our own update mode.
 
 ## How the stock app does it (v0.27)
 

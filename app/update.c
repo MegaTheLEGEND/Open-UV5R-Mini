@@ -99,16 +99,17 @@ static int recv(uint32_t timeout_ms, uint32_t *len)
 					g_rx_len -= total;
 					return cmd;
 				}
-				for (uint32_t i = total; i < g_rx_len; i++)
-					g_rx[i - total] = g_rx[i];
-				g_rx_len -= total;
+				g_rx[0] = 0;                           /* bad CRC: maybe a false sync; look again after it */
 				continue;
 			}
 		}
 		{
 			int n = g_port->read(b, (int)sizeof(b), timeout_ms);
-			if (n <= 0)
+			if (n <= 0) {
+				if (g_rx_len)
+					g_rx[0] = 0;                       /* a part frame went quiet: drop its sync */
 				return -1;
+			}
 			for (int i = 0; i < n && g_rx_len < sizeof(g_rx); i++)
 				g_rx[g_rx_len++] = b[i];
 		}
