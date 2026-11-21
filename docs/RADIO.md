@@ -15,10 +15,17 @@ code was copied from it.
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
 | BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, sub-tone, PA, TX on, beep |
+| Calibration | `app/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
+| Channels | `app/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
+| External flash | `driver/extflash.c` | read only: no erase or write code exists |
 | Key test | `app/keytest.c` | the old test screen, now the menu item KEY TEST (runs until switched off) |
 | Update mode | `app/update_radio.c` | kept: PTT-A + `=` at power-on |
 
-Settings are not saved yet: each power-on starts at 145.520 MHz.
+Settings are not saved yet: each power-on starts at 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
+own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
+frequencies, CTCSS on transmit, power and width are used. Checked against a dump of one radio on the PC: 76 channels
+decoded with their names. If the external flash doesn't answer, MEMORY stays on VFO and the status line shows
+`NOCAL`.
 
 ## Keys
 
@@ -40,11 +47,12 @@ and notes its code:
 Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `app/radio.h`). With it on:
 
 - only 144–148 and 420–450 MHz, never AM, never airband or 200–300 MHz (no TX path there);
-- low power only, a fixed PA bias of `0x40`. The stock app takes the bias from the radio's calibration in the
-  external flash at `0xF000`, and which row is which isn't known yet (roadmap 3.3);
+- the PA bias and gain come from the radio's own calibration (High or Low, by frequency), as the stock app does it;
+  no calibration for a frequency (or none at all) means no transmit;
+- a channel's own TX frequency is checked the same way, and receive-only channels never transmit;
 - TX path through BK4819 GPIO3 (VHF) or GPIO4 (UHF), as stock.
 
-Turn it on only after receive works on a radio and the calibration rows are understood.
+Turn it on only after receive works on a radio.
 
 ## Tests on the PC
 
@@ -53,13 +61,15 @@ python tests/radio_host.py
 ```
 
 This builds `app/radio.c` with stand-in drivers, with transmit compiled off and then on. It checks the band-switch
-outputs, the squelch opening and closing, AM on airband, and the transmit guard at the band edges.
+outputs, the squelch opening and closing (fallback and calibrated), AM on airband, the PA rows and gain bytes, the
+transmit guard at the band edges, channel TX frequencies, receive-only channels, and channel-record decoding. The
+calibration in the test is made up: no radio's own data is kept in the repo.
 
 ## Still to do
 
 - **Confirm on a radio:** the function keys, the amp, the LEDs and the lamp.
-- **Persistence:** settings and channels. Channels are in the external flash (32-byte records at `0x0000`), which needs
-  an external-flash driver first (roadmap 2.8).
-- **The BK4819's own squelch:** use it in place of the RSSI-only one, with thresholds from the calibration rows.
+- **Persistence:** our own settings. Not in the external flash: writing there risks the channels and calibration.
+- **Squelch:** the calibrated thresholds go to `REG_78` too; the BK4819's own squelch status could replace the RSSI
+  compare once a radio shows which works better.
 - **Not built yet:** CTCSS/DCS on receive, dual watch and scanning, battery level, the timer tick instead of the
   delay loop, and FM broadcast radio.

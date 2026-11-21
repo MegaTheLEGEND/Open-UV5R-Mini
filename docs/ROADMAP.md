@@ -46,7 +46,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **partial** | two analog inputs set up by stock: PA1 (ADC channel 0) and PB3 (channel 6); which is the battery, the ADC registers and the divider are still to find |
 | 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7; likely green RX LED = PB9, red TX LED = PR0; flashlight = PB6 (RE-NOTES). Not tried on a radio |
 | 2.7 | Audio: speaker amplifier enable, routing BK4819 audio to the speaker, beeps and tones | **partial** | amp enable PB8 (high = on), shared by six audio sources in stock; RX audio needs only `BK4819_SetAF` + PB8; beeps and voice prompts use the MCU's DAC (audio block `0x1E2F00`, analog `0x1E19C0`). Not tried on a radio |
-| 2.8 | External SPI flash driver (CS PA3 on SPI1) | **todo** | protocol known (`03` read); contents mapped from a dump (RE-NOTES): channels, settings, calibration at `0xF000`, fonts, pictures |
+| 2.8 | External SPI flash driver (CS PA3 on SPI1) | **partial** | `driver/extflash.c`: read only (ID, read), bit-banged like `tools/jl_extflash`; no write or erase code on purpose; not yet on a radio |
 
 ## 3. Radio (BK4819)
 
@@ -54,7 +54,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 3.1 | Register access, RX/TX switch, set frequency | **done** (basic) | `driver/bk4819.c` |
 | 3.2 | Band and filter switching (VHF/UHF LNA and PA select pins), TX power levels | **partial** | found (RE-NOTES): BK4819 GPIO3 = VHF TX path, GPIO4 = UHF TX path, PC7 + GPIO5 = RX front end, five bands by frequency; TX power levels still to find (likely calibration rows) |
-| 3.3 | Per-radio calibration: TX power, squelch, battery | **partial** | it's in the **external** flash at `0xF000`–`0xF27F`, plain, read by `sub_01E48E22` (not the internal `0x93000` sector); band edges at `0xF230`; meaning of each row to work out. Read-only; never erased |
+| 3.3 | Per-radio calibration: TX power, squelch, battery | **partial** | layout known (RE-NOTES; agrees with Codeplug Studio): PA bias by power and band, squelch thresholds and offsets; `app/calib.c` uses PA bias and squelch; battery, mic, trim not used yet |
 | 3.4 | Squelch (RSSI, noise, glitch), S-meter | **partial** | software squelch on the RSSI in `app/radio.c` (levels 0–9); the BK4819 squelch registers are driven by `BK4819_SetupSquelch` but not used yet; not tried on a radio ([RADIO.md](RADIO.md)) |
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | lookups found in stock (`CTCSS_FindNearest`, `DCS_GolayEncode`) |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
@@ -78,7 +78,7 @@ A radio running an app without these cannot be flashed again without opening the
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
 | 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document |
-| 5.2 | Channel memory format as stock (so existing radios keep their channels) | **unknown** | likely in the external flash 0x000000–0x009000; Codeplug Studio documents the clone layout |
+| 5.2 | Channel memory format as stock (so existing radios keep their channels) | **partial** | record format known; `app/channels.c` reads the stock channels (MENU → MEMORY), checked against one radio's dump on the PC; no writing |
 | 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Codeplug Studio documents it |
 | 5.4 | Bluetooth / Wireless CPS | **todo** | optional edition with JieLi blobs (docs/BLUETOOTH.md) |
 

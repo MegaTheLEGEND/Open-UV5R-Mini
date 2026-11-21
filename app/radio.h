@@ -10,8 +10,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Transmit is built in but off until the PA settings (calibration rows, roadmap 3.3) are understood and someone
- * has tried receive on a radio. Even when on, it only works inside the amateur bands in radio.c. */
+/* Transmit is built in but off until someone has tried receive on a radio. Even when on, it only works inside the
+ * amateur bands in radio.c, and only with the radio's own PA calibration (app/calib.h). */
 #ifndef RADIO_ENABLE_TX
 #define RADIO_ENABLE_TX 0
 #endif
@@ -29,8 +29,10 @@ typedef struct {
 	uint8_t      volume;      /* 0 .. 15 */
 	bool         narrow;
 	Modulation_t mod;
-	uint8_t      ctcss_tx;    /* 0 = off, else index + 1 into RADIO_Ctcss */
-	uint8_t      power;       /* 0 low, 1 high */
+	uint16_t     ctcss_tx;    /* 0.1 Hz, 0 = off */
+	uint8_t      power;       /* POWER_HIGH / POWER_LOW (app/calib.h) */
+	uint32_t     tx_freq;     /* 10 Hz; 0 = same as freq */
+	bool         rx_only;     /* a channel with no TX frequency */
 } Vfo_t;
 
 extern Vfo_t gVfo;

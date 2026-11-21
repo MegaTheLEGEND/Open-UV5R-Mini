@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "app/app.h"
+#include "app/calib.h"
+#include "app/channels.h"
 #include "app/keys.h"
 #include "app/keytest.h"
 #include "app/radio.h"
@@ -14,6 +16,7 @@
 #include "board.h"
 #include "bt/bt.h"
 #include "driver/bk4819.h"
+#include "driver/extflash.h"
 #include "driver/gpio.h"
 #include "driver/io.h"
 #include "driver/keyboard.h"
@@ -37,6 +40,10 @@ static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
 static uint16_t s_off_ticks;
+static bool     s_mr;                    /* channel mode */
+static int      s_ch = -1;               /* channel slot shown, 0-based */
+static char     s_ch_name[13];
+static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
 
 /* what is on the screen now, so only changes are drawn (the LCD is slow to draw) */
@@ -113,7 +120,7 @@ static void draw_status(void)
 {
 	char b[12];
 	int st = gVfo.squelch | gVfo.volume << 4 | gVfo.narrow << 8 | RADIO_IsAm() << 9 | gVfo.step << 10
-	         | IO_LampIsOn() << 14 | gVfo.ctcss_tx << 16;
+	         | IO_LampIsOn() << 14 | gVfo.power << 15 | (int)gVfo.ctcss_tx << 16;
 
 	if (st == s_shown_status && !s_redraw)
 		return;
@@ -126,20 +133,42 @@ static void draw_status(void)
 	UI_PrintString(UI_FormatDec(b, gVfo.squelch, 1), 42, 1, YELLOW, BLACK, 1);
 	UI_PrintString("V", 54, 1, WHITE, BLACK, 1);
 	UI_PrintString(UI_FormatDec(b, gVfo.volume, 2), 60, 1, YELLOW, BLACK, 1);
+	UI_PrintString(gVfo.power == POWER_LOW ? "L" : "H", 76, 1, BLUE, BLACK, 1);
 	if (IO_LampIsOn())
 		UI_PrintString("LAMP", 100, 1, YELLOW, BLACK, 1);
-	UI_PrintString("STEP", 0, 55, GREY, BLACK, 1);
-	UI_PrintString(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, BLACK, 1);
-	if (gVfo.ctcss_tx) {
-		UI_PrintString("CT", 76, 55, GREY, BLACK, 1);
-		UI_PrintString(fmt_tenths(b, RADIO_Ctcss[gVfo.ctcss_tx - 1]), 90, 55, WHITE, BLACK, 1);
+	else if (!CALIB_Present())
+		UI_PrintString("NOCAL", 94, 1, RED, BLACK, 1);
+	if (s_mr) {
+		UI_PrintString("CH", 0, 55, GREY, BLACK, 1);
+		UI_PrintString(s_ch >= 0 ? UI_FormatDec(b, (uint32_t)s_ch + 1, 3) : "---", 14, 55, WHITE, BLACK, 1);
+		UI_PrintString(s_ch_name, 36, 55, YELLOW, BLACK, 1);
+	} else {
+		UI_PrintString("STEP", 0, 55, GREY, BLACK, 1);
+		UI_PrintString(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, BLACK, 1);
 	}
+	if (gVfo.ctcss_tx) {
+		UI_PrintString("CT", 0, 12, GREY, BLACK, 1);
+		UI_PrintString(fmt_tenths(b, gVfo.ctcss_tx), 14, 12, WHITE, BLACK, 1);
+	} else
+		ST7735S_FillRect(0, 12, 60, 8, BLACK);
 }
 
 static void draw_freq(void)
 {
 	char b[12];
 
+	if (s_entry_len && s_mr) {
+		b[0] = 'C';
+		b[1] = 'H';
+		b[2] = ' ';
+		for (int i = 0; i < 3; i++)
+			b[3 + i] = i < s_entry_len ? s_entry[i] : '-';
+		b[6] = b[7] = b[8] = ' ';
+		b[9] = 0;
+		UI_PrintString(b, 10, 26, YELLOW, BLACK, 2);
+		s_shown_freq = 0xFFFFFFFFu;
+		return;
+	}
 	if (s_entry_len) {
 		for (int i = 0; i < 6; i++)
 			b[i < 3 ? i : i + 1] = i < s_entry_len ? s_entry[i] : '-';
@@ -216,9 +245,9 @@ static void draw_main(void)
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_CTCSS, M_POWER, M_KEYTEST, M_COUNT };
+enum { M_MEM, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_CTCSS, M_POWER, M_KEYTEST, M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
-	"SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "CTCSS TX", "TX POWER", "KEY TEST",
+	"MEMORY", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "CTCSS TX", "TX POWER", "KEY TEST",
 };
 
 static const char *menu_value(int i, char *b)
@@ -226,27 +255,50 @@ static const char *menu_value(int i, char *b)
 	static const char *const MOD[] = { "AUTO", "FM", "AM" };
 
 	switch (i) {
+	case M_MEM:     return s_mr ? "CHANNELS" : "VFO";
 	case M_SQL:     return UI_FormatDec(b, gVfo.squelch, 1);
 	case M_VOL:     return UI_FormatDec(b, gVfo.volume, 2);
 	case M_STEP:    return fmt_step(b, RADIO_Steps[gVfo.step]);
 	case M_BW:      return gVfo.narrow ? "NARROW" : "WIDE";
 	case M_MOD:     return MOD[gVfo.mod];
-	case M_CTCSS:   return gVfo.ctcss_tx ? fmt_tenths(b, RADIO_Ctcss[gVfo.ctcss_tx - 1]) : "OFF";
-	case M_POWER:   return RADIO_ENABLE_TX ? (gVfo.power ? "HIGH" : "LOW") : "TX OFF";
+	case M_CTCSS:   return gVfo.ctcss_tx ? fmt_tenths(b, gVfo.ctcss_tx) : "OFF";
+	case M_POWER:   return gVfo.power == POWER_LOW ? "LOW" : "HIGH";
 	default:        return "";
 	}
+}
+
+static void channel_show(int n);
+
+static void ctcss_step(int dir)
+{
+	int i, n = RADIO_CtcssCount + 1, cur = 0;
+
+	for (i = 0; i < RADIO_CtcssCount; i++)
+		if (RADIO_Ctcss[i] == gVfo.ctcss_tx)
+			cur = i + 1;
+	cur = (cur + n + dir) % n;
+	gVfo.ctcss_tx = cur ? RADIO_Ctcss[cur - 1] : 0;
 }
 
 static void menu_change(int i, int dir)
 {
 	switch (i) {
+	case M_MEM:
+		s_mr = s_xf_ok && !s_mr;
+		if (s_mr)
+			channel_show(CHANNEL_Next(s_ch < 0 ? -1 : s_ch - 1, +1));
+		else {
+			gVfo.tx_freq = 0;
+			gVfo.rx_only = false;
+		}
+		break;
 	case M_SQL:   gVfo.squelch = (uint8_t)((gVfo.squelch + 10 + dir) % 10); break;
 	case M_VOL:   gVfo.volume = (uint8_t)((gVfo.volume + 16 + dir) % 16); break;
 	case M_STEP:  gVfo.step = (uint8_t)((gVfo.step + RADIO_StepCount + dir) % RADIO_StepCount); break;
 	case M_BW:    gVfo.narrow = !gVfo.narrow; break;
 	case M_MOD:   gVfo.mod = (Modulation_t)((gVfo.mod + 3 + dir) % 3); break;
-	case M_CTCSS: gVfo.ctcss_tx = (uint8_t)((gVfo.ctcss_tx + RADIO_CtcssCount + 1 + dir) % (RADIO_CtcssCount + 1)); break;
-	case M_POWER: gVfo.power = 0; break;    /* low only until the calibration is understood */
+	case M_CTCSS: ctcss_step(dir); break;
+	case M_POWER: gVfo.power = gVfo.power == POWER_LOW ? POWER_HIGH : POWER_LOW; break;
 	default: break;
 	}
 	RADIO_Apply();
@@ -295,8 +347,39 @@ static void freq_step(int dir)
 	RADIO_Apply();
 }
 
+/* Show channel slot n (0-based): its frequencies, tones, power and width go into the VFO. */
+static void channel_show(int n)
+{
+	Channel_t ch;
+
+	if (n < 0 || !CHANNEL_Load((uint16_t)n, &ch)) {
+		RADIO_Beep(400, 120);
+		return;
+	}
+	s_ch = n;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = ch.name[i];
+	gVfo.freq = ch.rx;
+	gVfo.tx_freq = ch.tx;
+	gVfo.rx_only = ch.tx == 0;
+	gVfo.ctcss_tx = ch.tx_ctcss;
+	gVfo.power = ch.low_power ? POWER_LOW : POWER_HIGH;
+	gVfo.narrow = ch.narrow;
+	RADIO_Apply();
+	s_shown_status = -1;
+}
+
 static void entry_finish(void)
 {
+	if (s_mr) {
+		uint32_t n = 0;
+		for (int i = 0; i < s_entry_len; i++)
+			n = n * 10 + (uint32_t)(s_entry[i] - '0');
+		s_entry_len = 0;
+		s_redraw = true;
+		channel_show(n >= 1 && n <= CHANNEL_COUNT ? (int)n - 1 : -1);
+		return;
+	}
 	uint32_t khz = 0;
 
 	for (int i = 0; i < 6; i++)
@@ -319,7 +402,7 @@ static void key_main(KEY_Code_t k)
 	if (d >= 0) {
 		if (s_entry_len < 6)
 			s_entry[s_entry_len++] = (char)('0' + d);
-		if (s_entry_len == 6)
+		if (s_entry_len == (s_mr ? 3 : 6))
 			entry_finish();
 		return;
 	}
@@ -331,7 +414,9 @@ static void key_main(KEY_Code_t k)
 			entry_finish();
 		return;
 	}
-	if (k == KEY_ACT_UP)
+	if ((k == KEY_ACT_UP || k == KEY_ACT_DOWN) && s_mr)
+		channel_show(CHANNEL_Next(s_ch, k == KEY_ACT_UP ? +1 : -1));
+	else if (k == KEY_ACT_UP)
 		freq_step(+1);
 	else if (k == KEY_ACT_DOWN)
 		freq_step(-1);
@@ -394,6 +479,13 @@ void APP_Init(void)
 	if (UPDATE_Requested())
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
 	BK4819_Init();
+	EXTFLASH_Init();
+	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
+	if (s_xf_ok) {
+		static uint8_t cal[CALIB_LEN];
+		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
+		CALIB_Set(cal);
+	}
 	RADIO_Init();
 	BT_Init(0);
 	go(SCREEN_MAIN);

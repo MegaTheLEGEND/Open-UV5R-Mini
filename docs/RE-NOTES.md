@@ -295,12 +295,24 @@ GPIO4 the UHF one; PC7 and GPIO5 pick the receive front end. Bands 2 and 4 get n
 ### Calibration: in the external flash, not at `0x93000`
 
 The calibration is a plain (unencrypted) table at **external flash `0xF000`–`0xF27F`**, read row by row at
-power-on by `sub_01E48E22` (16-byte rows into RAM `0x198C0+27384` and on; read with `sub_01E3EAEE(addr, buf, len)`).
-Its shape matches per-band tables: rows of 13 values with three zero bytes, e.g. `d2 d2 d2 … cd cd d2 …`,
-`96 96 …`, and two 10-entry rows `6a 6b … 72` / `69 6a … 71` at `0xF0C0`/`0xF0D0`. At `0xF230` and `0xF270` are BCD band
-edges, `0136 0174 0400 0520 0220 0260` (136–174, 400–520, 220–260 MHz; read by `sub_01E4CCDA`). Which row is
-which (TX power per level, squelch, battery) is still to work out. It is unique to each radio: our code must
-never write the external flash below `0x10000` without a backup.
+power-on by `sub_01E48E22` (16-byte rows into RAM `0x6AF8` and on; read with `sub_01E3EAEE(addr, buf, len)`).
+Codeplug Studio has a field-by-field map (its `docs/reference/radios/baofeng/uv-5r-mini/calibration.md`, traced on
+V0.04); the V0.27 code agrees where checked here:
+
+| Where | What | V0.27 evidence |
+| --- | --- | --- |
+| `0xF000` / `0xF080` / `0xF040` | PA bias frames for power index 0 (High), 1 (Low), 2; each four 16-byte rows: +0x00 UHF ((MHz − 400) / 10), +0x10 VHF ((MHz − 130) / 3, at most 15), +0x20 200 MHz band ((MHz − 200) / 5), +0x30 350 MHz band ((MHz − 350) / 5, zero = no TX) | row pointer tables at `0x01E6574C` (by band, then power index) and the index sums at `0x01E50522`–`0x01E505F2` |
+| | `REG_36` = bias << 8 \| gain; gain `0xFF` / `0xD7` / `0xFF` by power index; bias 0 = `0x007F` (PA off) | `sub_01E4DA78`, table `0x01E5DF02` |
+| `0xF0C0` / `0xF0D0` | squelch open / close thresholds, levels 0–9, written to `REG_78` minus a per-frequency offset | (Codeplug Studio) |
+| `0xF0E0`, `0xF0F0`, `0xF100`, `0xF110` | squelch offsets: UHF, VHF, 200 MHz, 350 MHz | (Codeplug Studio) |
+| `0xF200` | battery level thresholds, 6 bytes | (Codeplug Studio) |
+| `0xF210`–`0xF216` | mic sensitivity, sub-tone levels, AF gain, frequency trim index | (Codeplug Studio) |
+| `0xF230` | BCD band limits for the programming software; not used by the radio | `sub_01E4CCDA` reads it for the clone reply |
+
+The menu offers "High" and "Low" only (strings at `0x01E5C1EC`). Read with our own code (`app/calib.c`) from a dump of
+one radio: High 0xD7 / Low 0x96 at 145 MHz, High 0xD2 / Low 0x96 at 446 MHz, nothing at 350 MHz; squelch 3 opens at
+an RSSI count of 108 at 145 MHz (about −106 dBm if the count is in the RSSI register's 0.5 dB steps). It is unique
+to each radio: our code never writes the external flash (`driver/extflash.c` has no write or erase code).
 
 Internal flash `0x93000` (the sector before `VM`) is 4 KB of high-entropy data, not this table, and the app
 never reads it directly. It may be JieLi's own factory data. `VM` itself holds only a few short JieLi records
@@ -476,7 +488,7 @@ Two reads identical. The contents are **not encrypted**.
 | --- | --- |
 | `0x000000`–`0x009000` | channel memory: 32-byte records, the frequency first in BCD (`50622546` = 462.5625 MHz), names such as `FRS 1` and `GMRS 1` |
 | `0x009000`–`0x010000` | settings |
-| `0x00F000`–`0x00F280` | per-radio calibration (inside the settings range; see the peripheral sweep) |
+| `0x00F000`–`0x00F280` | per-radio calibration (inside the settings range; see "Calibration" in the peripheral sweep) |
 | `0x010000`–`0x08C000` | font and icon bitmaps |
 | `0x0C4000`–`0x0D0000` | RGB565 picture data |
 | `0x100000`–`0x200000` | blank |

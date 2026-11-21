@@ -1,5 +1,6 @@
 /* Open-UV5R-Mini: the radio core. See app/radio.h. */
 #include "app/radio.h"
+#include "app/calib.h"
 #include "board.h"
 #include "driver/bk4819.h"
 #include "driver/gpio.h"
@@ -24,6 +25,7 @@ static RadioState_t s_state;
 static uint16_t s_rssi;
 static uint8_t s_open_count, s_close_count;
 static uint16_t s_beep_ms;
+static void squelch_levels(void);
 
 /* ------------------------------------------------------------------------------------------- bands
  * The stock app sorts a frequency into five bands (sub_01E3F682 / sub_01E3F6AA) and switches the front end by band
@@ -87,6 +89,7 @@ void RADIO_Apply(void)
 	BK4819_SetPa(0, 0);
 	BK4819_SetTxCtcss(0);
 	BK4819_RxOn();
+	squelch_levels();
 	s_state = RADIO_RX;
 	s_open_count = s_close_count = 0;
 	audio(gVfo.squelch == 0);
@@ -103,20 +106,33 @@ void RADIO_Init(void)
 	gVfo.narrow = false;
 	gVfo.mod = MOD_AUTO;
 	gVfo.ctcss_tx = 0;
-	gVfo.power = 0;
+	gVfo.power = POWER_LOW;
+	gVfo.tx_freq = 0;
+	gVfo.rx_only = false;
 	IO_Init();
 	GPIO_ConfigOutput(PIN_RX_FRONT, true);
 	s_state = RADIO_RX;
 	RADIO_Apply();
 }
 
-/* Software squelch on the RSSI (dBm = raw / 2 - 160): level 1 opens at about -122 dBm, each level 5 dB more;
- * 3 dB hysteresis and a few ticks of debounce each way. The BK4819's own squelch (REG_78 / REG_4F / REG_4D) can
- * replace this once its threshold units are worked out from the radio's calibration rows. */
-static uint16_t open_level(void)
+/* Squelch on the RSSI (REG_67, 0.5 dB steps: dBm = raw / 2 - 160), a few ticks of debounce each way.
+ * Thresholds: the radio's own (app/calib.h; the stock app writes them to REG_78, which compares them with the
+ * RSSI, so they are taken to be in the same units), else level 1 opens at about -122 dBm, each level 5 dB more,
+ * 3 dB hysteresis. */
+static uint16_t s_open_at, s_close_at;
+
+static void squelch_levels(void)
 {
-	int dbm = -127 + 5 * gVfo.squelch;
-	return (uint16_t)((dbm + 160) * 2);
+	if (CALIB_Present()) {
+		uint8_t o, c;
+		CALIB_Squelch(gVfo.freq, gVfo.squelch, &o, &c);
+		s_open_at = o;
+		s_close_at = c;
+		BK4819_WriteRegister(BK4819_REG_78, (uint16_t)(o << 8 | c));
+	} else {
+		s_open_at = (uint16_t)((-127 + 5 * gVfo.squelch + 160) * 2);
+		s_close_at = s_open_at - 6u;
+	}
 }
 
 void RADIO_Tick(void)
@@ -143,7 +159,7 @@ void RADIO_Tick(void)
 		return;
 	}
 	if (s_state == RADIO_RX) {
-		s_open_count = s_rssi >= open_level() ? s_open_count + 1 : 0;
+		s_open_count = s_rssi >= s_open_at ? s_open_count + 1 : 0;
 		if (s_open_count >= 3) {
 			s_state = RADIO_RX_OPEN;
 			s_close_count = 0;
@@ -151,7 +167,7 @@ void RADIO_Tick(void)
 				audio(true);
 		}
 	} else {
-		s_close_count = s_rssi < open_level() - 6u ? s_close_count + 1 : 0;
+		s_close_count = s_rssi < s_close_at ? s_close_count + 1 : 0;
 		if (s_close_count >= 15) {         /* 150 ms of quiet */
 			s_state = RADIO_RX;
 			s_open_count = 0;
@@ -171,22 +187,25 @@ static const struct { uint32_t lo, hi; } TX_BANDS[] = {
 	{ 42000000u, 45000000u },   /* 70 cm */
 };
 
+static uint32_t tx_freq(void)
+{
+	return gVfo.tx_freq ? gVfo.tx_freq : gVfo.freq;
+}
+
 bool RADIO_TxAllowed(void)
 {
-	Band_t b = band_of(gVfo.freq);
+	uint32_t f = tx_freq();
+	Band_t b = band_of(f);
 
-	if (!RADIO_ENABLE_TX || RADIO_IsAm() || b == BAND_AIR || b == BAND_220)
+	if (!RADIO_ENABLE_TX || gVfo.rx_only || RADIO_IsAm() || b == BAND_AIR || b == BAND_220)
+		return false;
+	if (CALIB_PaBias(f, gVfo.power) == 0)       /* no calibration for this frequency: no TX */
 		return false;
 	for (unsigned i = 0; i < sizeof TX_BANDS / sizeof TX_BANDS[0]; i++)
-		if (gVfo.freq >= TX_BANDS[i].lo && gVfo.freq < TX_BANDS[i].hi)
+		if (f >= TX_BANDS[i].lo && f < TX_BANDS[i].hi)
 			return true;
 	return false;
 }
-
-/* PA bias: low power only for now, a modest fixed value. The stock app takes it from the radio's own calibration
- * (external flash 0xF000.., one row per power level and band, 3 MHz steps; RE-NOTES). */
-#define PA_BIAS_LOW 0x40u
-#define PA_GAIN     0xFFu      /* stock gain byte for its first power level (table at 0x01E5DF02) */
 
 bool RADIO_StartTx(void)
 {
@@ -194,13 +213,13 @@ bool RADIO_StartTx(void)
 		return false;
 	audio(false);
 	s_state = RADIO_TX;
-	BK4819_SetFrequency(gVfo.freq);
+	BK4819_SetFrequency(tx_freq());
 	BK4819_SetFilterBandwidth(gVfo.narrow);
-	front_end(band_of(gVfo.freq), true);
-	BK4819_SetTxCtcss(gVfo.ctcss_tx ? RADIO_Ctcss[gVfo.ctcss_tx - 1] : 0);
+	front_end(band_of(tx_freq()), true);
+	BK4819_SetTxCtcss(gVfo.ctcss_tx);
 	BK4819_TxMute(false);
 	BK4819_TxOn();
-	BK4819_SetPa(PA_BIAS_LOW, PA_GAIN);
+	BK4819_SetPa(CALIB_PaBias(tx_freq(), gVfo.power), CALIB_PaGain(gVfo.power));
 	IO_LedTx(true);
 	return true;
 }
