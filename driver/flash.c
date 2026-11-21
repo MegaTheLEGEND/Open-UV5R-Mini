@@ -61,45 +61,183 @@
 		SPI0_CON &= ~0x8u;                                 \
 	} while (0)
 
-RAMFUNC uint32_t FLASH_ReadId(uint32_t cs)
-{
-	volatile uint32_t *port = (volatile uint32_t *)(uintptr_t)(cs == FLASH_CS_PA13 ? 0x001E5000u : 0x001E50C0u);
-	uint32_t bit = cs == FLASH_CS_PA13 ? (1u << 13) : (1u << 3);
-	uint32_t ok = 1, id = 0, v, n;
+/* The flash's chip select is PA13 (an output held high by the bootloader; the JEDEC ID read through it on a radio,
+ * 2026-11-21: 856014, a Puya P25Q80, 1 MB). Low = selected. */
+#define CS_LOW()  (GPIOA->OUT &= ~(1u << 13))
+#define CS_HIGH() (GPIOA->OUT |= 1u << 13)
 
-	uint32_t mode = (SFC_CON >> 8) & 0xFu;
+/* Only the app area that an update writes (0x1000..0x7C000) may be erased or programmed. The voice prompts, PRCT
+ * (calibration) and VM (settings) above it are never touched (AGENTS.md rule 6). */
+#define WRITABLE(a, n) ((a) >= 0x1000u && (a) < 0x7C000u && (n) <= 0x7C000u - (a))
+
+#define BUSY_LOOPS 3000000u
+
+static uint32_t s_con, s_spi;
+
+/* Hand the flash from the controller to SPI0, as the boot ROM's lock does (0x1127D4): wait for 0x101000 bit 5,
+ * wait for the controller to finish its current read, controller off, SPI0 on. */
+static RAMFUNC uint32_t fl_lock(void)
+{
+	uint32_t n, mode = (SFC_CON >> 8) & 0xFu;
+
 	if (mode == 6u || mode == 7u)
 		return FLASH_ERR_CONTINUOUS;
-
-	/* Hand the flash from the controller to SPI0, as the boot ROM's lock does (0x1127D4): wait for 0x101000 bit 5,
-	 * wait for the controller to finish its current read, controller off, SPI0 on. */
 	for (n = WAIT_LOOPS; !(REG32(0x00101000u) & 0x20u); )
 		if (!--n)
 			return FLASH_ERR_TIMEOUT;
 	for (n = WAIT_LOOPS; SFC_CON & 0x80000000u; )
 		if (!--n)
 			return FLASH_ERR_TIMEOUT;
-	uint32_t con = SFC_CON, spi = SPI0_CON;
-	SFC_CON = con & ~1u;
-	SPI0_CON = spi | 1u;
+	s_con = SFC_CON;
+	s_spi = SPI0_CON;
+	SFC_CON = s_con & ~1u;
+	SPI0_CON = s_spi | 1u;
+	CS_HIGH();
+	return FLASH_OK;
+}
 
-	uint32_t out = port[0], dir = port[2];
-	port[0] = out | bit;    /* CS high (idle) */
-	port[2] = dir & ~bit;   /* as output */
-	port[0] &= ~bit;        /* CS low: selected */
+/* and back, as the boot ROM's unlock does (0x1127D8): SPI0 off, controller on */
+static RAMFUNC void fl_unlock(void)
+{
+	CS_HIGH();
+	SPI0_CON = (s_spi & ~1u) & ~0x1000u;
+	SFC_CON = s_con;
+}
 
-	SPI_OUT(0x9Fu, ok);
+/* command byte and, if addr_bytes, a 24-bit address, with CS left low */
+static RAMFUNC uint32_t fl_cmd(uint8_t cmd, uint32_t addr, uint32_t with_addr)
+{
+	uint32_t ok = 1;
+
+	CS_LOW();
+	SPI_OUT(cmd, ok);
+	if (with_addr) {
+		SPI_OUT((uint8_t)(addr >> 16), ok);
+		SPI_OUT((uint8_t)(addr >> 8), ok);
+		SPI_OUT((uint8_t)addr, ok);
+	}
+	return ok;
+}
+
+static RAMFUNC uint32_t fl_status(uint32_t *st)
+{
+	uint32_t ok = fl_cmd(0x05u, 0, 0), v = 0xFFu;
+
+	SPI_IN(v, ok);
+	CS_HIGH();
+	*st = v;
+	return ok;
+}
+
+/* write enable, then wait until the flash says it's on (status bit 1) */
+static RAMFUNC uint32_t fl_wren(void)
+{
+	uint32_t ok = fl_cmd(0x06u, 0, 0), st = 0;
+
+	CS_HIGH();
+	if (!ok || !fl_status(&st))
+		return FLASH_ERR_TIMEOUT;
+	return (st & 2u) ? FLASH_OK : FLASH_ERR_WREN;
+}
+
+/* wait for the end of an erase or program (status bit 0) */
+static RAMFUNC uint32_t fl_wait_busy(void)
+{
+	uint32_t st;
+
+	for (uint32_t n = BUSY_LOOPS; n; n--) {
+		if (!fl_status(&st))
+			return FLASH_ERR_TIMEOUT;
+		if (!(st & 1u))
+			return FLASH_OK;
+	}
+	return FLASH_ERR_TIMEOUT;
+}
+
+RAMFUNC uint32_t FLASH_ReadId(void)
+{
+	uint32_t r = fl_lock(), ok, v, id;
+
+	if (r != FLASH_OK)
+		return r;
+	ok = fl_cmd(0x9Fu, 0, 0);
 	SPI_IN(v, ok); id = v << 16;
 	SPI_IN(v, ok); id |= v << 8;
 	SPI_IN(v, ok); id |= v;
-
-	SPI0_CON &= ~0x1000u;
-	port[0] |= bit;         /* CS high */
-	port[2] = dir;
-	port[0] = out;
-
-	/* and back, as the boot ROM's unlock does (0x1127D8): SPI0 off, controller on */
-	SPI0_CON = spi & ~1u;
-	SFC_CON = con;
+	fl_unlock();
 	return ok ? id : FLASH_ERR_TIMEOUT;
+}
+
+RAMFUNC uint32_t FLASH_ReadStatus(void)
+{
+	uint32_t r = fl_lock(), st = 0;
+
+	if (r != FLASH_OK)
+		return r;
+	r = fl_status(&st) ? st : FLASH_ERR_TIMEOUT;
+	fl_unlock();
+	return r;
+}
+
+RAMFUNC uint32_t FLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
+{
+	uint32_t r = fl_lock(), ok, v;
+
+	if (r != FLASH_OK)
+		return r;
+	ok = fl_cmd(0x03u, addr, 1);
+	for (uint32_t i = 0; i < len; i++) {
+		SPI_IN(v, ok);
+		buf[i] = (uint8_t)v;
+	}
+	fl_unlock();
+	return ok ? FLASH_OK : FLASH_ERR_TIMEOUT;
+}
+
+RAMFUNC uint32_t FLASH_Erase4K(uint32_t addr)
+{
+	uint32_t r, ok;
+
+	if ((addr & 0xFFFu) || !WRITABLE(addr, 0x1000u))
+		return FLASH_ERR_ADDR;
+	r = fl_lock();
+	if (r != FLASH_OK)
+		return r;
+	r = fl_wren();
+	if (r == FLASH_OK) {
+		ok = fl_cmd(0x20u, addr, 1);
+		CS_HIGH();
+		r = ok ? fl_wait_busy() : FLASH_ERR_TIMEOUT;
+	}
+	fl_unlock();
+	return r;
+}
+
+RAMFUNC uint32_t FLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len)
+{
+	uint32_t r = FLASH_OK, ok;
+
+	if (!WRITABLE(addr, len))
+		return FLASH_ERR_ADDR;
+	r = fl_lock();
+	if (r != FLASH_OK)
+		return r;
+	while (len && r == FLASH_OK) {
+		uint32_t n = 0x100u - (addr & 0xFFu);   /* up to the end of this 256-byte page */
+		if (n > len)
+			n = len;
+		r = fl_wren();
+		if (r != FLASH_OK)
+			break;
+		ok = fl_cmd(0x02u, addr, 1);
+		for (uint32_t i = 0; i < n; i++)
+			SPI_OUT(buf[i], ok);
+		CS_HIGH();
+		r = ok ? fl_wait_busy() : FLASH_ERR_TIMEOUT;
+		addr += n;
+		buf += n;
+		len -= n;
+	}
+	fl_unlock();
+	return r;
 }

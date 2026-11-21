@@ -1,19 +1,21 @@
-/* Open-UV5R-Mini: internal flash access, run from RAM. */
+/* Open-UV5R-Mini: internal flash access, run from RAM (driver/flash.c). */
 #ifndef DRIVER_FLASH_H
 #define DRIVER_FLASH_H
 
 #include <stdint.h>
 
-/* Chip-select pins seen in the stock flash driver. */
-#define FLASH_CS_PD3  0u
-#define FLASH_CS_PA13 1u
-
-/* Results of FLASH_ReadId other than an ID (top byte set, so they can't be a 24-bit ID). */
+/* Results. Errors have the top byte set, so they can't be a 24-bit ID or a status byte. */
+#define FLASH_OK             0u
 #define FLASH_ERR_CONTINUOUS 0xE1000000u /* the controller is in continuous-read mode: not tried */
 #define FLASH_ERR_TIMEOUT    0xE2000000u
+#define FLASH_ERR_ADDR       0xE3000000u /* outside 0x1000..0x7C000: refused */
+#define FLASH_ERR_WREN       0xE4000000u /* write enable didn't take */
 
-/* Read the flash's JEDEC ID (command 0x9F) with the flash controller paused, through SPI0 and the given CS pin.
- * Read only: nothing is written to the flash. */
-uint32_t FLASH_ReadId(uint32_t cs);
+uint32_t FLASH_ReadId(void);       /* JEDEC ID (0x9F): 0x856014 on a radio */
+uint32_t FLASH_ReadStatus(void);   /* status register 1 (0x05) */
+/* Raw reads and writes through SPI: the bytes as stored, so still encrypted where the stock layout encrypts them. */
+uint32_t FLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len);
+uint32_t FLASH_Erase4K(uint32_t addr);                                   /* 0x1000..0x7C000 only */
+uint32_t FLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len); /* 0x1000..0x7C000 only */
 
 #endif

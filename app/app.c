@@ -49,7 +49,7 @@ static void draw_static(void)
 	UI_PrintString("BT", 70, 66, WHITE, BLACK, 1);
 	UI_PrintString("BK", 4, 76, WHITE, BLACK, 1);
 	UI_PrintString("RSSI", 58, 76, WHITE, BLACK, 1);
-	UI_PrintString("ID  PRESS PTT A", 4, 118, GREY, BLACK, 1);
+	UI_PrintString("PRESS PTT A", 4, 118, GREY, BLACK, 1);
 }
 
 /* Read-only look at the flash controller, SPI0 and the two possible flash chip-select pins, for the flash driver
@@ -72,32 +72,86 @@ static void draw_flash_regs(void)
 	UI_PrintString((pa->DIR >> 13) & 1u ? "1" : "0", 106, 106, GREEN, BLACK, 1);
 }
 
-static bool id_bad(uint32_t id)
-{
-	return id >= 0x01000000u || id == 0 || id == 0xFFFFFFu;
-}
+#define TEST_SECTOR 0x40000u   /* inside the app slot, past our small app: only unused leftover bytes */
 
-/* On a PTT A press: read the flash's JEDEC ID from RAM code. Try PA13 as chip select first (an output held high,
- * seen on a radio), PD3 only if that gets no answer. Nothing is written to the flash. */
-static void flash_id_test(void)
+static uint8_t sector_save[4096];  /* the sector as it was, put back after the test */
+static uint8_t sector_buf[4096];
+static uint8_t flash_step;         /* PTT A presses so far */
+
+static void show_result(const char *label, uint32_t value, bool good)
 {
 	char buf[12];
-	const char *pin = "A13";
-	uint32_t id = FLASH_ReadId(FLASH_CS_PA13);
 
-	if (id_bad(id) && id != FLASH_ERR_CONTINUOUS) {
-		uint32_t id2 = FLASH_ReadId(FLASH_CS_PD3);
-		if (!id_bad(id2)) {
-			id = id2;
-			pin = "D3 ";
-		} else
-			pin = "-- ";
+	ST7735S_FillRect(0, 118, 128, 10, BLACK);
+	UI_PrintString(label, 4, 118, WHITE, BLACK, 1);
+	UI_PrintString(UI_FormatHex(buf, value, 8), 46, 118, good ? GREEN : RED, BLACK, 1);
+}
+
+/* Erase, program and read back the test sector, then put the original bytes back. Returns 0 if all went well, or
+ * the step that failed (in the top hex digit) and the error or offset. */
+static uint32_t flash_write_test(void)
+{
+	uint32_t r, i;
+
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Read(TEST_SECTOR, sector_save, sizeof sector_save)) != FLASH_OK)
+		return 0x10000000u | (r >> 24);
+	for (i = 0; i < sizeof sector_buf; i++)
+		sector_buf[i] = (uint8_t)(i ^ (i >> 8) ^ 0x5A);
+
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Erase4K(TEST_SECTOR)) != FLASH_OK)
+		return 0x20000000u | (r >> 24);
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Program(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+		return 0x30000000u | (r >> 24);
+	SYSTEM_WatchdogClear();
+	for (i = 0; i < sizeof sector_buf; i++)
+		sector_buf[i] = 0;
+	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+		return 0x40000000u | (r >> 24);
+	uint32_t bad = 0;
+	for (i = 0; i < sizeof sector_buf; i++)
+		if (sector_buf[i] != (uint8_t)(i ^ (i >> 8) ^ 0x5A)) {
+			bad = 0x50000000u | i;
+			break;
+		}
+
+	/* put it back as it was, whatever happened above */
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Erase4K(TEST_SECTOR)) != FLASH_OK)
+		return 0x60000000u | (r >> 24);
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Program(TEST_SECTOR, sector_save, sizeof sector_save)) != FLASH_OK)
+		return 0x70000000u | (r >> 24);
+	SYSTEM_WatchdogClear();
+	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+		return 0x80000000u | (r >> 24);
+	for (i = 0; i < sizeof sector_buf; i++)
+		if (sector_buf[i] != sector_save[i])
+			return 0x90000000u | i;
+	return bad;
+}
+
+/* PTT A presses: 1st reads the flash ID and status register (read only); 2nd runs the write test on TEST_SECTOR,
+ * which puts the sector back as it was. Nothing outside that sector is written. */
+static void flash_test(void)
+{
+	if (flash_step == 0) {
+		uint32_t id = FLASH_ReadId();
+		show_result("ID", id, id == 0x856014u);
+		char buf[4];
+		uint32_t st = FLASH_ReadStatus();
+		UI_PrintString("ST", 82, 96, WHITE, BLACK, 1);  /* status reg: block-protect bits would stop writes */
+		UI_PrintString(st < 0x100u ? UI_FormatHex(buf, st, 2) : "??", 100, 96, GREEN, BLACK, 1);
+		if (id == 0x856014u)
+			flash_step = 1;
+	} else if (flash_step == 1) {
+		show_result("WR..", 0, true);
+		uint32_t r = flash_write_test();
+		show_result(r ? "WR BAD" : "WR OK", r, r == 0);
+		flash_step = 2;
 	}
-	UI_PrintString("ID ", 4, 118, WHITE, BLACK, 1);
-	UI_PrintString(pin, 22, 118, WHITE, BLACK, 1);
-	UI_PrintString(UI_FormatHex(buf, id, 8), 46, 118, id_bad(id) ? RED : GREEN, BLACK, 1);
-	UI_PrintString("   ", 94, 118, GREY, BLACK, 1);
-	draw_flash_regs();      /* the registers again, after the test */
 }
 
 void APP_Init(void)
@@ -155,7 +209,7 @@ void APP_Tick(void)
 	if (ptt != last_ptt) {
 		UI_PrintString(ptt ? "DOWN" : "UP  ", 40, 56, ptt ? RED : GREEN, BLACK, 1);
 		if (ptt && last_ptt == 0)
-			flash_id_test();
+			flash_test();
 	}
 	if (ptt2 != last_ptt2)
 		UI_PrintString(ptt2 ? "DOWN" : "UP  ", 40, 66, ptt2 ? RED : GREEN, BLACK, 1);

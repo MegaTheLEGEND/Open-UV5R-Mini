@@ -113,7 +113,14 @@ at `0x1127C0`. Its two flash entries are short:
 | `0x1127D4` lock(1) | `0x112250` | wait `0x101000` bit 5 set, wait SFC CON bit 31 clear, SFC CON &= ~1, **SPI0 CON \|= 1** |
 | `0x1127D8` unlock(1) | `0x11227C` | SPI0 CON &= ~1, SFC CON \|= 1 |
 
-`FLASH_ReadId` now does the same, and tries PA13 first.
+`FLASH_ReadId` now does the same. With that, and SPI0 CON bit 3 set for one-line reads (as stock's status read
+does; without it the answer read `FFFFFF`), the ID read on a radio: **`856014`** through **PA13**, a Puya P25Q80
+(1 MB). PA13 is the flash chip select.
+
+`driver/flash.c` now has read (`03`), 4 KB erase (`20`), page program (`02`), write enable (`06`) and status (`05`),
+all in RAM code; erase and program refuse anything outside `0x1000`–`0x7C000`. Next on a radio: the key-test app's
+second PTT A press erases, programs and reads back `0x40000` (unused bytes past our app), then puts the original
+bytes back.
 
 ## How the stock app does it (v0.27)
 
