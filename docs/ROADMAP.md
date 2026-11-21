@@ -55,10 +55,10 @@ A radio running an app without these cannot be flashed again without opening the
 | 3.1 | Register access, RX/TX switch, set frequency | **done** (basic) | `driver/bk4819.c` |
 | 3.2 | Band and filter switching (VHF/UHF LNA and PA select pins), TX power levels | **partial** | found (RE-NOTES): BK4819 GPIO3 = VHF TX path, GPIO4 = UHF TX path, PC7 + GPIO5 = RX front end, five bands by frequency; TX power levels still to find (likely calibration rows) |
 | 3.3 | Per-radio calibration: TX power, squelch, battery | **partial** | it's in the **external** flash at `0xF000`–`0xF27F`, plain, read by `sub_01E48E22` (not the internal `0x93000` sector); band edges at `0xF230`; meaning of each row to work out. Read-only; never erased |
-| 3.4 | Squelch (RSSI, noise, glitch), S-meter | **todo** | |
+| 3.4 | Squelch (RSSI, noise, glitch), S-meter | **partial** | software squelch on the RSSI in `app/radio.c` (levels 0–9); the BK4819 squelch registers are driven by `BK4819_SetupSquelch` but not used yet; not tried on a radio ([RADIO.md](RADIO.md)) |
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | lookups found in stock (`CTCSS_FindNearest`, `DCS_GolayEncode`) |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
-| 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | PTT handler located (`PTT_Handler`) |
+| 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | `app/radio.c`: PTT A starts TX only inside 144–148 / 420–450 MHz, low power, never AM; **compiled off** (`RADIO_ENABLE_TX 0`) until receive works on a radio and the PA calibration is understood; PC-tested by `tests/radio_host.py` |
 | 3.8 | Dual watch, scanning (channel, frequency, priority) | **todo** | |
 | 3.9 | FM broadcast radio | **partial** | the AC695N's own FM receiver (`fm_inside`), 87.5–108 MHz, played through the DAC; its registers to find |
 
@@ -69,9 +69,9 @@ A radio running an app without these cannot be flashed again without opening the
 | 4.1 | LCD driver, rectangles, pixels, text | **done** | `driver/st7735s.c`, `ui/` |
 | 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
 | 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix done (`driver/keyboard.c`); layers todo |
-| 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **todo** | |
-| 4.5 | Menu system with every stock menu item | **todo** | menu strings found in `app.bin` |
-| 4.6 | VFO entry, channel store/delete, power-on screen and messages | **todo** | |
+| 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | one VFO: frequency, RSSI bar, squelch, volume, bandwidth, step, CTCSS (`app/app.c`); not tried on a radio |
+| 4.5 | Menu system with every stock menu item | **partial** | a first menu: squelch, volume, step, bandwidth, modulation, CTCSS TX, TX power, key test; not saved yet |
+| 4.6 | VFO entry, channel store/delete, power-on screen and messages | **partial** | 6-digit frequency entry; no channels yet (need the external-flash driver, 2.8) |
 
 ## 5. Data and compatibility
 

@@ -1,4 +1,4 @@
-/* Open-UV5R-Mini: key-test application.
+/* Open-UV5R-Mini: key test (menu item KEY TEST): runs until the radio is switched off.
  *
  * Shows the scan code of the key being pressed, both PTT inputs, the BK4819's REG_00, the RSSI and the
  * Bluetooth state, so the unknown keys and pins can be identified on a real radio. It never transmits.
@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "app/app.h"
-#include "app/update.h"
+#include "app/keytest.h"
 #include "board.h"
 #include "bt/bt.h"
 #include "bsp/ac695n.h"
@@ -31,7 +31,7 @@
 static KEY_Code_t last_key = KEY_INVALID;
 static uint16_t off_count;  /* ticks the power switch has read "off" */
 static uint32_t ticks; /* uptime: if it keeps dropping back to 0, something (the watchdog?) resets the chip */
-static uint16_t bt_rx_count;
+static uint16_t bt_rx_count __attribute__((unused));
 
 static void on_bt_receive(const uint8_t *data, uint16_t len)
 {
@@ -154,15 +154,11 @@ static void flash_test(void)
 	}
 }
 
-void APP_Init(void)
+static void keytest_init(void)
 {
 	char buf[8];
 
-	BOARD_Init();
-	ST7735S_Init();
-	KEYBOARD_Init();
-	if (UPDATE_Requested())
-		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app */
+	ST7735S_FillRect(0, 0, 128, 128, BLACK);
 	BK4819_Init();
 	BK4819_SetFrequency(TEST_FREQ_10HZ);
 	BK4819_SetMode(BK4819_MODE_RX);
@@ -174,7 +170,7 @@ void APP_Init(void)
 	UI_PrintString(BT_IsAvailable() ? "ON" : "--", 88, 66, GREY, BLACK, 1);
 }
 
-void APP_Tick(void)
+static void keytest_tick(void)
 {
 	char buf[8];
 	KEY_Code_t key = KEYBOARD_Poll();
@@ -220,4 +216,13 @@ void APP_Tick(void)
 	if (rssi != last_rssi)
 		UI_PrintString(UI_FormatDec(buf, rssi, 3), 88, 76, GREEN, BLACK, 1);
 	last_rssi = rssi;
+}
+
+void KEYTEST_Run(void)
+{
+	keytest_init();
+	for (;;) {
+		keytest_tick();
+		SYSTEM_DelayMs(APP_TICK_MS);
+	}
 }

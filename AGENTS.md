@@ -61,7 +61,7 @@ then `tools/lift/lift.py --variant nrfb`.
 | Path | What |
 | --- | --- |
 | `driver/` | Our hardware drivers: `bk4819`, `st7735s` (LCD), `keyboard`, `uart`, `gpio`, `system` |
-| `app/` | Our application; `update.c` / `update_radio.c` is the cable update mode (safety-critical) |
+| `app/` | Our application: `app.c` (screens, keys), `radio.c` (radio core), `keytest.c`; `update.c` / `update_radio.c` is the cable update mode (safety-critical). See docs/RADIO.md |
 | `ui/`, `bt/` | Drawing and font; Bluetooth interface (stub by default) |
 | `main.c`, `board.c`, `start.S`, `firmware.ld`, `bsp/` | Start-up, board setup, link map, chip registers |
 | `tools/` | `setup.py`, `jl_ufw_unpack.py`, `disasm.py`, `mkufw.py`, `ufwcheck.py`, `flashcheck.py`, `uv5r_flasher.py` (has an emulated radio), `ufwpatch.py`, `build_matching.py`, `variant_diff.py`, `symbols.txt` (names for stock addresses) |
@@ -106,7 +106,7 @@ then `tools/lift/lift.py --variant nrfb`.
 ## Checks before you commit
 
 - `make check`, and `make TOOLCHAIN=…` if you touched firmware code.
-- Update mode or flasher changed: `python tests/update_host.py`.
+- Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`.
 - Lifter changed: `python tools/lift/insn_test.py` (0 must disagree) and
   `python tools/lift/func_test.py --steps 3000000` (all must match).
 - `git status`: nothing from `build/` or `firmware/` staged.

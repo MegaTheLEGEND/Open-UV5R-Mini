@@ -1,0 +1,53 @@
+/* Open-UV5R-Mini: the radio core: one VFO, receive with squelch, transmit (guarded).
+ *
+ * Written for this radio from the stock app's hardware facts (docs/RE-NOTES.md, "Peripheral sweep"), with the
+ * structure of the UV-K5 open firmware (DualTachyon) as a reference for how a radio firmware is laid out. Not tried
+ * on a radio yet.
+ */
+#ifndef APP_RADIO_H
+#define APP_RADIO_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+/* Transmit is built in but off until the PA settings (calibration rows, roadmap 3.3) are understood and someone
+ * has tried receive on a radio. Even when on, it only works inside the amateur bands in radio.c. */
+#ifndef RADIO_ENABLE_TX
+#define RADIO_ENABLE_TX 0
+#endif
+
+#define FREQ_MIN  1800000u    /* 18 MHz, in 10 Hz units */
+#define FREQ_MAX 66000000u    /* 660 MHz */
+
+typedef enum { MOD_AUTO = 0, MOD_FM, MOD_AM } Modulation_t;
+typedef enum { RADIO_RX = 0, RADIO_RX_OPEN, RADIO_TX } RadioState_t;
+
+typedef struct {
+	uint32_t     freq;        /* 10 Hz units */
+	uint8_t      step;        /* index into RADIO_Steps */
+	uint8_t      squelch;     /* 0 (open) .. 9 */
+	uint8_t      volume;      /* 0 .. 15 */
+	bool         narrow;
+	Modulation_t mod;
+	uint8_t      ctcss_tx;    /* 0 = off, else index + 1 into RADIO_Ctcss */
+	uint8_t      power;       /* 0 low, 1 high */
+} Vfo_t;
+
+extern Vfo_t gVfo;
+extern const uint16_t RADIO_Steps[];    /* 10 Hz units */
+extern const uint8_t  RADIO_StepCount;
+extern const uint16_t RADIO_Ctcss[];    /* 0.1 Hz units */
+extern const uint8_t  RADIO_CtcssCount;
+
+void         RADIO_Init(void);
+void         RADIO_Apply(void);            /* after any change to gVfo */
+void         RADIO_Tick(void);             /* every 10 ms: squelch */
+RadioState_t RADIO_State(void);
+uint16_t     RADIO_Rssi(void);             /* last raw RSSI (dBm = raw / 2 - 160) */
+bool         RADIO_IsAm(void);
+bool         RADIO_TxAllowed(void);
+bool         RADIO_StartTx(void);          /* false if refused */
+void         RADIO_EndTx(void);
+void         RADIO_Beep(uint16_t hz, uint16_t ms);
+
+#endif
