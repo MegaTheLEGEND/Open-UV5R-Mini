@@ -17,9 +17,9 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := main.c board.c app/app.c app/radio.c app/calib.c app/channels.c app/tones.c app/settings.c app/battery.c app/scan.c app/keytest.c app/update.c app/update_radio.c \
+SRC := main.c board.c app/app.c app/radio.c app/calib.c app/channels.c app/tones.c app/settings.c app/battery.c app/scan.c app/dualwatch.c app/keytest.c app/update.c app/update_radio.c \
        driver/uart.c bt/bt_none.c driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c \
-       driver/flash.c driver/io.c driver/adc.c driver/extflash.c \
+       driver/flash.c driver/io.c driver/adc.c driver/mem.c driver/extflash.c \
        ui/font.c ui/helper.c
 ASM := start.S app/handover.S
 

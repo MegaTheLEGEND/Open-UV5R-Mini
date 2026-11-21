@@ -29,8 +29,13 @@ uint8_t BATTERY_Level(void)
 		return 0xFF;
 	for (uint16_t i = 0; i < 6; i++) {
 		uint8_t t = CALIB_Byte((uint16_t)(0x200 + i));
-		if (t != 0xFF && s_raw >= t)
+		if (t != 0xFF && (i == 0 ? s_raw >= t : s_raw > t))     /* as stock sub_01E46D1C */
 			n++;
 	}
 	return n;
+}
+
+bool BATTERY_Low(void)
+{
+	return BATTERY_Raw() && BATTERY_Level() <= 1;
 }

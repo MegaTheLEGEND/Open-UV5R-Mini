@@ -14,8 +14,9 @@ code was copied from it.
 | Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); software squelch on the RSSI; speaker amp, AF unmute and green LED when it opens; key beeps |
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
 | Stock behaviours | `app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
+| A/B and dual watch | `app/app.c`, `app/dualwatch.c` | two sides as stock (each with its own VFO or channel), MENU → A/B switches; with DUAL WATCH on (stock setting), the other side is checked while the active one is quiet and shown in green when it opens; PTT-B transmits on B; the other side shows in small text under the frequency |
 | Scanning | `app/scan.c` | MENU → SCAN: the VFO over the stock scan range (400–470 MHz by default), or the channels marked for scan; resume by the stock SCAN MODE (TIME 5 s, CARRIER 2 s after the signal goes, SEARCH stops); any key stops it, UP/DOWN turn it round |
-| Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red at the lowest calibrated level |
+| Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red and blinking below the second calibrated threshold, as stock blinks its icon |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
 | BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
 | Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c` |
@@ -93,8 +94,10 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 11. Set MENU → RX TONE to the tone a second radio sends (e.g. 88.5). The speaker should open only with that tone.
 12. MENU → SCAN. `SCAN` shows top right and the frequency or channel moves; it stops on a signal (green), and any
     key ends it.
-13. Turn the power knob off. The radio should switch off.
-14. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
+13. Look under the frequency: the other side (B or A). MENU → A/B swaps them. Key a second radio on the other
+    side's frequency: it should show in green and play, then go back to the active side.
+14. Turn the power knob off. The radio should switch off.
+15. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
 
 ## Still to do
 
@@ -102,5 +105,5 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 - **Persistence:** our own settings. Not in the external flash: writing there risks the channels and calibration.
 - **Squelch:** the calibrated thresholds go to `REG_78` too; the BK4819's own squelch status could replace the RSSI
   compare once a radio shows which works better.
-- **Not built yet:** tone scan, dual watch, priority scan, low-battery warning, the timer tick instead of the
+- **Not built yet:** tone scan, priority scan, low-battery warning, the timer tick instead of the
   delay loop, and FM broadcast radio.

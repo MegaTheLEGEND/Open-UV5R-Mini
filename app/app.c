@@ -13,6 +13,7 @@
 #include "app/keys.h"
 #include "app/keytest.h"
 #include "app/radio.h"
+#include "app/dualwatch.h"
 #include "app/scan.h"
 #include "app/settings.h"
 #include "app/tones.h"
@@ -54,6 +55,23 @@ static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
+
+/* The two sides, A and B, as stock has them. gVfo, s_mr, s_ch and s_ch_name are the active side's working copy;
+ * s_side[] holds both and is brought up to date before the other side is tuned. */
+typedef struct {
+	Vfo_t vfo;
+	bool  mr;
+	int   ch;
+	char  name[13];
+} Side_t;
+static Side_t   s_side[2];
+static uint8_t  s_active;                /* 0 = A, 1 = B */
+static bool     s_peek;                  /* dual watch: tuned to the other side for a moment */
+static bool     s_peek_held;             /* ... and it opened */
+static uint32_t s_shown_other = 0xFFFFFFFFu;
+static void side_save(void);
+static void side_switch(void);
+static void dw_end(void);
 
 /* what is on the screen now, so only changes are drawn (the LCD is slow to draw) */
 static uint32_t s_shown_freq = 0xFFFFFFFFu;
@@ -177,10 +195,29 @@ static void draw_freq(void)
 		s_shown_freq = 0xFFFFFFFFu;
 		return;
 	}
-	if (gVfo.freq == s_shown_freq && !s_redraw)
-		return;
-	s_shown_freq = gVfo.freq;
-	UI_PrintString(fmt_freq(b, gVfo.freq), 10, 26, WHITE, BLACK, 2);
+	{
+		uint8_t shown_side = (uint8_t)(s_active ^ s_peek);
+		const Side_t *o = &s_side[shown_side ^ 1];
+		uint32_t key = gVfo.freq ^ (uint32_t)shown_side << 31;
+
+		if (key != s_shown_freq || s_redraw) {
+			s_shown_freq = key;
+			UI_PrintString(shown_side ? "B" : "A", 0, 30, s_peek ? GREEN : BLUE, BLACK, 1);
+			UI_PrintString(fmt_freq(b, gVfo.freq), 10, 26, s_peek ? GREEN : WHITE, BLACK, 2);
+		}
+		key = gStock.raw[SET_DUAL_WATCH] ? o->vfo.freq ^ (uint32_t)shown_side << 31 : 0;
+		if (key != s_shown_other || s_redraw) {
+			s_shown_other = key;
+			ST7735S_FillRect(0, 44, 128, 9, BLACK);
+			if (key) {
+				UI_PrintString(shown_side ? "A" : "B", 0, 45, GREY, BLACK, 1);
+				if (o->mr && o->name[0])
+					UI_PrintString(o->name, 12, 45, GREY, BLACK, 1);
+				else
+					UI_PrintString(fmt_freq(b, o->vfo.freq), 12, 45, GREY, BLACK, 1);
+			}
+		}
+	}
 }
 
 static void draw_signal(void)
@@ -232,21 +269,27 @@ static void draw_signal(void)
 	}
 }
 
-/* Battery, bottom right: volts as the stock voltage screen shows them, red at the lowest calibrated level. */
+/* Battery, bottom right: volts as the stock voltage screen shows them. Low (below the second calibrated threshold):
+ * red and blinking, as stock blinks its battery icon. */
 static void draw_battery(void)
 {
 	char b[8];
-	int t = BATTERY_Tenths(), lvl = BATTERY_Level();
+	int t = BATTERY_Tenths(), low = BATTERY_Low(), blink = low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
+	int key = t | low << 8 | blink << 9;
 
-	if (t == s_shown_batt)
+	if (key == s_shown_batt)
 		return;
-	s_shown_batt = t;
+	s_shown_batt = key;
+	if (blink) {
+		ST7735S_FillRect(104, 120, 24, 8, BLACK);
+		return;
+	}
 	b[0] = (char)('0' + t / 10 % 10);
 	b[1] = '.';
 	b[2] = (char)('0' + t % 10);
 	b[3] = 'V';
 	b[4] = 0;
-	UI_PrintString(BATTERY_Raw() ? b : "    ", 104, 120, lvl == 0 ? RED : GREEN, BLACK, 1);
+	UI_PrintString(BATTERY_Raw() ? b : "    ", 104, 120, low ? RED : GREEN, BLACK, 1);
 }
 
 static void draw_scan(void)
@@ -274,11 +317,11 @@ static void draw_main(void)
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER, M_KEYTEST,
-       M_COUNT };
+enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_POWER,
+       M_KEYTEST, M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
-	"MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION", "RX TONE", "TX TONE",
-	"TX POWER", "KEY TEST",
+	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
+	"RX TONE", "TX TONE", "TX POWER", "KEY TEST",
 };
 #define MENU_ROWS 8                      /* rows on screen; the list scrolls */
 
@@ -287,6 +330,8 @@ static const char *menu_value(int i, char *b)
 	static const char *const MOD[] = { "AUTO", "FM", "AM" };
 
 	switch (i) {
+	case M_AB:      return s_active ? "B" : "A";
+	case M_DW:      return gStock.raw[SET_DUAL_WATCH] ? "ON" : "OFF";
 	case M_MEM:     return s_mr ? "CHANNELS" : "VFO";
 	case M_SCAN:    return "START";
 	case M_SCANMODE: {
@@ -318,6 +363,12 @@ static void menu_change(int i, int dir)
 			gVfo.tx_freq = 0;
 			gVfo.rx_only = false;
 		}
+		break;
+	case M_AB:
+		side_switch();
+		return;
+	case M_DW:
+		gStock.raw[SET_DUAL_WATCH] = !gStock.raw[SET_DUAL_WATCH];
 		break;
 	case M_SCANMODE:
 		gStock.raw[SET_SCAN_MODE] = (uint8_t)(((gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1)
@@ -576,15 +627,43 @@ static KEY_Code_t key_event(void)
 /* Start where the stock app left off: its squelch and beep setting, the active side's VFO, and channel mode if
  * that side was in it (app/settings.h; read only, nothing is written back). The channel number each side was on
  * isn't known yet, so channel mode starts at the first filled slot. */
+static void start_side(uint8_t side);
+
 static void start_from_stock(void)
 {
 	SETTINGS_Defaults();
+	s_active = 0;
+	side_save();                            /* without stock settings both sides start as the default VFO */
+	s_side[1] = s_side[0];
 	if (!s_xf_ok || !SETTINGS_Load())
 		return;
 	if (gStock.raw[SET_SQUELCH] <= 9)
 		gVfo.squelch = gStock.raw[SET_SQUELCH];
+	s_side[0].vfo = s_side[1].vfo = gVfo;
+	s_side[0].ch = s_side[1].ch = -1;
+	for (uint8_t side = 0; side < 2; side++) {
+		s_active = side;
+		start_side(side);
+		side_save();
+	}
+	s_active = gStock.raw[SET_ACTIVE_SIDE] ? 1 : 0;
+	gVfo = s_side[s_active].vfo;
+	s_mr = s_side[s_active].mr;
+	s_ch = s_side[s_active].ch;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = s_side[s_active].name[i];
+	RADIO_Apply();
+}
+
+/* One side from the stock VFO log and work mode, into the working copy. */
+static void start_side(uint8_t side)
+{
+	gVfo = s_side[side].vfo;
+	s_mr = false;
+	s_ch = -1;
+	s_ch_name[0] = 0;
 	if (gStock.have_vfo) {
-		const StockVfo_t *v = &gStock.vfo[gStock.raw[SET_ACTIVE_SIDE] ? 1 : 0];
+		const StockVfo_t *v = &gStock.vfo[side];
 		gVfo.freq = v->freq;
 		gVfo.rx_tone = v->rx_tone;
 		gVfo.tx_tone = v->tx_tone;
@@ -595,12 +674,94 @@ static void start_from_stock(void)
 			gVfo.tx_freq = v->shift > 0 ? v->freq + v->offset : v->freq - v->offset;
 	}
 	RADIO_Apply();
-	if ((gStock.raw[SET_WORK_MODE] >> (gStock.raw[SET_ACTIVE_SIDE] ? 4 : 0) & 0xFu) == 1) {
+	if ((gStock.raw[SET_WORK_MODE] >> (side ? 4 : 0) & 0xFu) == 1) {
 		int n = CHANNEL_Next(-1, +1);
 		if (n >= 0) {
 			s_mr = true;
 			channel_show(n);
 		}
+	}
+}
+
+/* ------------------------------------------------------------------------------------------- A/B and dual watch */
+static void side_save(void)
+{
+	Side_t *s = &s_side[s_active];
+
+	s->vfo = gVfo;
+	s->mr = s_mr;
+	s->ch = s_ch;
+	for (int i = 0; i < 13; i++)
+		s->name[i] = s_ch_name[i];
+}
+
+static void side_load(uint8_t side)
+{
+	const Side_t *s = &s_side[side];
+	uint8_t squelch = gVfo.squelch, volume = gVfo.volume;
+
+	s_active = side;
+	gVfo = s->vfo;
+	gVfo.squelch = squelch;                 /* one squelch and volume for both sides, as stock */
+	gVfo.volume = volume;
+	s_mr = s->mr;
+	s_ch = s->ch;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = s->name[i];
+	RADIO_Apply();
+	s_redraw = true;
+	s_shown_status = -1;
+}
+
+static void side_switch(void)
+{
+	dw_end();
+	side_save();
+	side_load(s_active ^ 1u);
+}
+
+/* Tune the other side for a moment. Only the radio settings are swapped in; the screen keeps the active side
+ * until the other side opens. */
+static void dw_begin(void)
+{
+	Vfo_t keep = gVfo;
+
+	side_save();
+	gVfo = s_side[s_active ^ 1u].vfo;
+	gVfo.squelch = keep.squelch;          /* one squelch and volume for both, as stock */
+	gVfo.volume = keep.volume;
+	RADIO_Apply();
+	s_peek = true;
+	s_peek_held = false;
+}
+
+static void dw_end(void)
+{
+	if (!s_peek)
+		return;
+	s_peek = s_peek_held = false;
+	DW_Reset();
+	gVfo = s_side[s_active].vfo;
+	RADIO_Apply();
+	s_shown_freq = 0xFFFFFFFFu;
+	s_shown_status = -1;
+}
+
+static void dw_tick(bool busy)
+{
+	switch (DW_Tick(gStock.raw[SET_DUAL_WATCH] != 0, busy, RADIO_State() == RADIO_RX_OPEN, APP_TICK_MS)) {
+	case DW_BEGIN:
+		dw_begin();
+		break;
+	case DW_END:
+		dw_end();
+		break;
+	case DW_HELD:
+		s_peek_held = true;
+		s_shown_freq = 0xFFFFFFFFu;
+		break;
+	default:
+		break;
 	}
 }
 
@@ -689,8 +850,15 @@ void APP_Tick(void)
 	} else
 		s_off_ticks = 0;
 
-	/* PTT */
+	/* PTT; PTT-B transmits on side B (it becomes the active side) */
 	ptt = KEYBOARD_IsPttPressed();
+	if (KEYBOARD_IsPtt2Pressed()) {
+		if (!s_ptt_down && s_active != 1)
+			side_switch();
+		ptt = true;
+	}
+	if (ptt)
+		dw_end();
 	if (ptt && !s_ptt_down) {
 		light_wake();
 		s_tot_hit = false;
@@ -707,6 +875,7 @@ void APP_Tick(void)
 
 	RADIO_Tick();
 	tot_tick();
+	dw_tick(ptt || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();
 	else
@@ -729,6 +898,8 @@ void APP_Tick(void)
 	}
 	if (k != KEY_INVALID)
 		light_wake();
+	if (k != KEY_INVALID)
+		dw_end();                          /* keys act on the active side */
 	if (k != KEY_INVALID && !ptt) {
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
@@ -738,9 +909,10 @@ void APP_Tick(void)
 			key_menu(k);
 	}
 
-	if (s_screen == SCREEN_MAIN)
-		draw_main();
-	else if (s_redraw)
+	if (s_screen == SCREEN_MAIN) {
+		if (!s_peek || s_peek_held)
+			draw_main();
+	} else if (s_redraw)
 		draw_menu();
 	s_redraw = false;
 }

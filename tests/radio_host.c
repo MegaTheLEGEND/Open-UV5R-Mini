@@ -7,6 +7,7 @@
 #include "app/battery.h"
 #include "app/calib.h"
 #include "app/channels.h"
+#include "app/dualwatch.h"
 #include "app/scan.h"
 #include "app/tones.h"
 #include "board.h"
@@ -219,6 +220,38 @@ int main(void)
 		CHECK(SCAN_Tick(false) == SCAN_IDLE, "stopped");
 	}
 
+	/* dual watch timing */
+	{
+		int i, begins = 0, ends = 0;
+		DwAction_t a;
+		DW_Reset();
+		for (i = 0; i < 29; i++)
+			begins += DW_Tick(true, false, false, 10) == DW_BEGIN;
+		CHECK(!begins, "active side for 290 ms");
+		CHECK(DW_Tick(true, false, false, 10) == DW_BEGIN && DW_Peeking(), "peek at 300 ms");
+		for (i = 0; i < 9; i++)
+			ends += DW_Tick(true, false, false, 10) == DW_END;
+		CHECK(!ends && DW_Tick(true, false, false, 10) == DW_END && !DW_Peeking(), "back after 100 ms");
+		for (i = 0; i < 100; i++)
+			begins += DW_Tick(true, false, true, 10) == DW_BEGIN;
+		CHECK(!begins, "never peeks while the active side is open");
+		for (i = 0; i < 30; i++)
+			DW_Tick(true, false, false, 10);
+		CHECK(DW_Peeking(), "peeking again");
+		CHECK(DW_Tick(true, false, true, 10) == DW_HELD && DW_Held(), "the other side opens: held");
+		for (i = 0; i < 300; i++)
+			ends += DW_Tick(true, false, true, 10) == DW_END;
+		for (i = 0; i < 99; i++)
+			ends += DW_Tick(true, false, false, 10) == DW_END;
+		CHECK(!ends && DW_Held(), "held while open and for 0.99 s after");
+		CHECK(DW_Tick(true, false, false, 10) == DW_END, "back 1 s after it goes");
+		for (i = 0; i < 30; i++)
+			DW_Tick(true, false, false, 10);
+		a = DW_Tick(true, true, false, 10);
+		CHECK(a == DW_END && !DW_Peeking(), "busy (PTT, key): back at once");
+		CHECK(DW_Tick(false, false, false, 10) == DW_NONE, "off");
+	}
+
 	/* battery: the stock scale and the calibrated thresholds (made up here) */
 	{
 		CHECK(BATTERY_Level() == 0xFF, "no battery thresholds: no level");
@@ -227,7 +260,13 @@ int main(void)
 		CALIB_Set(cal);
 		BATTERY_Set(183u << 2);
 		CHECK(BATTERY_Raw() == 183 && BATTERY_Tenths() == 79, "183 reads 7.9 V: %u", BATTERY_Tenths());
-		CHECK(BATTERY_Level() == 4, "level 4: %u", BATTERY_Level());
+		CHECK(BATTERY_Level() == 4 && !BATTERY_Low(), "level 4: %u", BATTERY_Level());
+		for (int i = 0; i < 30; i++)
+			BATTERY_Set(153u << 2);
+		CHECK(BATTERY_Raw() == 153 && BATTERY_Level() == 1 && BATTERY_Low(), "at the 2nd threshold: low (stock >)");
+		for (int i = 0; i < 30; i++)
+			BATTERY_Set(140u << 2);
+		CHECK(BATTERY_Level() == 1, "at the 1st threshold: passed (stock >=)");
 		for (int i = 0; i < 20; i++)
 			BATTERY_Set(100u << 2);
 		CHECK(BATTERY_Level() == 0 && BATTERY_Raw() < 102, "flat: %u", BATTERY_Raw());

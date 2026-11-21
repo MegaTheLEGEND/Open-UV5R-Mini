@@ -43,7 +43,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 2.2 | Watchdog | **partial** | runs after the bootloader; cleared with `p33_or(0x80, 0x40)` through our own P33 access, which keeps our app running on a radio. Stock writes `WDT_CON` (P33 `0x80`) = 0, then 12 early in `main` (4 s if JieLi's usual table holds) |
 | 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known; PB11 high = off (seen on a radio); power-off in the key-test app, not yet tried on a radio |
 | 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** (located) | stock tick: timer at `0x1E0500`, interrupt 5, handler `0x01E568C4`; `APP_TimeSlice10ms` 0x01E4F1AA |
-| 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **partial** | battery = PB3, ADC channel 6; ADC registers and the stock scale found (RE-NOTES); `driver/adc.c` (polled) and `app/battery.c` show volts and use the radio's own thresholds; PC-tested only. Low-battery warning and cut-off todo |
+| 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **partial** | battery = PB3, ADC channel 6; ADC registers and the stock scale found (RE-NOTES); `driver/adc.c` (polled) and `app/battery.c` show volts and use the radio's own thresholds (stock comparisons); low battery blinks as stock blinks its icon; PC-tested only. Cut-off: not found in stock yet |
 | 2.6 | LEDs (TX red / RX green), backlight dimming and timeout | **partial** | backlight PB7; likely green RX LED = PB9, red TX LED = PR0; flashlight = PB6 (RE-NOTES). Not tried on a radio |
 | 2.7 | Audio: speaker amplifier enable, routing BK4819 audio to the speaker, beeps and tones | **partial** | amp enable PB8 (high = on), shared by six audio sources in stock; RX audio needs only `BK4819_SetAF` + PB8; beeps and voice prompts use the MCU's DAC (audio block `0x1E2F00`, analog `0x1E19C0`). Not tried on a radio |
 | 2.8 | External SPI flash driver (CS PA3 on SPI1) | **partial** | `driver/extflash.c`: read only (ID, read), bit-banged like `tools/jl_extflash`; no write or erase code on purpose; not yet on a radio |
@@ -59,7 +59,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | encode and decode done the stock way (`app/tones.c`, `BK4819_SetCtcss` / `SetDcs` / `CssHeard`): the stock tables (51 CTCSS, 105 DCS), the stock tone encoding, the Golay word checked against the stock routine for all 105 codes, the sub-audio level from the radio's calibration, tone squelch on receive; PC-tested only. Tone and code scan todo |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **todo** | |
 | 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | `app/radio.c`: PTT A starts TX only inside 144–148 / 420–450 MHz, low power, never AM; **compiled off** (`RADIO_ENABLE_TX 0`) until receive works on a radio and the PA calibration is understood; PC-tested by `tests/radio_host.py` |
-| 3.8 | Dual watch, scanning (channel, frequency, priority) | **partial** | scanning (`app/scan.c`): VFO over the stock scan range (settings `0x2C`–`0x2F`), channels with the scan flag, the stock resume modes TIME / CARRIER / SEARCH (setting `0x0A`); PC-tested only. Dual watch and priority todo |
+| 3.8 | Dual watch, scanning (channel, frequency, priority) | **partial** | scanning (`app/scan.c`): VFO over the stock scan range (settings `0x2C`–`0x2F`), channels with the scan flag, the stock resume modes TIME / CARRIER / SEARCH (setting `0x0A`); PC-tested only. Dual watch done (`app/dualwatch.c`, A/B sides in `app/app.c`; stock setting `0x04`; our own timing, the stock one not traced), PTT-B transmits on B; PC-tested only. Priority scan todo |
 | 3.9 | FM broadcast radio | **partial** | the AC695N's own FM receiver (`fm_inside`), 87.5–108 MHz, played through the DAC; its registers to find |
 
 ## 4. User interface
@@ -70,7 +70,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
 | 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix done (`driver/keyboard.c`); layers todo |
 | 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | one VFO: frequency, RSSI bar, squelch, volume, bandwidth, step, CTCSS (`app/app.c`); not tried on a radio |
-| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): memory, scan, scan mode, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
+| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): A/B, dual watch, memory, scan, scan mode, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
 | 4.6 | VFO entry, channel store/delete, power-on screen and messages | **partial** | 6-digit frequency entry; no channels yet (need the external-flash driver, 2.8) |
 
 ## 5. Data and compatibility
