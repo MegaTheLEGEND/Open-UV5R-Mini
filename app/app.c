@@ -46,6 +46,8 @@ static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
 static int      s_menu_top = -1;
 static uint16_t s_off_ticks, s_batt_ticks;
+static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
+static bool     s_light_on = true, s_tot_hit;
 static int      s_shown_batt = -1, s_shown_scan = -1;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
@@ -625,6 +627,51 @@ void APP_Init(void)
 	go(SCREEN_MAIN);
 }
 
+/* Backlight as the stock setting 0x03: 0 always on, 1-4 = 5/10/15/20 s after the last key, PTT or signal. */
+static void light_wake(void)
+{
+	s_light_ms = 0;
+	if (!s_light_on) {
+		s_light_on = true;
+		ST7735S_SetBacklight(true);
+	}
+}
+
+static void light_tick(void)
+{
+	uint8_t bl = gStock.raw[SET_BACKLIGHT];
+
+	if (!bl || bl > 4 || !s_light_on)
+		return;
+	if ((s_light_ms += APP_TICK_MS) >= 5000u * bl) {
+		s_light_on = false;
+		ST7735S_SetBacklight(false);
+	}
+}
+
+/* Transmit refusals from the stock settings: busy lockout in VFO mode (0x0F) refuses PTT while a signal is
+ * heard; the time-out timer (0x05, n x 15 s) ends a long transmission until PTT is let go. */
+static bool tx_busy_locked(void)
+{
+	return !s_mr && gStock.raw[SET_BCL] && RADIO_State() == RADIO_RX_OPEN && gVfo.squelch;
+}
+
+static void tot_tick(void)
+{
+	uint8_t tot = gStock.raw[SET_TOT];
+
+	if (RADIO_State() != RADIO_TX) {
+		s_tx_ms = 0;
+		return;
+	}
+	if (tot && tot <= 12 && (s_tx_ms += APP_TICK_MS) >= 15000u * tot) {
+		RADIO_EndTx();
+		s_tot_hit = s_tx_refused = true;
+		RADIO_Beep(400, 300);
+		s_shown_state = -1;
+	}
+}
+
 void APP_Tick(void)
 {
 	KEY_Code_t k;
@@ -645,18 +692,25 @@ void APP_Tick(void)
 	/* PTT */
 	ptt = KEYBOARD_IsPttPressed();
 	if (ptt && !s_ptt_down) {
-		s_tx_refused = !RADIO_StartTx();
+		light_wake();
+		s_tot_hit = false;
+		s_tx_refused = tx_busy_locked() || !RADIO_StartTx();
 		if (s_tx_refused)
 			RADIO_Beep(400, 150);
 		s_shown_state = -1;
 	} else if (!ptt && s_ptt_down) {
 		RADIO_EndTx();
-		s_tx_refused = false;
+		s_tx_refused = s_tot_hit = false;
 		s_shown_state = -1;
 	}
 	s_ptt_down = ptt;
 
 	RADIO_Tick();
+	tot_tick();
+	if (RADIO_State() == RADIO_RX_OPEN)
+		light_wake();
+	else
+		light_tick();
 	if (ptt)
 		SCAN_Stop();
 	else if (SCAN_Tick(RADIO_State() == RADIO_RX_OPEN) == SCAN_HOP)
@@ -669,6 +723,12 @@ void APP_Tick(void)
 	}
 
 	k = key_event();
+	if (k != KEY_INVALID && !s_light_on) {       /* the first press only lights the screen */
+		light_wake();
+		k = KEY_INVALID;
+	}
+	if (k != KEY_INVALID)
+		light_wake();
 	if (k != KEY_INVALID && !ptt) {
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);

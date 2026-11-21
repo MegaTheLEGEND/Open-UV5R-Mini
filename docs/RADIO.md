@@ -13,6 +13,7 @@ code was copied from it.
 | --- | --- | --- |
 | Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); software squelch on the RSSI; speaker amp, AF unmute and green LED when it opens; key beeps |
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
+| Stock behaviours | `app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
 | Scanning | `app/scan.c` | MENU → SCAN: the VFO over the stock scan range (400–470 MHz by default), or the channels marked for scan; resume by the stock SCAN MODE (TIME 5 s, CARRIER 2 s after the signal goes, SEARCH stops); any key stops it, UP/DOWN turn it round |
 | Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red at the lowest calibrated level |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
