@@ -31,6 +31,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 1.4 | Cable UART on the USB pins (RX 61 = D+, TX 62 = D−): pin routing and IO map | **done** (untested on hardware) | `driver/uart.c`; the pin setup's register bits recorded from the stock code in the emulator (`emu/uart_pins.py`) |
 | 1.5 | Internal-flash driver: read, page program, sector/block erase, JEDEC id | **done** (untested on hardware) | through the mask-ROM routines, range-checked to 0xFA000–0xFE000 (`app/update_radio.c`) |
 | 1.6 | Run the C update mode on the CPU emulator, then on a radio with a case-open recovery path at hand | **todo** | |
+| 1.7 | Setting (menu item, and a key combo at power-on) that restarts into the chip's ROM USB download mode, so a flash backup or recovery needs no key-sending dongle ([tools/jl_usbkey](../tools/jl_usbkey/README.md)) | **todo** | how the stock code or JieLi's SDK jumps to the ROM's download mode is to find; still needs the `G M P` wires, as the K-plug carries only D− |
 
 ## 2. Platform (chip and board)
 
