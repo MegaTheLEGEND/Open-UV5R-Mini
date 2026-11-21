@@ -40,19 +40,58 @@ typedef struct {
  * Not used yet: the first port bit-bangs the LCD. */
 #define SPI1_BASE 0x001E1D00u
 
-/* Power-domain ("P33") registers are reached through routines in the chip's mask ROM.
- * The stock firmware calls them at these fixed addresses. */
-#define ROM_P33_READ  0x02000058u /* uint8_t  f(uint16_t reg)              */
-#define ROM_P33_WRITE 0x020000A0u /* void     f(uint16_t reg, uint8_t val) */
+/* Power-domain ("P33") registers, reached through a small serial interface at 0x1E3E08 (+0 CON, +4 DAT).
+ *
+ * The stock firmware's P33 routines (0x02000058 read, 0x020000A0 write, 0x02000156 or) are not in a mask ROM:
+ * 0x02000000 runs the code the stock app copies into RAM at start-up (flash 0x01E6AAAC -> RAM 0, 53492 bytes).
+ * Calling them from our app ran into whatever was in RAM and restarted the chip (on a radio, 2026-11-21). This is
+ * our own version of what they do:
+ *   CON bit 0 selects the chip, bit 8 the second register bank (addresses with bit 15 set, e.g. 0x8099);
+ *   one byte: DAT = byte, CON |= 0x10, wait while CON bit 1, the answer is in DAT;
+ *   read:  ((addr >> 8) & 3) | 0x80, addr & 0xFF, then a dummy 0x5E whose answer is the value;
+ *   write: (addr >> 8) & 3, addr & 0xFF, value.   (or: first byte | 0x20; and: | 0x40)
+ * The stock routines also mask interrupts around this; our app runs with interrupts off. */
+#define P33_CON REG32(0x001E3E08u)
+#define P33_DAT REG32(0x001E3E0Cu)
+
+static inline uint8_t P33_Xfer(uint8_t b)
+{
+	P33_DAT = b;
+	P33_CON |= 0x10u;
+	while (P33_CON & 0x2u)
+		;
+	return (uint8_t)P33_DAT;
+}
+
+static inline void P33_Begin(uint16_t reg)
+{
+	if (reg & 0x8000u)
+		P33_CON |= 0x101u;
+	else {
+		P33_CON &= ~0x100u;
+		P33_CON |= 0x1u;
+	}
+}
+
+static inline void P33_End(void) { P33_CON &= ~0x101u; }
 
 static inline uint8_t P33_Read(uint16_t reg)
 {
-	return ((uint8_t (*)(uint16_t))(uintptr_t)ROM_P33_READ)(reg);
+	P33_Begin(reg);
+	P33_Xfer((uint8_t)(((reg >> 8) & 3u) | 0x80u));
+	P33_Xfer((uint8_t)reg);
+	uint8_t v = P33_Xfer(0x5E);
+	P33_End();
+	return v;
 }
 
 static inline void P33_Write(uint16_t reg, uint8_t val)
 {
-	((void (*)(uint16_t, uint8_t))(uintptr_t)ROM_P33_WRITE)(reg, val);
+	P33_Begin(reg);
+	P33_Xfer((uint8_t)((reg >> 8) & 3u));
+	P33_Xfer((uint8_t)reg);
+	P33_Xfer(val);
+	P33_End();
 }
 
 /* PR port (power-domain GPIO) as used for the LCD D/C line. */
