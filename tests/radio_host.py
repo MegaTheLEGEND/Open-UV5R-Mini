@@ -21,7 +21,7 @@ def main():
         subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DRADIO_ENABLE_TX=%d' % tx,
                         '-I', os.path.join(ROOT, 'tests', 'stubs'), '-I', ROOT,
                         os.path.join(ROOT, 'tests', 'radio_host.c'), os.path.join(ROOT, 'app', 'radio.c'),
-                        os.path.join(ROOT, 'app', 'calib.c'), os.path.join(ROOT, 'app', 'channels.c'), os.path.join(ROOT, 'app', 'tones.c'), '-DCHANNELS_HOST_TEST',
+                        os.path.join(ROOT, 'app', 'calib.c'), os.path.join(ROOT, 'app', 'channels.c'), os.path.join(ROOT, 'app', 'tones.c'), os.path.join(ROOT, 'app', 'battery.c'), '-DCHANNELS_HOST_TEST',
                         '-o', exe], check=True)
         rc |= subprocess.run([exe]).returncode
     return rc

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "app/radio.h"
+#include "app/battery.h"
 #include "app/calib.h"
 #include "app/channels.h"
 #include "app/tones.h"
@@ -184,6 +185,22 @@ int main(void)
 		rssi = 0x6B - 4;
 		ticks(20);
 		CHECK(RADIO_State() == RADIO_RX, "closes below the calibrated close level");
+	}
+
+	/* battery: the stock scale and the calibrated thresholds (made up here) */
+	{
+		CHECK(BATTERY_Level() == 0xFF, "no battery thresholds: no level");
+		for (int i = 0; i < 6; i++)
+			cal[0x200 + i] = (uint8_t)(140 + 13 * i);     /* 140 153 166 179 192 205 */
+		CALIB_Set(cal);
+		BATTERY_Set(183u << 2);
+		CHECK(BATTERY_Raw() == 183 && BATTERY_Tenths() == 79, "183 reads 7.9 V: %u", BATTERY_Tenths());
+		CHECK(BATTERY_Level() == 4, "level 4: %u", BATTERY_Level());
+		for (int i = 0; i < 20; i++)
+			BATTERY_Set(100u << 2);
+		CHECK(BATTERY_Level() == 0 && BATTERY_Raw() < 102, "flat: %u", BATTERY_Raw());
+		BATTERY_Set(0xFFFF);
+		CHECK(BATTERY_Raw() < 100, "no reading pulls down");
 	}
 
 	/* transmit guard */

@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "app/app.h"
+#include "app/battery.h"
 #include "app/calib.h"
 #include "app/channels.h"
 #include "app/keys.h"
@@ -17,6 +18,7 @@
 #include "app/update.h"
 #include "board.h"
 #include "bt/bt.h"
+#include "driver/adc.h"
 #include "driver/bk4819.h"
 #include "driver/extflash.h"
 #include "driver/gpio.h"
@@ -42,7 +44,8 @@ static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
 static int      s_menu_top = -1;
-static uint16_t s_off_ticks;
+static uint16_t s_off_ticks, s_batt_ticks;
+static int      s_shown_batt = -1;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
@@ -100,6 +103,7 @@ static void draw_main_static(void)
 {
 	ST7735S_FillRect(0, 0, 128, 128, BLACK);
 	UI_PrintString("MENU *BW #LAMP", 0, 120, GREY, BLACK, 1);
+	s_shown_batt = -1;
 }
 
 static void draw_status(void)
@@ -225,10 +229,28 @@ static void draw_signal(void)
 	}
 }
 
+/* Battery, bottom right: volts as the stock voltage screen shows them, red at the lowest calibrated level. */
+static void draw_battery(void)
+{
+	char b[8];
+	int t = BATTERY_Tenths(), lvl = BATTERY_Level();
+
+	if (t == s_shown_batt)
+		return;
+	s_shown_batt = t;
+	b[0] = (char)('0' + t / 10 % 10);
+	b[1] = '.';
+	b[2] = (char)('0' + t % 10);
+	b[3] = 'V';
+	b[4] = 0;
+	UI_PrintString(BATTERY_Raw() ? b : "    ", 104, 120, lvl == 0 ? RED : GREEN, BLACK, 1);
+}
+
 static void draw_main(void)
 {
 	if (s_redraw)
 		draw_main_static();
+	draw_battery();
 	draw_status();
 	draw_freq();
 	draw_signal();
@@ -507,6 +529,8 @@ void APP_Init(void)
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
 		CALIB_Set(cal);
 	}
+	ADC_Init();
+	BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	RADIO_Init();
 	start_from_stock();
 	BT_Init(0);
@@ -545,6 +569,12 @@ void APP_Tick(void)
 	s_ptt_down = ptt;
 
 	RADIO_Tick();
+
+	/* battery about once a second, never while transmitting (the voltage sags) */
+	if (++s_batt_ticks >= 1000 / APP_TICK_MS && RADIO_State() != RADIO_TX) {
+		s_batt_ticks = 0;
+		BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
+	}
 
 	k = key_event();
 	if (k != KEY_INVALID && !ptt) {

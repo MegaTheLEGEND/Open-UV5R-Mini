@@ -266,7 +266,7 @@ on a radio yet: each row says how sure it is.
 | **PR0** | red TX LED | likely | `sub_01E418E0(0/1/2)` sets PR0 through P33 (`sub_01E5714E(0, x)`), state at `0x19134`. Switched on right after the TX checks pass (`0x01E5061A`) |
 | **PC7** | receive front-end select (with BK4819 GPIO5) | strong for the switching, the names are guesses | `sub_01E41382(band, mode)`, below |
 | **PA1** | analog input, ADC channel 0 | strong (that it's analog) | `sub_01E4698A` (board init) clears DIE, pulls and output on PA1 and adds channel 0 to the ADC scan list (`sub_01E46964`, list at RAM `0x1A1D4`, 10 entries) |
-| **PB3** | analog input, ADC channel 6 | strong (that it's analog) | same function, channel 6. One of PA1/PB3 is the battery; which is still open |
+| **PB3** | battery, ADC channel 6 | strong | same function, channel 6. Stock `sub_01E46A30` reads channel 6 for the battery: the 10-bit result >> 2, shown as value × 435 / 10000 V and compared with the six thresholds at external flash `0xF200`. The ADC is at `0x1E3100` (+0 CON, +4 RES): CON = `0xF06E` \| channel << 8, then bits 4 and 6 set; bit 7 = result ready, bit 6 again starts the next (stock `sub_01E3CD74`, `sub_01E3CE94`) |
 | **PA3** | external flash chip select | known | the external-flash routines; see "External SPI flash" |
 | PB2 | pulled-up input | unknown | set in board init; no reader found (maybe the earphone or charge detect) |
 | PA0, PA2, PA5, PA11, PA15, PD5 | low-power settings only | – | touched only by the sleep and power-off pin set-ups (`sub_01E48246`, `sub_01E48318`, `sub_01E483DC`, `sub_01E69ECC`, `sub_01E4751E`) |
