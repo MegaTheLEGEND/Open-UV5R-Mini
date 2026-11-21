@@ -17,12 +17,16 @@ code was copied from it.
 | BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
 | Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c` |
 | Calibration | `app/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
+| Stock settings | `app/settings.c` | the stock VFO A/B and settings logs (external flash `0x8010`, `0x9010`), read only: start-up squelch, key beep, VFO and channel mode as stock left them |
 | Channels | `app/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
 | External flash | `driver/extflash.c` | read only: no erase or write code exists |
 | Key test | `app/keytest.c` | the old test screen, now the menu item KEY TEST (runs until switched off) |
 | Update mode | `app/update_radio.c` | kept: PTT-A + `=` at power-on |
 
-Settings are not saved yet: each power-on starts at 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
+Settings are not saved yet. At power-on the app reads the stock app's own settings (read only): the squelch, key
+beep, the active side's VFO (frequency, tones, power, width, step, shift) and, if that side was in channel mode,
+channel mode at the first filled slot (which channel each side was on isn't known yet). Without them it starts at
+145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
 own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
 frequencies, RX and TX tones (CTCSS or DCS), power and width are used. Checked against a dump of one radio on the PC: 76 channels
 decoded with their names. If the external flash doesn't answer, MEMORY stays on VFO and the status line shows
@@ -72,7 +76,7 @@ Only with the case-open rescue route ready and a full backup made (memory: `uv5r
 `build/open-uv5r-mini-flash.bin`, made with `make ufw` and `tools/mkflashimg.py` from your own backup. It only
 changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`, and back with `uv5r_restore.ps1`.
 
-1. Switch on. You should see 145.52000 and a signal bar.
+1. Switch on. You should see the frequency or channel the stock firmware was last on, and a signal bar.
 2. The status line should not say `NOCAL`. If it does, the external flash didn't answer.
 3. Press each key on the 4th column and note what happens.
 4. Open KEY TEST from the menu if the keys are wrong. Write down the code for MENU, UP, DOWN and EXIT.

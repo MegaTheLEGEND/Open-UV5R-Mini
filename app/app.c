@@ -12,6 +12,7 @@
 #include "app/keys.h"
 #include "app/keytest.h"
 #include "app/radio.h"
+#include "app/settings.h"
 #include "app/tones.h"
 #include "app/update.h"
 #include "board.h"
@@ -460,6 +461,37 @@ static KEY_Code_t key_event(void)
 }
 
 /* ------------------------------------------------------------------------------------------- entry points */
+/* Start where the stock app left off: its squelch and beep setting, the active side's VFO, and channel mode if
+ * that side was in it (app/settings.h; read only, nothing is written back). The channel number each side was on
+ * isn't known yet, so channel mode starts at the first filled slot. */
+static void start_from_stock(void)
+{
+	SETTINGS_Defaults();
+	if (!s_xf_ok || !SETTINGS_Load())
+		return;
+	if (gStock.raw[SET_SQUELCH] <= 9)
+		gVfo.squelch = gStock.raw[SET_SQUELCH];
+	if (gStock.have_vfo) {
+		const StockVfo_t *v = &gStock.vfo[gStock.raw[SET_ACTIVE_SIDE] ? 1 : 0];
+		gVfo.freq = v->freq;
+		gVfo.rx_tone = v->rx_tone;
+		gVfo.tx_tone = v->tx_tone;
+		gVfo.power = v->power ? POWER_LOW : POWER_HIGH;
+		gVfo.narrow = v->narrow;
+		gVfo.step = v->step < RADIO_StepCount ? v->step : 4;
+		if (v->shift && v->offset)
+			gVfo.tx_freq = v->shift > 0 ? v->freq + v->offset : v->freq - v->offset;
+	}
+	RADIO_Apply();
+	if ((gStock.raw[SET_WORK_MODE] >> (gStock.raw[SET_ACTIVE_SIDE] ? 4 : 0) & 0xFu) == 1) {
+		int n = CHANNEL_Next(-1, +1);
+		if (n >= 0) {
+			s_mr = true;
+			channel_show(n);
+		}
+	}
+}
+
 void APP_Init(void)
 {
 	BOARD_Init();
@@ -476,6 +508,7 @@ void APP_Init(void)
 		CALIB_Set(cal);
 	}
 	RADIO_Init();
+	start_from_stock();
 	BT_Init(0);
 	go(SCREEN_MAIN);
 }
@@ -515,7 +548,8 @@ void APP_Tick(void)
 
 	k = key_event();
 	if (k != KEY_INVALID && !ptt) {
-		RADIO_Beep(1000, 40);
+		if (gStock.raw[SET_BEEP])
+			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)
 			key_main(k);
 		else

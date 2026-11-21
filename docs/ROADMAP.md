@@ -77,7 +77,7 @@ A radio running an app without these cannot be flashed again without opening the
 
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
-| 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document |
+| 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document. The radio settings themselves are in the external flash: VFO log at `0x8010` (0x42-byte slots), settings log at `0x9010` (0x60-byte slots), CRC-16/XMODEM; read by `app/settings.c` and used at start-up (PC-tested with a dump; read only). Writing them back is todo |
 | 5.2 | Channel memory format as stock (so existing radios keep their channels) | **partial** | record format known; `app/channels.c` reads the stock channels (MENU → MEMORY), checked against one radio's dump on the PC; no writing |
 | 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Codeplug Studio documents it |
 | 5.4 | Bluetooth / Wireless CPS | **todo** | optional edition with JieLi blobs (docs/BLUETOOTH.md) |
