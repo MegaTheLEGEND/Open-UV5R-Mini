@@ -14,6 +14,7 @@
 #include "driver/gpio.h"
 #include "driver/keyboard.h"
 #include "driver/st7735s.h"
+#include "driver/system.h"
 #include "ui/helper.h"
 
 #define WHITE  RGB565(255, 255, 255)
@@ -27,6 +28,7 @@
 
 static KEY_Code_t last_key = KEY_INVALID;
 static uint8_t off_count;
+static uint32_t ticks; /* uptime: if it keeps dropping back to 0, something (the watchdog?) resets the chip */
 static uint16_t bt_rx_count;
 
 static void on_bt_receive(const uint8_t *data, uint16_t len)
@@ -70,6 +72,10 @@ void APP_Tick(void)
 {
 	char buf[8];
 	KEY_Code_t key = KEYBOARD_Poll();
+
+	SYSTEM_WatchdogClear();
+	if (++ticks % (1000 / APP_TICK_MS) == 0)
+		UI_PrintString(UI_FormatDec(buf, ticks / (1000 / APP_TICK_MS) % 10000, 4), 100, 12, GREY, BLACK, 1);
 
 	if (key != last_key) {
 		if (key == KEY_INVALID)
