@@ -92,6 +92,21 @@ routines in a section run at `0x02000000 + offset` and copied to RAM at start-up
 a radio, with the USB rescue mode ready: first the flash's JEDEC ID (read only), then erase, write and read back a
 blank settings sector, then the whole update.
 
+**First flash test on a radio (2026-11-21)**, key-test app, `FLASH_ReadId` on PTT A:
+
+| Register | Read | Meaning |
+| --- | --- | --- |
+| SFC CON `0x1F0200` | `002802B5` | mode 2 (not continuous read), on |
+| SFC baud `0x1F0204` | `0003` | |
+| SPI0 CON `0x1E1C00` | `00001028` before, `00009020` after | bit 0 is off: SPI0 not switched on |
+| Port D OUT / DIR | `0018` / `FFEC` | PD3 is an input |
+| PA13 OUT / DIR | 1 / 0 | output, high: most likely the flash chip select |
+
+Both tries (PD3, PA13) timed out (`E2000000`); the app ran on afterwards, so pausing and restarting the flash
+controller from RAM code works. The missing step is the stock lock: it writes 6 to `0x10F1A8` and calls the boot
+ROM at `0x1127D4` (reached as `0x021127D4`) with 1, which most likely hands the flash pins to SPI0. Next: read the
+boot ROM (`uv5r_bootrom.ps1`) to see what that routine does.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:
