@@ -327,6 +327,25 @@ antenna, pins 14–15 (BT_OSCI/OSCO) to the crystal.
   Leave `V` unconnected: the battery powers the chip.
 - How to enter the ROM download mode on this radio is still unknown.
 
+### ROM USB download mode: works (read only so far)
+
+Done on 2026-11-21 on an NRF V0.27 radio, case open, with [tools/jl_usbkey](../tools/jl_usbkey/README.md) (an
+ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool):
+
+- The key was answered 2.7 s after pressing the ESP32's button, and the PC showed `BR23 UBOOT1.00`. BR23 is
+  JieLi's family name for the AC695N.
+- The tool's loader runs from RAM. Chip key **`0xB50F`**, the same key the stock `.ufw` is encrypted with. Flash ID
+  `0x856014`: 1 MB SPI NOR on SPI0.
+- Two reads of the whole 1 MB were identical. On Windows the tool needs an administrator shell.
+- Flash `0x1000`–`0x7C000` is byte for byte the stock file's `flash.bin`, so the dump is clean and the radio
+  runs unmodified V0.27. `0x0000`–`0x1000` is blank.
+- Radio-specific data is in `0x7C000`–`0x95000` (25 sectors, includes the calibration) and the `BTIF` sector at
+  `0xFE000`. The rest of `VM` and `key_mac` were blank on this radio.
+- Switching the radio off and on afterwards starts it normally.
+
+Writing through this route is not tried. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
+holds Baofeng's code and the radio's own calibration.
+
 Every pin the firmware uses exists on the LQFP48 package: keypad PA6–PA9 and PC2–PC5, BK4819 PA10, PC0, PC1,
 LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12.
 

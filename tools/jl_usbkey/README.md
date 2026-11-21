@@ -1,6 +1,8 @@
 # jl_usbkey: put the radio's chip into USB download mode with an ESP32
 
-**Not tried on a radio yet.** The goal is to read a backup of the AC695N's internal flash (firmware, calibration,
+**Worked on one NRF V0.27 radio (2026-11-21):** the PC showed `BR23 UBOOT1.00` and a full 1 MB read was clean
+(see [RE-NOTES](../../docs/RE-NOTES.md#rom-usb-download-mode-works-read-only-so-far)). Wired with 220 Ω resistors.
+The goal is to read a backup of the AC695N's internal flash (firmware, calibration,
 settings) over USB, with kagaimiq's [jl-uboot-tool](https://github.com/kagaimiq/jl-uboot-tool), which lists the
 AC695N (BR23) as working. Read only: don't write or erase anything with it.
 
