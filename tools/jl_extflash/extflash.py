@@ -25,7 +25,7 @@ BUF = 0x13000
 CHUNK = 0x1000
 MAGIC = 0x45584653
 DONE = 0x600DF00D
-CMD_ID, CMD_READ = 1, 2
+CMD_ID, CMD_READ, CMD_COPY = 1, 2, 3
 
 
 def main():
@@ -35,6 +35,8 @@ def main():
     ap.add_argument('--prog', default=os.path.join(ROOT, 'build', 'extflash', 'extflash.bin'))
     ap.add_argument('-o', '--out', required=True, help='output file (a second read goes to OUT.2)')
     ap.add_argument('--id-only', action='store_true', help='only read the JEDEC ID')
+    ap.add_argument('--copy', nargs=2, metavar=('ADDR', 'LEN'), type=lambda s: int(s, 0),
+                    help='instead: copy memory ADDR..ADDR+LEN to OUT with CPU loads (e.g. the ROM)')
     args = ap.parse_args()
 
     sys.path.insert(0, args.jltool)
@@ -93,6 +95,18 @@ def main():
             if done != DONE:
                 sys.exit('the program did not finish (done=0x%08X); stopping' % done)
             return result
+
+        if args.copy:
+            start, length = args.copy
+            data = bytearray()
+            for addr in range(start, start + length, CHUNK):
+                if call(CMD_COPY, addr, CHUNK) != CHUNK:
+                    sys.exit('copy failed at 0x%X' % addr)
+                data += mread(BUF, CHUNK)
+            open(args.out, 'wb').write(data[:length])
+            print('copied 0x%X bytes from 0x%08X -> %s (%d%% 0xFF, %d%% 0x00)' % (
+                length, start, args.out, data.count(0xFF) * 100 // len(data), data.count(0) * 100 // len(data)))
+            return
 
         jedec = call(CMD_ID)
         print('external flash JEDEC ID: %06X' % jedec)

@@ -61,7 +61,7 @@ void ST7735S_Init(void)
 	GPIO_ConfigOutput(PIN_LCD_RESET, true);
 	GPIO_ConfigOutput(PIN_LCD_SCK, false);
 	GPIO_ConfigOutput(PIN_LCD_MOSI, false);
-	GPIO_ConfigOutput(PIN_LCD_BACKLIGHT, false);
+	GPIO_ConfigOutput(PIN_LCD_BACKLIGHT, true); /* lit from the start: a lit but empty screen means the panel isn't answering */
 
 	/* D/C (PR1) as output */
 	P33_Write(P33_PR_DIR, P33_Read(P33_PR_DIR) & ~(1u << LCD_DC_PR_BIT));

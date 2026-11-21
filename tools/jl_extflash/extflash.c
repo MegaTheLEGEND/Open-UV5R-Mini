@@ -33,6 +33,7 @@ typedef struct {
 
 #define CMD_ID   1u
 #define CMD_READ 2u
+#define CMD_COPY 3u
 #define DONE     0x600DF00Du
 #define MAGIC    0x45584653u /* "EXFS" */
 #define BUF_MAX  0x1000u
@@ -108,7 +109,8 @@ __attribute__((section(".text.entry"))) void extflash_entry(void)
 		return;
 	}
 
-	pins_setup();
+	if (p->cmd != CMD_COPY)
+		pins_setup();
 
 	if (p->cmd == CMD_ID) {
 		cs(0);
@@ -129,6 +131,14 @@ __attribute__((section(".text.entry"))) void extflash_entry(void)
 		for (uint32_t i = 0; i < len; i++)
 			BUF[i] = spi_byte(0);
 		cs(1);
+		p->result = len;
+	} else if (p->cmd == CMD_COPY) {
+		/* copy memory with CPU loads, for areas the ROM's USB read can't see (e.g. the ROM at 0x02000000) */
+		uint32_t len = p->len > BUF_MAX ? BUF_MAX : p->len;
+		const volatile uint32_t *src = (const volatile uint32_t *)(uintptr_t)(p->addr & ~3u);
+		volatile uint32_t *dst = (volatile uint32_t *)(uintptr_t)BUF;
+		for (uint32_t i = 0; i < len / 4; i++)
+			dst[i] = src[i];
 		p->result = len;
 	} else {
 		p->result = 0xBAD1u;
