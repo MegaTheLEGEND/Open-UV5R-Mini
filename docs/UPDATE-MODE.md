@@ -118,9 +118,10 @@ does; without it the answer read `FFFFFF`), the ID read on a radio: **`856014`**
 (1 MB). PA13 is the flash chip select.
 
 `driver/flash.c` now has read (`03`), 4 KB erase (`20`), page program (`02`), write enable (`06`) and status (`05`),
-all in RAM code; erase and program refuse anything outside `0x1000`–`0x7C000`. Next on a radio: the key-test app's
-second PTT A press erases, programs and reads back `0x40000` (unused bytes past our app), then puts the original
-bytes back.
+all in RAM code; erase and program refuse anything outside `0x1000`–`0x7C000`. On a radio (2026-11-21) the
+key-test app's second PTT A press erased, programmed and read back `0x40000` (unused bytes past our app), then put
+the original bytes back: **`WR OK`**, all 4096 bytes matched both times. Status register `00` (no block protection).
+Our own erase and program work without any stock code.
 
 ## How the stock app does it (v0.27)
 
