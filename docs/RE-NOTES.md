@@ -317,9 +317,12 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
 - **Receive audio** goes from the BK4819 to the speaker without the MCU: stock only unmutes the BK4819
   (`BK4819_SetAF`), asks for the amp (PB8) and lights PB9. The LM2904 dual op-amp is probably where the BK4819
   audio and the MCU's DAC are mixed before the amp (not traced on the board).
-- **MCU audio input (mic/line-in ADC): not seen in use.** The SDK's `mic_demo`, `audio_adc_demo` and
-  `adc_linein` code is linked in, but nothing in the radio app was found calling it. VOX, tones and DTMF are all
-  done by the BK4819. Whether a BK4819 audio pin reaches an MCU ADC pin is a board question (multimeter).
+- **MCU audio input (mic/line-in ADC): only in the Bluetooth call path.** Radio receive audio is never fed into
+  the MCU and back out of the DAC: no line-in pass-through is started (the `adc_linein` and `mic_stream` tasks
+  sit in the task table at `0x01E6432C`/`0x01E6435C`, but no code names them). The one place that opens an audio
+  input is JieLi's Bluetooth hands-free handler (`sub_01E49B56`): an 8 kHz CVSD or 16 kHz mSBC encoder for a phone
+  call over Bluetooth, with echo cancelling (`audio_enc`, `aec`). Whether the radio ever enters that mode, and what
+  (if anything) is wired to the MCU's mic pin, is open. VOX, tones and DTMF are all done by the BK4819.
 - **FM broadcast radio: the AC695N's built-in FM receiver** (`fm_inside`, `sub_01E4B3D0`/`sub_01E4B49A`/`sub_01E4B688`),
   87.5–108.0 MHz in 100 kHz steps (frequency at `0x198C0+104`, set by `sub_01E3DE8E`), heard through the DAC.
 
