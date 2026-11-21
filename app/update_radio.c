@@ -23,6 +23,10 @@
 
 void UPDATE_JumpToBoot(void);   /* app/handover.S, in RAM; does not return */
 
+/* Read by tools/uv5r_flasher.py before it sends an image (roadmap 1.9): this app has our update mode, and these are
+ * the only flash windows its code can erase or program. Must match WRITABLE in driver/flash.c. */
+const char UPDATE_Marker[] = "OPENUV5R-UPDATE-MODE/1 writes=1000-7C000,FA000-FE000;";
+
 int UPDATE_Requested(void)
 {
 	/* stock sub_01E492C0: '=' column (PC2) and PTT-A (PA4) both low at power-on */
@@ -181,6 +185,7 @@ static const UPDATE_Port s_port = {
 
 void UPDATE_Mode(void)
 {
+	__asm__ volatile("" : : "r"(UPDATE_Marker));    /* keep the marker in the image */
 	ST7735S_FillRect(0, 0, 128, 128, 0x0000);
 	UI_PrintString("UPDATE...", 28, 56, 0xFFFF, 0x0000, 1);
 	UART_Init(UPDATE_BAUD_DEFAULT);

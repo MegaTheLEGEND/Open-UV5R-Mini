@@ -106,7 +106,7 @@ then `tools/lift/lift.py --variant nrfb`.
 ## Checks before you commit
 
 - `make check`, and `make TOOLCHAIN=…` if you touched firmware code.
-- Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`.
+- Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`; flasher guard or update-mode marker changed: `python tests/flasher_guard.py`.
 - Lifter changed: `python tools/lift/insn_test.py` (0 must disagree) and
   `python tools/lift/func_test.py --steps 3000000` (all must match).
 - `git status`: nothing from `build/` or `firmware/` staged.

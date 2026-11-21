@@ -45,6 +45,62 @@ WINDOWS = [(0x4100, 0x7BBC8), (0x4000, 0x4004), (0x4020, 0x4024)]
 PINNED_L2 = {'957bb486bb1d8cb5c971e366cd5c45a6da3c64fe611203096b56bb799ab02372': 'L2 (1.1.0)',
              '1e6c3e0d563a50f38caa2972c773ccdff99aa875c1e9098cc923be1cb5b6193e': 'L2-v2'}
 
+# Roadmap 1.9: the cable update mode the image's app must keep, or the radio can only be recovered with the case open.
+# Stock v0.27 app code that the update mode runs (entry, screen, UART, parser, record, reset, loader store, and the
+# RAM code with the flash driver and hand-over), as app addresses. All of it byte for byte = the stock update mode.
+APP_BASE = 0x01E00100
+STOCK_UPDATE_CODE = [
+    (0x01E492C0, 0x01E4948C),   # entry check and setup (PTT-A + =)
+    (0x01E4917A, 0x01E491C2),   # UPDATE... screen
+    (0x01E42AF2, 0x01E42D30),   # loader-slot allocator
+    (0x01E42EE4, 0x01E42F6C),   # hand-over record
+    (0x01E43206, 0x01E432E6),   # frame parser
+    (0x01E431A2, 0x01E431EE),   # baud
+    (0x01E433C8, 0x01E43426),   # send
+    (0x01E43590, 0x01E43676),   # record filler, reset, uart_update task
+    (0x01E59374, 0x01E59546),   # UART ISR
+    (0x01E68F1A, 0x01E693FC),   # loader download and store
+    (0x01E6AAAC, 0x01E6AAAC + 53492),  # RAM code: flash driver, hand-over
+]
+# Our own C update mode declares itself with this marker and the flash windows its code may write
+# (app/update_radio.c). Allowed: the app area and the update loader's slot; never the rest of PRCT or VM.
+OUR_MARKER = b'OPENUV5R-UPDATE-MODE/1 writes='
+ALLOWED_WRITES = [(0x1000, 0x7C000), (0xFA000, 0xFE000)]
+RESCUE_WARNING = (
+    "WARNING: this image's cable update mode has not been proven on a radio. If it does not work, this radio can NOT "
+    "be flashed again over the cable. The only way back is to open the case and use the ROM USB rescue mode: wires "
+    "soldered to the G, M and P pads, a USB key sender (an ESP32 with tools/jl_usbkey) and a full backup of this "
+    "radio's flash made beforehand (docs/TESTING.md, roadmap 1.8). Without all of that, do not continue.")
+CONFIRM_PHRASE = 'I CAN OPEN THE CASE'
+
+
+def update_mode_status(app, stock_app):
+    """('stock' | 'ours' | 'none', detail). 'ours' still needs the rescue warning: not proven on a radio."""
+    if not app:
+        return 'none', 'no app'
+    if stock_app and all(hi - APP_BASE <= len(app)
+                         and app[lo - APP_BASE:hi - APP_BASE] == stock_app[lo - APP_BASE:hi - APP_BASE]
+                         for lo, hi in STOCK_UPDATE_CODE):
+        return 'stock', 'the stock update mode, unchanged'
+    i = app.find(OUR_MARKER)
+    if i >= 0:
+        end = app.find(b';', i)
+        spec = app[i + len(OUR_MARKER):end if end > i else i + 80].decode('latin1')
+        try:
+            wins = [tuple(int(x, 16) for x in w.split('-')) for w in spec.split(',') if w]
+        except ValueError:
+            return 'none', 'our marker is unreadable'
+        bad = [w for w in wins if len(w) != 2 or not any(lo <= w[0] < w[1] <= hi for lo, hi in ALLOWED_WRITES)]
+        if not wins or bad:
+            return 'none', 'its update mode may write outside the app and loader slot: %s' % spec
+        return 'ours', 'Open-UV5R update mode (writes %s); not proven on a radio' % spec
+    return 'none', 'MISSING: a radio running this could not be flashed again over the cable'
+
+
+def needs_rescue_warning(checks):
+    return any(c == 'Update mode' and ok and d.startswith('Open-UV5R') for c, ok, d in checks)
+
+
 CMD_BAUD, CMD_DATA, CMD_RESULT, CMD_LENGTH, CMD_PING = 1, 2, 3, 4, 6
 APP_BAUD, LOADER_BAUD = 9600, 38400
 MAX_READ = 0x1000
@@ -166,9 +222,9 @@ def check_image(img, stock):
            and not any(lo_ <= FLASH_SOC + i < hi for lo_, hi in WINDOWS)]
     res.append(('Stock bytes', len(fl) == len(sfl) and not out,
                 'only the app window differs' if not out else 'differs at SoC 0x%X' % (FLASH_SOC + out[0])))
-    res.append(('Update mode', bool(app) and b'UPDATE\x00' in app,
-                'kept (the radio can be flashed again)' if app and b'UPDATE\x00' in app
-                else 'MISSING: a radio running this could not be flashed again'))
+    _, sapp, _ = area_report(sfl)
+    kind, detail = update_mode_status(app, sapp)
+    res.append(('Update mode', kind != 'none', detail))
     return res
 
 
@@ -632,6 +688,10 @@ def cli(a):
         print('emulated flash equals the image: %s; boot check: %s %s' % (
             same, 'ok' if bok else 'BAD ' + ', '.join(bad), boot_info(app) if app else ''))
         sys.exit(0 if ok and bok and same else 1)
+    if needs_rescue_warning(checks):
+        print('\n' + '!' * 78 + '\n' + RESCUE_WARNING + '\n' + '!' * 78)
+        if input('To go on anyway, type %s: ' % CONFIRM_PHRASE).strip() != CONFIRM_PHRASE:
+            raise SystemExit('not flashed')
     if input('Flash %s to the radio on %s? Type yes: ' % (name, a.port)).strip() != 'yes':
         raise SystemExit('not flashed')
     link = SerialLink(a.port)
@@ -729,6 +789,7 @@ def gui():
             messagebox.showerror('Firmware', str(e))
             return None
         show_checks(res)
+        state['checks'] = res
         if not all(ok for _, ok, _ in res):
             v_status.set('Checks FAILED: this image will not be flashed.')
             return None
@@ -772,6 +833,10 @@ def gui():
             link = EmuLink(radio)
         else:
             dev = port.split()[0]
+            if needs_rescue_warning(state.get('checks', [])) and not messagebox.askyesno(
+                    'Not recoverable over the cable', RESCUE_WARNING + '\n\nContinue anyway?', icon='warning',
+                    default='no'):
+                return
             if not messagebox.askyesno('Flash a real radio', (
                     'Flash "%s" to the radio on %s?\n\n'
                     'Charge the battery first. Put the radio in update mode: switch off, hold PTT-A and =, switch on, '
