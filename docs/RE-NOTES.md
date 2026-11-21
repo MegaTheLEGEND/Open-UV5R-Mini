@@ -354,7 +354,8 @@ ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com
 **Writing works too** (2026-11-21): on one blank 4 KB sector (`0xF1000`, in the empty part of `VM`), the loader
 erased it, wrote a test pattern that read back the same, and erased it again; the whole flash then read back
 byte for byte equal to the backup. A **full restore** worked as well: all 256 sectors erased and rewritten from the backup, each checked, and
-the whole flash then equal to it byte for byte (jl-uboot-tool's loader commands, one sector at a time). One
+the whole flash then equal to it byte for byte (jl-uboot-tool's loader commands, one sector at a time). The radio
+started normally afterwards. One
 earlier try lost the USB link on the first read, before anything was written; the radio was on a USB hub. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
 holds Baofeng's code and the radio's own calibration.
 
