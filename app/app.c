@@ -77,19 +77,19 @@ static bool id_bad(uint32_t id)
 	return id >= 0x01000000u || id == 0 || id == 0xFFFFFFu;
 }
 
-/* On a PTT A press: read the flash's JEDEC ID from RAM code. Try PD3 as chip select first, PA13 only if that gets
- * no answer. Nothing is written to the flash. */
+/* On a PTT A press: read the flash's JEDEC ID from RAM code. Try PA13 as chip select first (an output held high,
+ * seen on a radio), PD3 only if that gets no answer. Nothing is written to the flash. */
 static void flash_id_test(void)
 {
 	char buf[12];
-	const char *pin = "D3 ";
-	uint32_t id = FLASH_ReadId(FLASH_CS_PD3);
+	const char *pin = "A13";
+	uint32_t id = FLASH_ReadId(FLASH_CS_PA13);
 
 	if (id_bad(id) && id != FLASH_ERR_CONTINUOUS) {
-		uint32_t id2 = FLASH_ReadId(FLASH_CS_PA13);
+		uint32_t id2 = FLASH_ReadId(FLASH_CS_PD3);
 		if (!id_bad(id2)) {
 			id = id2;
-			pin = "A13";
+			pin = "D3 ";
 		} else
 			pin = "-- ";
 	}

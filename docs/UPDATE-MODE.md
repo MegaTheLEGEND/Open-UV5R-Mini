@@ -104,8 +104,16 @@ blank settings sector, then the whole update.
 
 Both tries (PD3, PA13) timed out (`E2000000`); the app ran on afterwards, so pausing and restarting the flash
 controller from RAM code works. The missing step is the stock lock: it writes 6 to `0x10F1A8` and calls the boot
-ROM at `0x1127D4` (reached as `0x021127D4`) with 1, which most likely hands the flash pins to SPI0. Next: read the
-boot ROM (`uv5r_bootrom.ps1`) to see what that routine does.
+ROM at `0x1127D4` (reached as `0x021127D4`) with 1, which most likely hands the flash pins to SPI0. The boot ROM (read
+with a CPU copy in rescue mode; a plain read comes back scrambled) is about 10 KB at `0x110000`, with a jump table
+at `0x1127C0`. Its two flash entries are short:
+
+| Entry | Goes to | Does |
+| --- | --- | --- |
+| `0x1127D4` lock(1) | `0x112250` | wait `0x101000` bit 5 set, wait SFC CON bit 31 clear, SFC CON &= ~1, **SPI0 CON \|= 1** |
+| `0x1127D8` unlock(1) | `0x11227C` | SPI0 CON &= ~1, SFC CON \|= 1 |
+
+`FLASH_ReadId` now does the same, and tries PA13 first.
 
 ## How the stock app does it (v0.27)
 

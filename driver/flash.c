@@ -6,7 +6,10 @@
  * the flash, so these functions live in .ramfunc (copied to RAM by start.S) and call nothing: every helper below is
  * a macro, and there are no tables or strings.
  *
- * What the stock RAM code does, read from the stock app (written fresh here):
+ * What the stock code does, read from the stock app and the boot ROM (written fresh here):
+ *   lock (stock 0x020001A0, then the boot ROM at 0x1127D4): wait 0x101000 bit 5 set, wait SFC CON bit 31 clear,
+ *     SFC CON &= ~1, SPI0 CON |= 1 (SPI0 is off otherwise: our first try on a radio timed out without this).
+ *   unlock (boot ROM 0x1127D8): SPI0 CON &= ~1, SFC CON |= 1.
  *   CS (stock 0x020001CA): DIR bit cleared, OUT bit low = selected; PD3, or PA13 when a flag at 0x198C0+1401 is set.
  *   byte out (0x02000226): CON |= 0x8, CON &= ~0x1000, BUF = byte, wait CON bit 15, CON |= 0x4000, CON &= ~0x8.
  *   byte in  (0x020002BE): CON |= 0x1000 first; BUF = 0xFF, wait CON bit 15, CON |= 0x4000, the byte is in BUF.
@@ -58,18 +61,23 @@ RAMFUNC uint32_t FLASH_ReadId(uint32_t cs)
 {
 	volatile uint32_t *port = (volatile uint32_t *)(uintptr_t)(cs == FLASH_CS_PA13 ? 0x001E5000u : 0x001E50C0u);
 	uint32_t bit = cs == FLASH_CS_PA13 ? (1u << 13) : (1u << 3);
-	uint32_t ok = 1, id = 0, v;
+	uint32_t ok = 1, id = 0, v, n;
 
-	uint32_t con = SFC_CON;
-	uint32_t mode = (con >> 8) & 0xFu;
+	uint32_t mode = (SFC_CON >> 8) & 0xFu;
 	if (mode == 6u || mode == 7u)
 		return FLASH_ERR_CONTINUOUS;
 
-	/* let the controller finish its current read, then pause it */
-	for (uint32_t n = WAIT_LOOPS; SFC_CON & 0x80000000u; )
+	/* Hand the flash from the controller to SPI0, as the boot ROM's lock does (0x1127D4): wait for 0x101000 bit 5,
+	 * wait for the controller to finish its current read, controller off, SPI0 on. */
+	for (n = WAIT_LOOPS; !(REG32(0x00101000u) & 0x20u); )
 		if (!--n)
 			return FLASH_ERR_TIMEOUT;
+	for (n = WAIT_LOOPS; SFC_CON & 0x80000000u; )
+		if (!--n)
+			return FLASH_ERR_TIMEOUT;
+	uint32_t con = SFC_CON, spi = SPI0_CON;
 	SFC_CON = con & ~1u;
+	SPI0_CON = spi | 1u;
 
 	uint32_t out = port[0], dir = port[2];
 	port[0] = out | bit;    /* CS high (idle) */
@@ -86,6 +94,8 @@ RAMFUNC uint32_t FLASH_ReadId(uint32_t cs)
 	port[2] = dir;
 	port[0] = out;
 
-	SFC_CON = con;          /* controller back on, as it was */
+	/* and back, as the boot ROM's unlock does (0x1127D8): SPI0 off, controller on */
+	SPI0_CON = spi & ~1u;
+	SFC_CON = con;
 	return ok ? id : FLASH_ERR_TIMEOUT;
 }
