@@ -39,7 +39,8 @@ No real picture yet: the first frame is still blank.
   registers it leaves to its host (`sp`, `ssp`, `usp`, `icfg`, `reti`… via `li.sr_u32`, `mov.sr_r`, `mov.r_sr`).
 - **Memory map**: RAM at 0 (256 KB), second RAM window at 0x800000, flash cache window at 0x01E00000 (the
   decrypted app area, `app.bin` at +0x100), peripheral registers at 0x1E0000–0x1FFFFF and 0x100000–0x10FFFF,
-  mask ROM at 0x02000000.
+  area at 0x02000000. Correction (2026-11-21): that area is not a mask ROM but the code the stock app copies
+  into RAM at start-up (flash 0x01E6AAAC -> RAM 0, 53492 bytes), run through the 0x02000000 alias; see RE-NOTES.
 - **Mask ROM**: not available, so each routine the app calls is replaced by a Python stand-in. The app calls
   about 130 ROM entry points (list: `grep -oE "; 0x020[0-9A-F]{5}" build/app.dis | sort | uniq -c`).
   Unknown ones are logged once and return 0.

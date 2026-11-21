@@ -51,6 +51,23 @@ The 0x1E0200 read between pin writes looks like a write-flush/barrier read.
 - Menu strings are stored in pairs (English, then GBK Chinese), each prefixed with an attribute byte `0x07`.
 - Version strings near 0x01E655A0: `%s NRF`, `5RMINI`, `VER:%s`, `Radio:`, `NOMENU`.
 
+## First boot of our firmware on a radio (2026-11-21)
+
+Written to the internal flash over the ROM download mode (`tools/mkflashimg.py`), one radio (NRF V0.27):
+
+- **Our key-test app runs and draws on the screen**: keys, PTT, BK4819 `REG_00` = `0x0008`, RSSI.
+- **`0x02000000` is not a mask ROM.** The stock app copies 53,492 bytes of its own code from flash `0x01E6AAAC`
+  to RAM `0` at start-up and runs it through the `0x02000000` alias. Its "ROM" helpers (P33 access, flash
+  driver, interrupt masking, the update hand-over) live there. Calling them without that copy ran into whatever was
+  in RAM and restarted the chip. Reading `0x02000000` over USB or with CPU loads returned that RAM, not code.
+- **P33 interface** at `0x1E3E08` (+0 CON, +4 DAT), from the stock routine at RAM `0x58`/`0xA0`: CON bit 0 selects,
+  bit 8 picks the bank for addresses with bit 15 set (`0x8099`); a byte goes out with DAT = byte, CON |= 0x10,
+  wait while CON bit 1; read = `((a>>8)&3)|0x80`, `a&0xFF`, dummy `0x5E`; write = `(a>>8)&3`, `a&0xFF`, value;
+  or = first byte `| 0x20`. Our version is in `bsp/ac695n.h`.
+- **Speed** after the bootloader: about 0.75 turns of a volatile delay loop per µs.
+- **With the automatic power-off on, the screen restarted every few seconds**: PB11's meaning is not confirmed.
+- The cable update mode still calls the stock RAM-code flash and hand-over routines, so it **does not work yet**.
+
 ## Startup
 
 See [FIRMWARE.md](FIRMWARE.md#appbin).

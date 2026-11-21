@@ -38,8 +38,8 @@ A radio running an app without these cannot be flashed again without opening the
 
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
-| 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | `start.S` minimal; clock setup to port from stock `main` |
-| 2.2 | Watchdog | **unknown → partial** | clear is `p33_or(0x80, 0x40)`; enable and timeout to find |
+| 2.1 | Start-up: clocks and PLL, cache, RAM code copy, `.bss` | **partial** | runs on a radio (2026-11-21): `start.S` keeps the boot record and puts the stacks at 0xD910 as stock; the CPU runs at about 0.75 delay-loop turns per µs (slow: clocks not set up yet) |
+| 2.2 | Watchdog | **partial** | not running after the bootloader (a test ran on for minutes without clears); clear is `p33_or(0x80, 0x40)`, now through our own P33 access |
 | 2.3 | Power: hold (PB10), off switch sense (PB11), power-off sequence | **partial** | pins known, `BOARD_PowerOff` written, untested |
 | 2.4 | Timer tick and interrupts (vector table, `rti`), 10 ms time slice | **todo** | stock uses `APP_TimeSlice10ms` 0x01E4F1AA |
 | 2.5 | ADC: battery voltage and level, low-battery warning and cut-off | **unknown** | channel and divider to find |
