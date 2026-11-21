@@ -151,6 +151,20 @@ time-out flag with bit 7 then bit 10, as the stock ISR (`0x01E5949E`) does, plus
 moved for 20 ms ends the burst. The update mode also acts on the power switch now (before, only taking the battery out
 turned it off).
 
+**Where it stands (end of 2026-11-21).** With that fix (`690b169`) the radio, in update mode, sent nothing at all:
+no answers to pings and none of the once-a-second debug frames the build before had sent. Not yet understood; first
+suspect is the new RX path (stall backstop, OTCNT reload) or the stray `FF` bytes, which may be the radio's own
+transmissions coming back on the RX line. Nothing was written to the radio by any cable test (a read-back matched
+the image). The radio was then put back on stock through the ROM USB rescue mode (`uv5r_restore.ps1`): all 256
+sectors, equal to the backup byte for byte.
+
+Next, in order:
+1. Find why `690b169` is silent: compare with `490be10`, which sent debug frames, one change at a time.
+2. Get ping, rate and the loader reads through, with the probe (no answers to reads, so nothing is written).
+3. Only then a real flasher run, sending the stock image with the pinned loader (`build/stock-flashable-reference.ufw`),
+   started by Sean, rescue route ready.
+4. Roadmap 1.9: the flasher's guard for our own update mode.
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:
