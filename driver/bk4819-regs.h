@@ -21,6 +21,7 @@ enum BK4819_REGISTER_t {
 	BK4819_REG_26 = 0x26,
 	BK4819_REG_28 = 0x28,
 	BK4819_REG_2A = 0x2A,
+	BK4819_REG_31 = 0x31, /* VOX / scramble enables */
 	BK4819_REG_30 = 0x30, /* RX/TX/VCO/PA enables */
 	BK4819_REG_32 = 0x32,
 	BK4819_REG_33 = 0x33,
@@ -35,13 +36,17 @@ enum BK4819_REGISTER_t {
 	BK4819_REG_47 = 0x47, /* AF output select */
 	BK4819_REG_48 = 0x48, /* AF RX gain */
 	BK4819_REG_49 = 0x49,
-	BK4819_REG_4F = 0x4F,
+	BK4819_REG_4D = 0x4D, /* squelch: close glitch threshold */
+	BK4819_REG_4E = 0x4E, /* squelch: delays, open glitch threshold */
+	BK4819_REG_4F = 0x4F, /* squelch: close/open noise thresholds */
+	BK4819_REG_50 = 0x50, /* TX mute */
 	BK4819_REG_51 = 0x51, /* CTCSS/CDCSS TX control */
 	BK4819_REG_52 = 0x52,
 	BK4819_REG_54 = 0x54,
 	BK4819_REG_55 = 0x55,
 	BK4819_REG_5C = 0x5C,
 	BK4819_REG_5D = 0x5D,
+	BK4819_REG_65 = 0x65, /* noise indicator */
 	BK4819_REG_67 = 0x67, /* RSSI */
 	BK4819_REG_68 = 0x68, /* CTCSS scan result */
 	BK4819_REG_69 = 0x69, /* CDCSS scan result, high */
@@ -51,9 +56,10 @@ enum BK4819_REGISTER_t {
 	BK4819_REG_72 = 0x72, /* tone 2 frequency */
 	BK4819_REG_75 = 0x75,
 	BK4819_REG_77 = 0x77,
-	BK4819_REG_78 = 0x78,
+	BK4819_REG_78 = 0x78, /* squelch: open/close RSSI thresholds */
 	BK4819_REG_7B = 0x7B,
 	BK4819_REG_7D = 0x7D, /* mic sensitivity */
+	BK4819_REG_7E = 0x7E, /* AGC / DC filter */
 };
 
 #endif

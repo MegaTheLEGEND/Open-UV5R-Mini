@@ -146,3 +146,142 @@ BK4819_CssScanResult_t BK4819_GetCxCSSScanResult(uint32_t *cdcss, uint16_t *ctcs
 	}
 	return BK4819_CSS_NONE;
 }
+
+/* ------------------------------------------------------------------------------------------------------------------
+ * Radio functions. Register facts from the stock firmware where it has them (addresses given), else from the BK4819
+ * notes of the UV-K5 open firmware (DualTachyon, Apache-2.0), used as a reference only; this code is written fresh.
+ */
+
+/* REG_47 = 0x6040 | type << 8; the stock app uses 0x6040 | 0x600 for AM on this radio (sub_01E40AA0, table at
+ * 0x01E5DF08: 0x000 mute, 0x100 FM, 0x200, 0x300 beep, 0x600 AM). */
+void BK4819_SetAF(BK4819_AF_t af)
+{
+	BK4819_WriteRegister(BK4819_REG_47, (uint16_t)(0x6040u | ((uint16_t)af << 8)));
+}
+
+/* AF DAC gain, REG_48 bits 4..9 (stock: (vol << 4 | 0x800F) & 0x83FF; 0xB3BF at init). level 0..15. */
+void BK4819_SetVolume(uint8_t level)
+{
+	uint16_t g = level > 15 ? 63 : (uint16_t)(level * 4u + (level ? 3u : 0u));
+
+	BK4819_WriteRegister(BK4819_REG_48, (uint16_t)(0xB00Fu | (g << 4)) & 0xB3FFu);
+}
+
+void BK4819_SetFilterBandwidth(bool narrow)
+{
+	BK4819_WriteRegister(BK4819_REG_43, narrow ? 0x4048 : 0x3028);
+}
+
+/* BK4819 GPIO pins through REG_33 as the stock app drives them (sub_01E4135C): clear mask << 8 to make the pin an
+ * output, then set or clear mask in the low byte. */
+void BK4819_SetGpio(uint8_t mask, bool on)
+{
+	uint16_t r = BK4819_ReadRegister(BK4819_REG_33);
+
+	r &= (uint16_t)~((uint16_t)mask << 8);
+	if (on)
+		r |= mask;
+	else
+		r &= (uint16_t)~mask;
+	BK4819_WriteRegister(BK4819_REG_33, r);
+}
+
+/* Squelch thresholds: RSSI (REG_78), noise (REG_4F), glitch (REG_4D / REG_4E). */
+void BK4819_SetupSquelch(uint8_t open_rssi, uint8_t close_rssi, uint8_t open_noise, uint8_t close_noise,
+                         uint8_t open_glitch, uint8_t close_glitch)
+{
+	BK4819_WriteRegister(BK4819_REG_70, 0);
+	BK4819_WriteRegister(BK4819_REG_4D, (uint16_t)(0xA000u | close_glitch));
+	BK4819_WriteRegister(BK4819_REG_4E, (uint16_t)(0x6F00u | open_glitch));
+	BK4819_WriteRegister(BK4819_REG_4F, (uint16_t)(close_noise << 8 | open_noise));
+	BK4819_WriteRegister(BK4819_REG_78, (uint16_t)(open_rssi << 8 | close_rssi));
+}
+
+/* Interrupt flags (REG_02 bits, enabled in REG_3F): squelch found 3, lost 2; CTCSS found 9, lost 8 (reference). */
+void BK4819_SetInterrupts(uint16_t mask)
+{
+	BK4819_WriteRegister(BK4819_REG_3F, mask);
+}
+
+/* Returns the flags of a pending interrupt (REG_0C bit 0), and clears it; 0 if none. */
+uint16_t BK4819_TakeInterrupts(void)
+{
+	uint16_t f;
+
+	if (!(BK4819_ReadRegister(BK4819_REG_0C) & 1u))
+		return 0;
+	BK4819_WriteRegister(BK4819_REG_02, 0);
+	f = BK4819_ReadRegister(BK4819_REG_02);
+	return f ? f : 0x8000u;
+}
+
+/* Receive on: REG_37 0x1D0F (stock sub_01E40D34), REG_30 off then 0xBFF1 (stock mode 1). */
+void BK4819_RxOn(void)
+{
+	BK4819_WriteRegister(BK4819_REG_37, 0x1D0F);
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_30, 0xBFF1);
+}
+
+/* Everything off, as the stock TX/RX switch does for power saving: REG_30 = 0, REG_37 = 0x1D00. */
+void BK4819_Sleep(void)
+{
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_37, 0x1D00);
+}
+
+/* Sub-audio on transmit. ctcss_10hz e.g. 885 = 88.5 Hz; 0 = off. REG_51 and the REG_07 control word as in the
+ * reference (word = Hz * 20.64888); the stock writes REG_07/REG_51 in sub_01E4D880 / sub_01E4D97A. */
+void BK4819_SetTxCtcss(uint16_t ctcss_10hz)
+{
+	if (!ctcss_10hz) {
+		BK4819_WriteRegister(BK4819_REG_51, 0x0000);
+		return;
+	}
+	BK4819_WriteRegister(BK4819_REG_51, 0x904A);
+	BK4819_WriteRegister(BK4819_REG_07, (uint16_t)(((uint32_t)ctcss_10hz * 2065u) / 1000u));
+}
+
+/* RX sub-audio detection: the same tone generator setting, read back through the CTCSS scan registers. */
+void BK4819_SetRxCtcss(uint16_t ctcss_10hz)
+{
+	BK4819_SetTxCtcss(ctcss_10hz);
+}
+
+/* PA: REG_36 = bias << 8 | gain byte (stock sub_01E4DA78: the gain byte comes from a table by power level, 0xFF or
+ * 0xD7; bias 0 writes 0x007F = PA off). */
+void BK4819_SetPa(uint8_t bias, uint8_t gain)
+{
+	BK4819_WriteRegister(BK4819_REG_36, bias ? (uint16_t)(bias << 8 | gain) : 0x007F);
+}
+
+void BK4819_TxMute(bool on)
+{
+	BK4819_WriteRegister(BK4819_REG_50, on ? 0xBB20 : 0x3B20);
+}
+
+/* Transmit on: REG_37 0x1D0F, REG_52, REG_30 0 then 0xC1FE (stock mode 2). */
+void BK4819_TxOn(void)
+{
+	BK4819_WriteRegister(BK4819_REG_37, 0x1D0F);
+	BK4819_WriteRegister(BK4819_REG_52, 0x028F);
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_30, 0xC1FE);
+}
+
+/* A local tone through the speaker (key beep): tone 1 on, AF = beep. hz 0 = off. */
+void BK4819_Beep(uint16_t hz)
+{
+	if (!hz) {
+		BK4819_WriteRegister(BK4819_REG_70, 0);
+		return;
+	}
+	BK4819_WriteRegister(BK4819_REG_70, (uint16_t)(0x8000u | 96u << 8));
+	BK4819_WriteRegister(BK4819_REG_71, (uint16_t)(((uint32_t)hz * 1032444u) / 100000u));
+	BK4819_SetAF(BK4819_AF_BEEP);
+}
+
+uint8_t BK4819_GetNoise(void)
+{
+	return (uint8_t)(BK4819_ReadRegister(BK4819_REG_65) & 0x7F);
+}

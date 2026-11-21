@@ -33,6 +33,14 @@
 #define PIN_POWER_HOLD   IO_PORTB(10)   /* high keeps the radio on */
 #define PIN_POWER_SENSE  IO_PORTB(11)   /* high = power switch turned off (stock sub_01E4C978) */
 
+/* Audio, LEDs, lamp and band switch: candidates from the stock code, not yet confirmed on a radio
+ * (docs/RE-NOTES.md, "Peripheral sweep") */
+#define PIN_SPEAKER_AMP  IO_PORTB(8)    /* high = amplifier on (stock sub_01E400D6) */
+#define PIN_LED_RX       IO_PORTB(9)    /* green RX LED (stock sub_01E40CE0) */
+#define PIN_LAMP         IO_PORTB(6)    /* flashlight (stock sub_01E41906) */
+#define PIN_RX_FRONT     IO_PORTC(7)    /* receive front end: high below 300 MHz (stock sub_01E41382) */
+#define LED_TX_PR_BIT    0              /* red TX LED on PR0 (stock sub_01E418E0) */
+
 void BOARD_Init(void);
 void BOARD_PowerOff(void);
 
