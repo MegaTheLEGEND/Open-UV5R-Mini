@@ -20,5 +20,7 @@ void UART_SetBaud(uint32_t baud);
 void UART_Send(const uint8_t *data, uint32_t len);
 /* Up to max bytes, waiting at most timeout_ms for the first; returns the count (0 on time-out). */
 int  UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms);
+/* A UART register (offset from 0x1E2100), for the update screen's debug lines. */
+uint32_t UART_Reg(uint32_t offset);
 
 #endif

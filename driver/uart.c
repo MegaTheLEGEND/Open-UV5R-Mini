@@ -103,3 +103,8 @@ int UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms)
 		buf[n++] = s_rx[s_pos++];
 	return n;
 }
+
+uint32_t UART_Reg(uint32_t offset)
+{
+	return REG(offset);
+}

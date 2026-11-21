@@ -29,8 +29,56 @@ int UPDATE_Requested(void)
 	return !GPIO_CheckBit(PIN_KEY_COL0) && !GPIO_CheckBit(PIN_PTT);
 }
 
-static int port_read(uint8_t *buf, int max, uint32_t timeout_ms) { return UART_Receive(buf, max, timeout_ms); }
-static void port_write(const uint8_t *buf, int len) { UART_Send(buf, (uint32_t)len); }
+/* Debug lines on the UPDATE... screen (first cable tests on a radio, 2026-11-21): the UART state, the bytes that
+ * reached the update protocol and the frames it sent, so a stall shows where it is. */
+static uint32_t s_rx_total, s_tx_frames;
+static uint8_t s_last[8];
+
+static void debug_draw(void)
+{
+	char b[12];
+
+	UI_PrintString("C", 4, 88, 0xFFFF, 0x0000, 1);
+	UI_PrintString(UI_FormatHex(b, UART_Reg(0), 8), 16, 88, 0x07E0, 0x0000, 1);
+	UI_PrintString("H", 70, 88, 0xFFFF, 0x0000, 1);
+	UI_PrintString(UI_FormatHex(b, UART_Reg(40), 4), 82, 88, 0x07E0, 0x0000, 1);
+	UI_PrintString("RX", 4, 98, 0xFFFF, 0x0000, 1);
+	UI_PrintString(UI_FormatDec(b, s_rx_total % 10000u, 4), 22, 98, 0x07E0, 0x0000, 1);
+	UI_PrintString("TX", 58, 98, 0xFFFF, 0x0000, 1);
+	UI_PrintString(UI_FormatDec(b, s_tx_frames % 10000u, 4), 76, 98, 0x07E0, 0x0000, 1);
+	for (int i = 0; i < 8; i++)
+		UI_PrintString(UI_FormatHex(b, s_last[i], 2), (uint8_t)(4 + 15 * i), 108, 0xFFE0, 0x0000, 1);
+}
+
+static int port_read(uint8_t *buf, int max, uint32_t timeout_ms)
+{
+	/* wait in slices so the screen can show the state while nothing comes */
+	for (uint32_t waited = 0;;) {
+		uint32_t slice = timeout_ms - waited < 300u ? timeout_ms - waited : 300u;
+		int n = UART_Receive(buf, max, slice);
+		if (n > 0) {
+			for (int i = 0; i < n; i++) {
+				for (int j = 0; j < 7; j++)
+					s_last[j] = s_last[j + 1];
+				s_last[7] = buf[i];
+			}
+			s_rx_total += (uint32_t)n;
+			debug_draw();
+			return n;
+		}
+		waited += slice;
+		debug_draw();
+		if (waited >= timeout_ms)
+			return 0;
+	}
+}
+
+static void port_write(const uint8_t *buf, int len)
+{
+	s_tx_frames++;
+	debug_draw();
+	UART_Send(buf, (uint32_t)len);
+}
 static void port_baud(uint32_t baud) { UART_SetBaud(baud); }
 
 static int port_flash_read(uint32_t addr, uint8_t *buf, uint32_t len)
