@@ -339,8 +339,16 @@ ESP32 sending JieLi's USB_KEY) and kagaimiq's [jl-uboot-tool](https://github.com
 - Two reads of the whole 1 MB were identical. On Windows the tool needs an administrator shell.
 - Flash `0x1000`–`0x7C000` is byte for byte the stock file's `flash.bin`, so the dump is clean and the radio
   runs unmodified V0.27. `0x0000`–`0x1000` is blank.
-- Radio-specific data is in `0x7C000`–`0x95000` (25 sectors, includes the calibration) and the `BTIF` sector at
-  `0xFE000`. The rest of `VM` and `key_mac` were blank on this radio.
+- What the stock `.ufw` doesn't have (an update writes only up to `0x7C000`):
+
+  | Where | What |
+  | --- | --- |
+  | `0x7C000`–`0x93000` | Sound resources: a directory of about 186 JieLi `.wtg` (compressed voice) and `.sin` (tone) files, named like `C32.wtg` and `E0.wtg` (probably the Chinese and English voice prompts). Encrypted with the app's key stream (chip key, block key counted from `0x4000`). Written at the factory |
+  | `0x93000` | One sector of structured data: the calibration record (roadmap 3.3). Unique to each radio |
+  | `0x94000` | Start of `VM` (settings); the rest of `VM` was blank |
+  | `0xFE000` | `BTIF` (Bluetooth info) |
+
+  So no stock file holds a radio's calibration or its voice prompts: a backup from the radio itself is the only copy.
 - Switching the radio off and on afterwards starts it normally.
 
 Writing through this route is not tried. The backup stays on the owner's PC (`firmware/backups/`, git-ignored): it
