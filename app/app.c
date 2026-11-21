@@ -66,6 +66,7 @@ void APP_Init(void)
 
 	draw_static();
 	UI_PrintString(UI_FormatHex(buf, BK4819_ReadRegister(BK4819_REG_00), 4), 64, 80, GREEN, BLACK, 1);
+	UI_PrintString(BT_IsAvailable() ? "ON" : "--", 28, 104, GREY, BLACK, 1);
 }
 
 void APP_Tick(void)
@@ -73,10 +74,16 @@ void APP_Tick(void)
 	char buf[8];
 	KEY_Code_t key = KEYBOARD_Poll();
 
-	SYSTEM_WatchdogClear();
-	if (++ticks % (1000 / APP_TICK_MS) == 0)
-		UI_PrintString(UI_FormatDec(buf, ticks / (1000 / APP_TICK_MS) % 10000, 4), 100, 12, GREY, BLACK, 1);
+	static uint8_t last_ptt = 0xFF, last_ptt2 = 0xFF, last_sense = 0xFF;
+	static uint16_t last_rssi = 0xFFFF;
 
+	SYSTEM_WatchdogClear();
+
+	/* heartbeat: counts up every 10 ticks; if it keeps going back to 0, the chip is restarting */
+	if (++ticks % 10 == 0)
+		UI_PrintString(UI_FormatDec(buf, ticks / 10 % 10000, 4), 100, 12, GREY, BLACK, 1);
+
+	/* Drawing is slow (bit-banged), so only redraw what changed. */
 	if (key != last_key) {
 		if (key == KEY_INVALID)
 			UI_PrintString("--", 52, 28, GREEN, BLACK, 3);
@@ -85,24 +92,24 @@ void APP_Tick(void)
 		last_key = key;
 	}
 
-	bool ptt = KEYBOARD_IsPttPressed(), ptt2 = KEYBOARD_IsPtt2Pressed();
-	UI_PrintString(ptt ? "DOWN" : "UP  ", 64, 56, ptt ? RED : GREEN, BLACK, 1);
-	UI_PrintString(ptt2 ? "DOWN" : "UP  ", 64, 66, ptt2 ? RED : GREEN, BLACK, 1);
-	UI_PrintString(UI_FormatDec(buf, BK4819_GetRSSI(), 3), 64, 90, GREEN, BLACK, 1);
+	uint8_t ptt = KEYBOARD_IsPttPressed(), ptt2 = KEYBOARD_IsPtt2Pressed();
+	if (ptt != last_ptt)
+		UI_PrintString(ptt ? "DOWN" : "UP  ", 64, 56, ptt ? RED : GREEN, BLACK, 1);
+	if (ptt2 != last_ptt2)
+		UI_PrintString(ptt2 ? "DOWN" : "UP  ", 64, 66, ptt2 ? RED : GREEN, BLACK, 1);
+	last_ptt = ptt;
+	last_ptt2 = ptt2;
 
-	if (!BT_IsAvailable())
-		UI_PrintString("NOT BUILT", 28, 104, GREY, BLACK, 1);
-	else if (BT_IsConnected()) {
-		UI_PrintString("RX ", 28, 104, GREEN, BLACK, 1);
-		UI_PrintString(UI_FormatDec(buf, bt_rx_count, 5), 46, 104, GREEN, BLACK, 1);
-	} else
-		UI_PrintString("WAITING  ", 28, 104, YELLOW, BLACK, 1);
+	uint16_t rssi = BK4819_GetRSSI();
+	if (rssi != last_rssi)
+		UI_PrintString(UI_FormatDec(buf, rssi, 3), 64, 90, GREEN, BLACK, 1);
+	last_rssi = rssi;
 
-	/* power switch: about 30 ms debounce, like the stock firmware's 25 ms */
-	if (!GPIO_CheckBit(PIN_POWER_SENSE)) {
-		if (++off_count >= 3)
-			BOARD_PowerOff();
-	} else {
-		off_count = 0;
-	}
+	/* The power-off sense (PB11) is only shown for now, not acted on: with the automatic power-off on, the first
+	 * screens on a radio (2026-11-21) kept restarting every few seconds. */
+	uint8_t sense = GPIO_CheckBit(PIN_POWER_SENSE);
+	if (sense != last_sense)
+		UI_PrintString(sense ? "PWR HI" : "PWR LO", 76, 104, sense ? GREEN : RED, BLACK, 1);
+	last_sense = sense;
+	(void)off_count;
 }
