@@ -65,6 +65,24 @@ outputs, the squelch opening and closing (fallback and calibrated), AM on airban
 transmit guard at the band edges, channel TX frequencies, receive-only channels, and channel-record decoding. The
 calibration in the test is made up: no radio's own data is kept in the repo.
 
+## First test on a radio (rescue route only)
+
+Only with the case-open rescue route ready and a full backup made (memory: `uv5r_backup.ps1`). The image is
+`build/open-uv5r-mini-flash.bin`, made with `make ufw` and `tools/mkflashimg.py` from your own backup. It only
+changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`, and back with `uv5r_restore.ps1`.
+
+1. Switch on. You should see 145.52000 and a signal bar.
+2. The status line should not say `NOCAL`. If it does, the external flash didn't answer.
+3. Press each key on the 4th column and note what happens.
+4. Open KEY TEST from the menu if the keys are wrong. Write down the code for MENU, UP, DOWN and EXIT.
+5. Set squelch 0 (MENU → SQUELCH). You should hear noise from the speaker, and the green LED should light.
+6. Set squelch 3. Key a second radio on 145.520: the speaker should open, then close when it stops.
+7. Press `#`. The lamp should toggle.
+8. MENU → MEMORY. UP/DOWN should walk your stock channels, with their names.
+9. Press PTT. It should beep and say `NO TX` (transmit is compiled off).
+10. Turn the power knob off. The radio should switch off.
+11. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
+
 ## Still to do
 
 - **Confirm on a radio:** the function keys, the amp, the LEDs and the lamp.
