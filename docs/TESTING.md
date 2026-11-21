@@ -94,7 +94,8 @@ as **Back to stock**, and Studio's own Back to stock gives the same bytes.
   ([RE-NOTES.md](RE-NOTES.md#measured-with-a-multimeter-v16-board-battery-out)). Wire those three; leave `V`
   unconnected. An ESP32 sends the key that starts the mode ([tools/jl_usbkey](../tools/jl_usbkey/README.md)).
   **Reading a full backup this way works, and so does writing** (2026-11-21, one radio: a test sector written,
-  read back and erased). Restoring a whole backup is not tried yet.
+  read back and erased). A full restore of all 256 sectors from the backup worked too. Plug the radio straight into the PC, not
+  a hub: one try lost the USB link.
 - **Make a backup first.** Before flashing anything of ours, read your radio's internal flash with this route: it
   holds your radio's calibration, which no stock file has.
 - **No flash clip:** the AC695N's flash is inside the chip package, so there's no flash chip to clip a programmer
