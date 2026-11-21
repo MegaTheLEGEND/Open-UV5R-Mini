@@ -65,7 +65,9 @@ Written to the internal flash over the ROM download mode (`tools/mkflashimg.py`)
   wait while CON bit 1; read = `((a>>8)&3)|0x80`, `a&0xFF`, dummy `0x5E`; write = `(a>>8)&3`, `a&0xFF`, value;
   or = first byte `| 0x20`. Our version is in `bsp/ac695n.h`.
 - **Speed** after the bootloader: about 0.75 turns of a volatile delay loop per µs.
-- **With the automatic power-off on, the screen restarted every few seconds**: PB11's meaning is not confirmed.
+- **The watchdog runs after the bootloader.** Without clears our app restarted at the same point each time;
+  with `p33_or(0x80, 0x40)` through our own P33 access it **runs stably**.
+- The automatic power-off (PB11 low) is off in the key-test app until PB11's meaning is confirmed.
 - The cable update mode still calls the stock RAM-code flash and hand-over routines, so it **does not work yet**.
 
 ## Startup
