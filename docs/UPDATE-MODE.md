@@ -143,6 +143,14 @@ So the UART reaches the USB pins as stock routes them, and its clock is 48 MHz w
 K1 cable plugged in, the ROM USB rescue mode doesn't start (the plug's sleeve sits on D− through about 100 Ω):
 unplug it first.
 
+**The first real flasher run stalled** after the rate frame (nothing written; a read-back matched the image). Debug
+frames from the radio (cmd 0x7F, `app/update_radio.c`) showed why: 105 bytes sat in the RX buffer (`HRXCNT = 0x69`)
+with no time-out flag in CON0 (`0x141`), so the driver never handed them on, and later frames queued behind them
+until another burst came. Stray `FF` bytes also arrive on the RX line. Fix: reload OTCNT on every re-arm and clear the
+time-out flag with bit 7 then bit 10, as the stock ISR (`0x01E5949E`) does, plus a backstop: a byte count that hasn't
+moved for 20 ms ends the burst. The update mode also acts on the power switch now (before, only taking the battery out
+turned it off).
+
 ## How the stock app does it (v0.27)
 
 **Entry** (`sub_01E492C0`): if PC2 (the `=` column) and PA4 (PTT-A) both read low at power-on:

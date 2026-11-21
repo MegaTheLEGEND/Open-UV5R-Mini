@@ -22,18 +22,22 @@ static uint8_t  s_rx[RXBUF_LEN] __attribute__((aligned(4)));
 static uint8_t  s_tx[0x40] __attribute__((aligned(4)));
 static uint32_t s_have, s_pos;           /* bytes in s_rx not yet handed out */
 
+static uint32_t s_otcnt;                 /* RX time-out, reloaded on every re-arm as the stock ISR does */
+
 static void rx_arm(void)
 {
 	CON0 |= 0x1000;                      /* clear RX pending */
 	RXSADR = (uint32_t)(uintptr_t)s_rx;
 	RXEADR = (uint32_t)(uintptr_t)s_rx + RXBUF_LEN;
 	RXCNT = RXBUF_LEN;
+	OTCNT = s_otcnt;
 }
 
 void UART_SetBaud(uint32_t baud)
 {
 	BAUD = CLOCK_HZ / baud / 4 - 1;
-	OTCNT = CLOCK_HZ / baud * 20;        /* ~2 character times of silence ends a burst */
+	s_otcnt = CLOCK_HZ / baud * 20;      /* ~2 character times of silence ends a burst */
+	OTCNT = s_otcnt;
 }
 
 #define SFR(a)      (*(volatile uint32_t *)(uintptr_t)(a))
@@ -77,18 +81,33 @@ void UART_Send(const uint8_t *data, uint32_t len)
 	}
 }
 
+/* A burst ends when the UART's time-out flag (CON0 bit 11) comes, or the buffer is full (bit 14). As a backstop, a
+ * count of received bytes (HRXCNT) that hasn't moved for 20 ms also ends it: on a radio (2026-11-21) 105 bytes sat in
+ * the buffer with no time-out flag until more came, and the update protocol stalled behind them. */
 int UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms)
 {
 	int n = 0;
+	uint32_t last_cnt = 0, still = 0;
 
 	for (uint32_t t = 0; s_pos == s_have; t++) {
-		uint32_t got = 0;
+		uint32_t got = 0, cnt;
 		if (CON0 & 0x4000)                   /* buffer full */
 			got = RXBUF_LEN;
-		else if (CON0 & 0x0800) {            /* a burst ended */
-			CON0 |= 0x0480;
+		else if (CON0 & 0x0800) {            /* a burst ended: clear the flag as stock does (bit 7, then bit 10) */
+			CON0 |= 0x0080;
+			CON0 |= 0x0400;
 			got = HRXCNT;
+		} else if ((cnt = HRXCNT) != 0 && cnt <= RXBUF_LEN) {
+			if (cnt == last_cnt) {
+				if (++still >= 20)
+					got = cnt;
+			} else {
+				last_cnt = cnt;
+				still = 0;
+			}
 		}
+		if (got > RXBUF_LEN)
+			got = RXBUF_LEN;
 		if (got) {
 			s_have = got;
 			s_pos = 0;
