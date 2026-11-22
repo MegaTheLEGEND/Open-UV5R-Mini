@@ -656,6 +656,10 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                     txt += ' ' + RECOVER
                 progress(1.0 if result == 0 else 0)
                 return result == 0, txt
+            elif cmd == 0x7F and len(d) >= 36:
+                v = struct.unpack_from('<7I', d)          # our update mode's debug frame (src/update/update_radio.c)
+                log('  radio: received %d bytes, sent %d frames, dropped %d, reads answered %d, last in: %s'
+                    % (v[3], v[4], v[5], reads, d[28:36].hex(' ')))
             else:
                 log('  (frame cmd %d ignored)' % cmd)
 
