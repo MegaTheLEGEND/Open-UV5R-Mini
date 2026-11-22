@@ -730,12 +730,15 @@ static void key_menu(KEY_Code_t k)
 }
 
 /* press events, with repeat for UP/DOWN after 0.5 s */
+static KEY_Code_t s_key_held = KEY_INVALID;
+
 static KEY_Code_t key_event(void)
 {
 	static KEY_Code_t last = KEY_INVALID;
 	static uint16_t held;
 	KEY_Code_t k = KEYBOARD_Poll();
 
+	s_key_held = k;
 	if (k != last) {
 		last = k;
 		held = 0;
@@ -1041,6 +1044,8 @@ void APP_Tick(void)
 			RADIO_Beep(400, 150);
 		s_shown_state = -1;
 	} else if (!ptt && s_ptt_down) {
+		if (gStock.raw[SET_ROGER] && RADIO_State() == RADIO_TX)
+			RADIO_Roger();
 		RADIO_EndTx();
 		s_tx_refused = s_tot_hit = false;
 		s_shown_state = -1;
@@ -1081,6 +1086,21 @@ void APP_Tick(void)
 	}
 
 	k = key_event();
+	/* while transmitting, a held digit, * or # sends its DTMF pair (stock 0x01E5457E / 0x01E5072C) */
+	if (RADIO_State() == RADIO_TX) {
+		int d = KEY_Digit(s_key_held);
+
+		if (s_key_held == KEY_STAR)
+			d = 14;
+		else if (s_key_held == KEY_HASH)
+			d = 15;
+		if (d >= 0) {
+			if (k != KEY_INVALID)
+				RADIO_TxTone((uint8_t)d, gStock.raw[SET_DTMF_MON] & 1u);
+			k = KEY_INVALID;
+		} else if (RADIO_TxToneOn())
+			RADIO_TxToneOff();
+	}
 	if (k != KEY_INVALID && !s_light_on) {       /* the first press only lights the screen */
 		light_wake();
 		k = KEY_INVALID;

@@ -46,6 +46,20 @@ void BK4819_TxMute(bool on) { (void)on; }
 static uint8_t mic_gain = 0xFF;
 void BK4819_SetMicGain(uint8_t g) { mic_gain = g; }
 void BK4819_SetAF(BK4819_AF_t a) { af = a; }
+/* tones sent while transmitting: the pairs written, in order */
+static int tx_tones_on, tx_mon, tx_log_n;
+static uint16_t tx_w1, tx_w2, tx_log[8][2];
+static uint32_t delay_ms;
+uint16_t BK4819_ToneWord(uint16_t hz) { return (uint16_t)(((uint32_t)hz * 1032444u + 50000u) / 100000u); }
+void BK4819_TxTonesOn(bool dual) { tx_tones_on = dual ? 2 : 1; }
+void BK4819_TxTonePair(uint16_t a, uint16_t b)
+{
+	tx_w1 = a; tx_w2 = b;
+	if (tx_log_n < 8) { tx_log[tx_log_n][0] = a; tx_log[tx_log_n][1] = b; tx_log_n++; }
+}
+void BK4819_TxTonesOff(void) { tx_tones_on = 0; tx_w1 = tx_w2 = 0; }
+void BK4819_TxMonitor(bool on) { tx_mon = on; reg30 = on ? 0xC3FA : 0xC1FE; }
+void SYSTEM_DelayMs(uint32_t ms) { delay_ms += ms; }
 void BK4819_Beep(uint16_t hz) { (void)hz; }
 void IO_Init(void) {}
 void IO_Amp(uint8_t who, bool on) { (void)who; amp = on; }
@@ -337,6 +351,31 @@ int main(void)
 		BATTERY_Set(0xFFFF);
 		CHECK(BATTERY_Raw() < 100, "no reading pulls down");
 	}
+
+	/* tones sent while transmitting: the stock DTMF table, one tones of 1000-2100 Hz, roger beep */
+	gVfo.power = POWER_LOW;
+	at(14552000u);
+	CHECK(!RADIO_TxTone(1, false), "no tone sent unless transmitting");
+	if (RADIO_StartTx()) {
+		CHECK(RADIO_TxTone(1, false) && tx_tones_on == 2 && tx_w1 == 0x1C1C && tx_w2 == 0x30C2 && !tx_mon,
+		      "DTMF 1 = 697 + 1209 Hz, words as stock (%04X %04X)", tx_w1, tx_w2);
+		CHECK(RADIO_TxTone(0, false) && tx_w1 == 0x25F3 && tx_w2 == 0x35E1, "DTMF 0 = 941 + 1336 Hz");
+		CHECK(RADIO_TxTone(15, false) && tx_w1 == 0x25F3 && tx_w2 == 0x3B91, "DTMF # = 941 + 1477 Hz");
+		CHECK(!RADIO_TxTone(16, false) && !RADIO_TxTone(21, false), "codes 16 and 21 are not sent");
+		CHECK(RADIO_TxTone(19, true) && tx_tones_on == 1 && tx_w1 == 18067 && !tx_w2 && tx_mon &&
+		      reg30 == 0xC3FA && amp, "tone 19 = 1750 Hz (stock 175 x 1032444 / 10000), heard locally, mic out");
+		RADIO_TxToneOff();
+		CHECK(!tx_tones_on && !tx_mon && reg30 == 0xC1FE && !RADIO_TxToneOn(), "tone off: back to the mic");
+		tx_log_n = 0;
+		delay_ms = 0;
+		RADIO_Roger();
+		CHECK(tx_log_n >= 2 && tx_log[0][0] == 0x2854 && !tx_log[0][1] && tx_log[1][0] == 0x2248 && delay_ms == 80 &&
+		      !tx_tones_on && !tx_mon, "roger: 1000 Hz then 850 Hz, 40 ms each (stock words 0x2854, 0x2248)");
+		RADIO_TxTone(5, true);
+		RADIO_EndTx();
+		CHECK(!tx_tones_on && !tx_mon && !RADIO_TxToneOn(), "transmit end stops a tone");
+	} else
+		CHECK(!RADIO_ENABLE_TX, "TX at 145.52 MHz");
 
 	/* transmit guard */
 	gVfo.power = POWER_LOW;

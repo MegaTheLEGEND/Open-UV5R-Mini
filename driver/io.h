@@ -10,6 +10,7 @@
 enum {
 	AUDIO_RX   = 1u << 0,
 	AUDIO_BEEP = 1u << 1,
+	AUDIO_TONE = 1u << 2,   /* a tone sent while transmitting, heard locally */
 };
 
 void IO_Init(void);

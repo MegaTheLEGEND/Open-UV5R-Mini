@@ -53,4 +53,13 @@ bool         RADIO_StartTx(void);          /* false if refused */
 void         RADIO_EndTx(void);
 void         RADIO_Beep(uint16_t hz, uint16_t ms);
 
+/* Tones sent while transmitting (stock sub_01E510A2): code 0-15 = DTMF 0-9, A, B, C, D, *, #; 17-20 = one tone of
+ * 1000, 1450, 1750 or 2100 Hz. Until RADIO_TxToneOff. monitor: heard locally with the mic left out (stock setting
+ * 0x09 bit 0). Does nothing unless transmitting. */
+bool         RADIO_TxTone(uint8_t code, bool monitor);
+void         RADIO_TxToneOff(void);
+bool         RADIO_TxToneOn(void);
+/* Roger beep at the end of transmit (stock sub_01E4DCC2): 1000 Hz then 850 Hz, 40 ms each, mic out. Blocks 80 ms. */
+void         RADIO_Roger(void);
+
 #endif

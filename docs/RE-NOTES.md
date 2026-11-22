@@ -534,3 +534,19 @@ LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12
   dump is only its first half, but our full read shows the top half is blank, so it likely holds everything.
 - **Update mode:** [issue #4](https://github.com/briand/uv5r_mini_hardware/issues/4): A and `=` at power-on are
   enough. That's PTT-A + `=`, as the firmware checks.
+
+## Tones sent while transmitting
+
+| What | Stock | Registers |
+| --- | --- | --- |
+| DTMF generator on | `sub_01E4D40A(1)` | `REG_24 = 0x8A7F`, `REG_70 = 0xE0E0`, `REG_3F = 0x0800` |
+| DTMF pair | `sub_01E4D44C(w1, w2)` | `REG_71 = w1`, `REG_72 = w2`; table of 16 pairs at `0x01E66136` (0-9, A-D, *, #), word = Hz x 10.32444 rounded, then 850 Hz and 1000 Hz |
+| One tone on | `sub_01E40B24(1)` | `REG_70 = (REG_70 \| 0xBC00) & 0xFCFF`, then TX mode 4 |
+| One tone frequency | `sub_01E40B52(f)` | `REG_71 = f x 1032444 / 10000`, f in 10 Hz; codes 17-20 = 100, 145, 175, 210 (bytes at `0x01E654A2`) |
+| Off | `0x01E5072C` | `REG_71/72 = 0`, `REG_24` bit 5 cleared, `REG_70 = 0`, back to TX mode 2, AF mute, amp source 4 off |
+| Heard locally | `sub_01E510A2`, setting `0x09` bit 0 | TX mode 4 (`REG_30 = 0xC3FA`, the mic out), `SetAF(241)` = `REG_47 = 0x6140`, `REG_48 = 0xB8A2` |
+| Roger beep | `sub_01E4DCC2`, setting `0x17` | the above with 1000 Hz then 850 Hz, 40 ms each, then the PTT-ID at the end if setting `0x14` (`sub_01E4D7BA`, not decoded) |
+
+`sub_01E510A2(code)` is called only from the key handler during transmit (`0x01E5457E`): digits give their own code,
+four other keys give 12-15. `sub_01E400D6(n)` is the amp vote: odd n = a source on, even = off (9/10 = tones).
+

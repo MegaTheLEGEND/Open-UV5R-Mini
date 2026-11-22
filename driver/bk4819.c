@@ -293,6 +293,55 @@ void BK4819_DtmfRxOff(void)
 	BK4819_WriteRegister(BK4819_REG_3F, 0x0000);
 }
 
+/* Tones sent while transmitting, the stock way.
+ * - DTMF generator on (stock sub_01E4D40A(1)): REG_24 = 0x8A7F, REG_70 = 0xE0E0 (both tone generators, gain 0x60),
+ *   REG_3F = 0x0800. A pair goes in REG_71 / REG_72 (sub_01E4D44C). Off as the DTMF decoder (REG_24 bit 5 cleared,
+ *   sub_01E4111C), and REG_70 = 0.
+ * - One tone (sub_01E40B24(1)): REG_70 = (REG_70 | 0xBC00) & 0xFCFF; REG_71 from sub_01E40B52.
+ * - Frequency word: Hz x 10.32444 rounded, as stock's table at 0x01E66136 (941 Hz = 0x25F3, 770 Hz = 0x1F0E).
+ * - Local monitor (stock mode 4 and SetAF(241), sub_01E3FC64 / sub_01E40AA0): REG_30 = 0 then 0xC3FA (the mic is
+ *   left out), REG_47 = 0x6140 (AF out) and REG_48 = 0xB8A2 (a fixed AF gain). Back: REG_30 = 0xC1FE.
+ */
+uint16_t BK4819_ToneWord(uint16_t hz)
+{
+	return (uint16_t)(((uint32_t)hz * 1032444u + 50000u) / 100000u);
+}
+
+void BK4819_TxTonesOn(bool dual)
+{
+	if (dual) {
+		BK4819_WriteRegister(BK4819_REG_24, 0x8A7F);
+		BK4819_WriteRegister(BK4819_REG_70, 0xE0E0);
+		BK4819_WriteRegister(BK4819_REG_3F, 0x0800);
+	} else
+		BK4819_WriteRegister(BK4819_REG_70,
+		                     (uint16_t)((BK4819_ReadRegister(BK4819_REG_70) | 0xBC00u) & 0xFCFFu));
+}
+
+void BK4819_TxTonePair(uint16_t w1, uint16_t w2)
+{
+	BK4819_WriteRegister(BK4819_REG_71, w1);
+	BK4819_WriteRegister(BK4819_REG_72, w2);
+}
+
+void BK4819_TxTonesOff(void)
+{
+	BK4819_TxTonePair(0, 0);
+	BK4819_WriteRegister(BK4819_REG_24, (uint16_t)(BK4819_ReadRegister(BK4819_REG_24) & ~0x20u));
+	BK4819_WriteRegister(BK4819_REG_70, 0);
+}
+
+void BK4819_TxMonitor(bool on)
+{
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_30, on ? 0xC3FA : 0xC1FE);
+	if (on) {
+		BK4819_SetAF(BK4819_AF_FM);
+		BK4819_WriteRegister(BK4819_REG_48, 0xB8A2);
+	} else
+		BK4819_SetAF(BK4819_AF_MUTE);
+}
+
 /* A DTMF code heard since the last call (0-15: 0-9, A, B, C, D, *, #), or -1. Stock: REG_02 cleared, then the code
  * in REG_0B bits 8-11 (0x01E53CC0). */
 int BK4819_DtmfTake(void)

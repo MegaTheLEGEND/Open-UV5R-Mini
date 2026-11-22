@@ -66,6 +66,11 @@ void     BK4819_CssOff(void);
 void     BK4819_DtmfRxOn(void);
 void     BK4819_DtmfRxOff(void);
 int      BK4819_DtmfTake(void);                      /* 0-15 or -1 */
+uint16_t BK4819_ToneWord(uint16_t hz);               /* REG_71 / REG_72 value */
+void     BK4819_TxTonesOn(bool dual);                /* dual: DTMF generator; else one tone */
+void     BK4819_TxTonePair(uint16_t w1, uint16_t w2);
+void     BK4819_TxTonesOff(void);
+void     BK4819_TxMonitor(bool on);                  /* tone heard locally, mic out (stock TX mode 4) */
 void     BK4819_CssScanStart(void);
 /* BK4819_TONE_DCS_N: *value = the 23-bit word heard; BK4819_TONE_CTCSS: *value = 0.1 Hz; BK4819_TONE_OFF: nothing */
 BK4819_Tone_t BK4819_CssScanRead(uint32_t *value);

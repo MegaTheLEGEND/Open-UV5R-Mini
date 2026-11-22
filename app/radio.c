@@ -284,12 +284,74 @@ void RADIO_EndTx(void)
 {
 	if (s_state != RADIO_TX)
 		return;
+	RADIO_TxToneOff();
 	BK4819_SetPa(0, 0);
 	BK4819_CssOff();
 	front_end(band_of(gVfo.freq), false);
 	IO_LedTx(false);
 	s_state = RADIO_RX;
 	RADIO_Apply();
+}
+
+/* ------------------------------------------------------------------------------------------- tones over the air */
+/* DTMF pairs in the order of the stock table (0x01E66136): 0-9, A, B, C, D, *, #. */
+static const uint16_t DTMF_HZ[16][2] = {
+	{ 941, 1336 }, { 697, 1209 }, { 697, 1336 }, { 697, 1477 }, { 770, 1209 }, { 770, 1336 }, { 770, 1477 },
+	{ 852, 1209 }, { 852, 1336 }, { 852, 1477 }, { 697, 1633 }, { 770, 1633 }, { 852, 1633 }, { 941, 1633 },
+	{ 941, 1209 }, { 941, 1477 },
+};
+/* codes 17-20, stock bytes in 10 Hz at 0x01E654A2 */
+static const uint16_t SINGLE_HZ[4] = { 1000, 1450, 1750, 2100 };
+static bool s_txtone, s_txmon;
+
+bool RADIO_TxTone(uint8_t code, bool monitor)
+{
+	if (s_state != RADIO_TX || (code > 15 && (code < 17 || code > 20)))
+		return false;
+	RADIO_TxToneOff();
+	BK4819_TxTonesOn(code < 16);
+	if (monitor) {
+		IO_Amp(AUDIO_TONE, true);
+		BK4819_TxMonitor(true);
+	}
+	if (code < 16)
+		BK4819_TxTonePair(BK4819_ToneWord(DTMF_HZ[code][0]), BK4819_ToneWord(DTMF_HZ[code][1]));
+	else
+		BK4819_TxTonePair((uint16_t)((uint32_t)(SINGLE_HZ[code - 17] / 10u) * 1032444u / 10000u), 0);   /* stock sub_01E40B52 */
+	s_txtone = true;
+	s_txmon = monitor;
+	return true;
+}
+
+void RADIO_TxToneOff(void)
+{
+	if (!s_txtone)
+		return;
+	BK4819_TxTonesOff();
+	if (s_txmon) {
+		BK4819_TxMonitor(false);
+		BK4819_SetVolume(gVfo.volume);
+		IO_Amp(AUDIO_TONE, false);
+	}
+	s_txtone = s_txmon = false;
+}
+
+bool RADIO_TxToneOn(void) { return s_txtone; }
+
+void RADIO_Roger(void)
+{
+	if (s_state != RADIO_TX)
+		return;
+	RADIO_TxToneOff();
+	BK4819_TxTonesOn(true);
+	IO_Amp(AUDIO_TONE, true);
+	BK4819_TxMonitor(true);
+	BK4819_TxTonePair(BK4819_ToneWord(1000), 0);
+	SYSTEM_DelayMs(40);
+	BK4819_TxTonePair(BK4819_ToneWord(850), 0);
+	SYSTEM_DelayMs(40);
+	s_txtone = s_txmon = true;
+	RADIO_TxToneOff();
 }
 
 /* A short local tone (key beep, errors), never sent over the air. */
