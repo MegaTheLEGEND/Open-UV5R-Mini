@@ -282,8 +282,15 @@ class SerialLink:
     def write(self, b):
         self.s.write(b)
         self.s.flush()
+        # flush() returns once the driver has the bytes; a USB adapter still sends them after that. 10 bits a byte,
+        # plus a margin for the adapter's own buffer.
+        self.idle_at = time.monotonic() + len(b) * 10.0 / self.s.baudrate + 0.04
 
     def set_baud(self, baud):
+        # Changing the rate while the last frame is still going out garbles its tail: the loader then never gets
+        # the rate frame (both stock and our firmware failed at the 38400 switch, 2026-11-22).
+        time.sleep(max(0.0, getattr(self, 'idle_at', 0) - time.monotonic()))
+        self.s.reset_input_buffer()             # bytes half-heard at the old rate are noise at the new one
         self.s.baudrate = baud
         for attr in ('dtr', 'rts'):
             try:
@@ -614,14 +621,22 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
         send(CMD_BAUD, struct.pack('<I', APP_BAUD))
 
     last, done_max = time.monotonic(), 0.0
+    switched_at, fallbacks = None, 0
     while True:
         got = pending or frames(0.25)
         pending = []
         if not got:
+            # No hello at the new rate: the loader may not have got the rate frame. It says hello at 9600 again,
+            # so listen there and offer the rate once more (as Codeplug Studio's updater does).
+            if switched_at and time.monotonic() - switched_at > 1.5 and fallbacks < 5:
+                fallbacks += 1
+                log('No hello at %d: back to %d for the next loader hello.' % (LOADER_BAUD, APP_BAUD))
+                link.set_baud(APP_BAUD)
+                rate, switched_at = APP_BAUD, None
             if time.monotonic() - last > T_IDLE or getattr(link, 'radio_off', lambda: False)():
                 return False, ('The radio stopped talking. ' + RECOVER) if touched else 'The radio stopped talking.'
             continue
-        last = time.monotonic()
+        last, switched_at = time.monotonic(), None
         for cmd, d in got:
             if cmd == CMD_BAUD:
                 if phase == 'app' and reads:
@@ -629,12 +644,12 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                     phase, touched = 'loader', True
                     send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
                     link.set_baud(LOADER_BAUD)
-                    rate = LOADER_BAUD
+                    rate, switched_at = LOADER_BAUD, time.monotonic()
                 elif phase == 'loader':
                     if rate != LOADER_BAUD:
                         send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
                         link.set_baud(LOADER_BAUD)
-                        rate = LOADER_BAUD
+                        rate, switched_at = LOADER_BAUD, time.monotonic()
                     else:
                         send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
             elif cmd == CMD_DATA and len(d) >= 8:
