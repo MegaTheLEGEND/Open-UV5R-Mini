@@ -1089,6 +1089,22 @@ static void tot_tick(void)
 	}
 }
 
+/* A PTT pin counts as changed only after PTT_STABLE_MS of the same reading (it bounced on a radio). */
+#define PTT_STABLE_MS 40u
+static bool ptt_debounced(bool raw, unsigned i)
+{
+	static bool    state[2];
+	static uint8_t ms[2];
+
+	if (raw == state[i])
+		ms[i] = 0;
+	else if ((ms[i] += APP_TICK_MS) >= PTT_STABLE_MS) {
+		state[i] = raw;
+		ms[i] = 0;
+	}
+	return state[i];
+}
+
 void APP_Tick(void)
 {
 	KEY_Code_t k;
@@ -1107,8 +1123,8 @@ void APP_Tick(void)
 		s_off_ticks = 0;
 
 	/* PTT; PTT-B transmits on side B (it becomes the active side) */
-	ptt = KEYBOARD_IsPttPressed();
-	if (KEYBOARD_IsPtt2Pressed()) {
+	ptt = ptt_debounced(KEYBOARD_IsPttPressed(), 0);
+	if (ptt_debounced(KEYBOARD_IsPtt2Pressed(), 1)) {
 		if (!s_ptt_down && s_active != 1)
 			side_switch();
 		ptt = true;
@@ -1217,12 +1233,12 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 	if (k != KEY_INVALID)
 		save_soon();
+	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
+#endif
 	if (s_lamp_mode == 2 && (s_lamp_ms += APP_TICK_MS) >= LAMP_STROBE_MS) {
 		s_lamp_ms = 0;
 		IO_Lamp(!IO_LampIsOn());
 	}
-	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
-#endif
 	if (k != KEY_INVALID && !ptt) {
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
