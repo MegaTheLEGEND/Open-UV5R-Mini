@@ -177,6 +177,12 @@ static void port_handover(const uint8_t *record, uint32_t len)
 	volatile uint8_t *dst = (volatile uint8_t *)(uintptr_t)UPDATE_RECORD_ADDR;
 
 	__asm__ volatile("cli");
+	/* Watchdog off as stock leaves it (WDT_CON, P33 0x80: 0 then 12; the enable bit, 4, stays clear). Our app runs
+	 * with the bootloader's watchdog on; the loader doesn't clear it, and on a radio (2026-11-21) it was reset back
+	 * into our app right after the hand-over. */
+	P33_Write(0x80, 0x40);               /* clear it once more, then off */
+	P33_Write(0x80, 0);
+	P33_Write(0x80, 12);
 	REG32(0x0010F1A8u) = 6;              /* as stock 0x020012BE */
 	for (uint32_t i = 0; i < len; i++)
 		dst[i] = record[i];
