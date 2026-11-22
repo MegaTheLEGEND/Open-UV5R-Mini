@@ -10,6 +10,9 @@
 
 #define ROW_MASK 0x3C0u /* PA6..PA9 */
 #define COL_MASK 0x03Cu /* PC2..PC5 */
+/* Wait after switching a row before reading the columns. Stock waits SYSTEM_BusDelay(5) (sub_01E3E042) per step;
+ * 1 us was too short on a radio (only the top row, wired to GND, worked). */
+#define KEY_SETTLE_US 20u
 
 static const uint16_t ROW_SET[5]   = { 0x3C0, 0x380, 0x340, 0x2C0, 0x1C0 };
 static const uint16_t ROW_CLEAR[5] = { 0x000, 0x040, 0x080, 0x100, 0x200 };
@@ -52,14 +55,14 @@ KEY_Code_t KEYBOARD_Poll(void)
 	KEY_Code_t key = KEY_INVALID;
 
 	GPIOA->OUT &= ~ROW_MASK; /* all rows low: is anything pressed at all? */
-	SYSTEM_DelayUs(1);
+	SYSTEM_DelayUs(KEY_SETTLE_US);
 	if ((GPIOC->IN & COL_MASK) == COL_MASK)
 		goto done;
 
 	for (unsigned step = 0; step < 5; step++) {
 		GPIOA->OUT |= ROW_SET[step];
 		GPIOA->OUT &= ~ROW_CLEAR[step];
-		SYSTEM_DelayUs(1);
+		SYSTEM_DelayUs(KEY_SETTLE_US);
 		int col = column_low(GPIOC->IN);
 		if (col >= 0) {
 			key = (KEY_Code_t)KEY_TABLE[step][col];
