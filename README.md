@@ -3,8 +3,11 @@
 Open-source firmware for the **Baofeng UV-5R Mini**, built only with open tools. The idea is the same as the UV-K5's
 open firmware: a radio you can change in plain C.
 
-**Not ready to use on a radio yet.** The firmware is being written from scratch. The stock firmware is used only
-as a reference for how the hardware works.
+**Early, not ready for everyday use.** The firmware is written from scratch; the stock firmware is used only as a
+reference for how the hardware works. Our own build now runs on a radio as a **receiver**: screen, every key,
+receive audio and a working squelch were checked on one radio (2026-11-21). Transmit is built in but compiled off,
+settings are not saved, and the cable update mode doesn't work on a radio yet, so the only way to load our build is
+the case-open ROM rescue route ([docs/TESTING.md](docs/TESTING.md)). Don't try it unless you can do that.
 
 ## Which radio
 
@@ -33,10 +36,13 @@ the file against its pinned SHA-256 and refuses any other file.
 | Small mods to the stock firmware, as a flashable patch (demo: boot text `OPENUV NRF`) | done, not yet tried on a radio |
 | Flasher with a built-in emulated radio, for practice | done |
 | Stock code turned into C and checked against the original (reference for porting) | done |
-| Own firmware: update mode (so a radio can always be flashed again) | written; tested on the PC; next: emulator, then radio |
-| Own firmware: drivers (radio chip, display, keypad, UART) | basic versions |
-| Own firmware: clocks, timers, power, battery, audio, LEDs | mostly to do |
-| Own firmware: radio features (channels, menus, scanning, …) | to do |
+| Own firmware: receiving (frequency, squelch, RSSI bar, audio) | **works on a radio** |
+| Own firmware: screen and keypad (every key) | **works on a radio** |
+| Own firmware: cable update mode (so a radio can always be flashed again) | tested on the PC; on a radio pings are answered but the transfer stalls |
+| Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
+| Own firmware: transmit, VOX, PTT-ID, roger beep | written, compiled off until receive and the PA calibration are proven |
+| Own firmware: saving settings | written, compiled off |
+| Own firmware: clocks, timer interrupts, FM broadcast radio, voice prompts | to do |
 | Bluetooth | to do; optional, through JieLi's own libraries |
 
 Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
@@ -45,8 +51,8 @@ Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 | Folder | What's in it |
 | --- | --- |
-| `driver/` | Hardware drivers: `bk4819` (radio chip), `st7735s` (display), `keyboard`, `uart`, `gpio`, `system` |
-| `app/` | Application: main logic and update mode |
+| `driver/` | Hardware drivers: `bk4819` (radio chip), `st7735s` (display), `keyboard`, `uart`, `gpio`, `system`, `adc`, `extflash` (read only), `flash`, `io` |
+| `app/` | Application: screens and keys (`app.c`), radio core (`radio.c`), channels, scan, tones, settings, update mode |
 | `ui/` | Screen drawing and font |
 | `bt/` | Bluetooth (empty stub in the default build) |
 | `main.c`, `board.c`, `start.S`, `firmware.ld` | Start-up, board setup, memory layout |
@@ -79,6 +85,7 @@ contribute.
 | Doc | Read it for |
 | --- | --- |
 | [ROADMAP](docs/ROADMAP.md) | What's done and what's next |
+| [RADIO](docs/RADIO.md) | The radio app: what it does, the keys, how to test it |
 | [TESTING](docs/TESTING.md) | Flashing a radio safely, and getting back to stock |
 | [PORTING](docs/PORTING.md) | Building the C firmware |
 | [MATCHING](docs/MATCHING.md) | The byte-for-byte stock rebuild, and making small mods |

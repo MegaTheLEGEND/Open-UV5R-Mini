@@ -5,7 +5,8 @@ from the stock app's hardware facts ([RE-NOTES](RE-NOTES.md), "Peripheral sweep"
 (DualTachyon, Apache-2.0) was a reference for how a radio firmware is laid out and for BK4819 register meanings. No
 code was copied from it.
 
-**Not tried on a radio yet.** Nothing here is known to work until someone runs it.
+**Checked on one radio (2026-11-21):** the screen, every key, receiving with audio, and the squelch (level 3 opens and
+holds on a nearby radio, closes after). Everything else here is PC-tested only until someone tries it.
 
 ## What it does
 
