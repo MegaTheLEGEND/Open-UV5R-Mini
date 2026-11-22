@@ -40,7 +40,17 @@ static uint8_t s_last[8];
 
 static void debug_draw(void)
 {
+	static const char *const STEP[] = { "WAITING   ", "HEADER    ", "RECORDS   ", "LOADER    ", "LOADER    ",
+	                                    "CHECKING  ", "STORING   ", "STORING   ", "RESTARTING" };
 	char b[12];
+	uint32_t st = gUpdateStep < 9 ? gUpdateStep : 0;
+
+	UI_PrintString(STEP[st], 16, 70, 0xFFE0, 0x0000, 1);
+	if (st == 4) {
+		UI_PrintString(UI_FormatDec(b, gUpdatePercent, 3), 76, 70, 0xFFFF, 0x0000, 1);
+		UI_PrintString("%", 94, 70, 0xFFFF, 0x0000, 1);
+	} else
+		UI_PrintString("    ", 76, 70, 0xFFFF, 0x0000, 1);
 
 	UI_PrintString("C", 4, 88, 0xFFFF, 0x0000, 1);
 	UI_PrintString(UI_FormatHex(b, UART_Reg(0), 8), 16, 88, 0x07E0, 0x0000, 1);

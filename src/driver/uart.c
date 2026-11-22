@@ -6,8 +6,10 @@
  *   - A burst ends with the time-out flag (bit 11, cleared with bit 10) or the buffer-full flag (bit 14, cleared with
  *     bit 12). Then: RDC, take the count, copy the bytes out at once, re-arm the DMA at the buffer start and reload
  *     OTCNT, as stock does. The bytes go into a FIFO, so the DMA can never overwrite bytes not yet handed out.
- *   - Backstop: every 20 ms without a flag the same RDC-and-copy runs anyway, so bytes can't sit unseen if the
- *     time-out flag doesn't come (seen on a radio 2026-11-21: 105 bytes waited with no flag).
+ *   - Backstop: if no flag comes, the count is latched (RDC) every millisecond, and once it has stood still for 20 ms
+ *     with bytes waiting, the same copy runs (seen on a radio 2026-11-21: 105 bytes waited with no flag). Never in
+ *     the middle of a burst: re-arming then lost a byte of most 527-byte replies on a radio (2026-11-21), so reads
+ *     were retried again and again.
  *   - After a send, only leading FF noise and a whole copy of what we sent (an echo) are dropped; everything else is
  *     kept. A partial match is not an echo: our read request and the host's reply both start AA 55 xx 00, and
  *     dropping a matching prefix cut the start off every reply (radio, 2026-11-21). Dropping everything lost the flasher's rate frame on a radio
@@ -24,6 +26,7 @@ extern volatile uint32_t uart_test_regs[16];
 extern volatile uint32_t uart_test_sfr[4];
 void uart_test_delay_ms(uint32_t ms);
 void uart_test_rdc(void);
+void uart_test_rearm(void);
 #define REG(o)            (uart_test_regs[(o) / 4])
 #define SFR_USB_CON       uart_test_sfr[0]
 #define SFR_IOMAP0        uart_test_sfr[1]
@@ -32,6 +35,7 @@ void uart_test_rdc(void);
 #define DELAY_MS(n)       uart_test_delay_ms(n)
 #define ADDR(p)           ((uint32_t)(uintptr_t)(p) & 0xFFFFFFFFu)
 #define AFTER_RDC()       uart_test_rdc()
+#define AFTER_REARM()     uart_test_rearm()
 #else
 #include "driver/system.h"
 #define UART_BASE         0x1E2100u
@@ -44,6 +48,7 @@ void uart_test_rdc(void);
 #define DELAY_MS(n)       SYSTEM_DelayMs(n)
 #define ADDR(p)           ((uint32_t)(uintptr_t)(p))
 #define AFTER_RDC()       __asm__ volatile("nop")
+#define AFTER_REARM()     ((void)0)
 #endif
 
 #define CON0        REG(0)
@@ -78,7 +83,7 @@ static uint8_t  s_tx[0x40] __attribute__((aligned(4)));
 static uint8_t  s_fifo[FIFO_LEN];
 static uint32_t s_head, s_tail;          /* FIFO write and read counts */
 static uint32_t s_tx_n;                          /* bytes in s_tx: the last chunk sent, for the echo check */
-static uint32_t s_otcnt, s_quiet_ms, s_dropped;
+static uint32_t s_otcnt, s_quiet_ms, s_dropped, s_seen;
 
 static void rx_arm(void)
 {
@@ -87,6 +92,7 @@ static void rx_arm(void)
 	RXEADR = ADDR(s_rx) + RXBUF_LEN;
 	RXCNT = RXBUF_LEN;
 	OTCNT = s_otcnt;
+	AFTER_REARM();
 }
 
 /* Latch the DMA count, clear the flags, move the bytes into the FIFO and re-arm. echo: drop our own echo and FF noise
@@ -121,7 +127,7 @@ static void rx_collect(int echo)
 			s_dropped++;
 	}
 	rx_arm();
-	s_quiet_ms = 0;
+	s_quiet_ms = s_seen = 0;
 }
 
 /* One look at the receiver; called about once a millisecond while waiting. */
@@ -129,8 +135,17 @@ static void rx_poll(void)
 {
 	if (CON0 & (CON_OT | CON_RXFULL))
 		rx_collect(0);
-	else if (++s_quiet_ms >= BACKSTOP_MS)
-		rx_collect(0);
+	else {
+		uint32_t n;
+		CON0 |= CON_RDC;                      /* latch the count only: nothing is cleared or re-armed */
+		AFTER_RDC();
+		n = HRXCNT;
+		if (n != s_seen) {
+			s_seen = n;                       /* still arriving */
+			s_quiet_ms = 0;
+		} else if (n && ++s_quiet_ms >= BACKSTOP_MS)
+			rx_collect(0);
+	}
 }
 
 void UART_SetBaud(uint32_t baud)

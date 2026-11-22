@@ -78,7 +78,7 @@ int  UPDATE_Run(const UPDATE_Port *port);
 
 /* Where the update is, for the debug frame: step (1 header, 2 records, 3 loader entry, 4 loader data, 5 loader CRC,
  * 6 store, 7 record, 8 hand-over; 0 waiting), the last offset asked for, and how many read requests were retried. */
-extern volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries;
+extern volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries, gUpdatePercent;   /* percent of the loader received */
 
 /* Helpers, exported for tests. */
 uint16_t UPDATE_Crc16(const uint8_t *p, uint32_t n, uint16_t crc);

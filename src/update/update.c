@@ -247,7 +247,7 @@ static int fail(int code)
 	return code;
 }
 
-volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries;
+volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries, gUpdatePercent;
 
 static int download(void)
 {
@@ -293,9 +293,11 @@ static int download(void)
 	gUpdateStep = 4;
 	for (uint32_t i = 0; i < ll; i += READ_CHUNK) {
 		uint32_t n = ll - i < READ_CHUNK ? ll - i : READ_CHUNK;
+		gUpdatePercent = i * 100u / ll;
 		if (host_read(ota_off + lo + i, &g_loader[i], n))
 			return UPDATE_ERR_HOST;
 	}
+	gUpdatePercent = 100;
 	gUpdateStep = 5;
 	if (rd16(&ent[2]) != UPDATE_Crc16(g_loader, ll, 0))
 		return fail(UPDATE_ERR_FILE);

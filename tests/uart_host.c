@@ -52,11 +52,20 @@ void uart_test_delay_ms(uint32_t ms)
 	}
 }
 
+/* RDC latches the count; the clear bits written with it clear their flags. Re-arming restarts the DMA: a byte that
+ * arrives between the latch and the re-arm is lost, as on the chip. */
 void uart_test_rdc(void)
 {
-	HRXCNT = dma_pos;               /* latch */
-	dma_pos = 0;                    /* the driver re-arms next */
-	CON0 &= ~(0x0800u | 0x4000u | 0x0080u | 0x0400u | 0x1000u);
+	HRXCNT = dma_pos;
+	if (CON0 & 0x0400u)
+		CON0 &= ~0x0800u;
+	CON0 &= ~(0x0080u | 0x0400u);
+}
+
+void uart_test_rearm(void)
+{
+	dma_pos = 0;
+	CON0 &= ~(0x4000u | 0x1000u);
 }
 
 static void queue(const uint8_t *b, int n, uint32_t start, uint32_t gap)
@@ -169,6 +178,19 @@ int main(void)
 		UART_Send(req, sizeof req);
 		CHECK(read_all(buf, 7, 100) == 7 && !memcmp(buf, rep, 7), "reply with the request's prefix kept whole");
 	}
+
+	/* 9. a 527-byte reply trickling in with no time-out flag (as on a radio): every byte must arrive */
+	reset();
+	ot_works = 0;
+	{
+		static uint8_t big[527];
+		for (int i = 0; i < (int)sizeof big; i++)
+			big[i] = (uint8_t)(i * 7 + 1);
+		queue(big, sizeof big, 1, 1);               /* one byte a millisecond, no gaps */
+		CHECK(read_all(buf, sizeof big, 2000) == (int)sizeof big && !memcmp(buf, big, sizeof big),
+		      "long burst with no time-out flag: no byte lost");
+	}
+	ot_works = 1;
 
 	printf(fails ? "uart_host: %d FAILED\n" : "uart_host: all passed\n", fails);
 	return fails != 0;
