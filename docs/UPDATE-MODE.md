@@ -183,10 +183,31 @@ dropped (`tests/uart_host.py` case 7). With that, `tools/uart_ping.py --rate` on
 taken, then the radio asked for the file header (cmd 2, offset 0, 64 bytes), four times with no answer, then only its
 debug frames. Nothing was written.
 
-Next, in order:
-2. Only then a real flasher run, sending the stock image with the pinned loader (`build/stock-flashable-reference.ufw`),
-   started by Sean, rescue route ready.
-3. Roadmap 1.9: the flasher's guard for our own update mode.
+**First full update from our firmware (2026-11-22, `5564993`, one radio).** Our app in update mode, the K1 cable, and
+`tools/uv5r_flasher.py --loader-baud 9600` sending `build/stock-flashable-reference.ufw`, started by Sean. Our update
+mode took the header, records and the whole loader (step and percent on the screen and in the debug frames), stored it,
+and handed over. The stock loader then erased and wrote the app area, and the radio came up on stock V0.27. So our
+update mode can always put stock back over the cable.
+
+What it took on the way:
+
+| Problem on a radio | Fix |
+| --- | --- |
+| A byte lost per reply: a 20 ms backstop re-armed the DMA mid-burst | collect on the time-out/full flag as stock does; a 1 s backstop only on a quiet line (`6ba978e`) |
+| Reset back into our app right after the hand-over | watchdog off before the hand-over, as stock leaves it (`d3dcadf`) |
+| Loader died when told to switch to 38400 | flasher option `--loader-baud 9600` keeps the loader at the rate already working |
+
+Still open:
+
+1. **38400 for the loader.** The stock hand-over (`sub_01E43174`, the callback `sub_01E42EE4` runs last) sets the
+   system clock to 24 MHz (`clk_set("sys", 24000000)`, `sub_01E69AAC`) and tells Bluetooth to stop, before the RAM
+   protection and the reset. Ours skips the clock, and our start-up doesn't set clocks; the likely reason the loader
+   fails at 38400. At 9600 the write takes about 10–12 minutes.
+2. Many retries: the flag collects only about a third of the replies, the 1 s backstop the rest.
+3. If the loader resets mid-update, stock's app resumes it at power-on (the record at `0xFDF00`); ours doesn't yet,
+   so the radio comes back in our app (seen when the 38400 switch failed). Update mode again recovers it.
+4. The official Baofeng PC updater against our update mode: not tried. The `.ufw` as shipped has no loader, and ours
+   refuses it (0x83); how the official tool supplies one is to find.
 
 ## How the stock app does it (v0.27)
 

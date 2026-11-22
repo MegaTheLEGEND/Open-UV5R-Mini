@@ -613,7 +613,7 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
         log('Radio in update mode answered. App stage at 9600 (the radio is not changed yet).')
         send(CMD_BAUD, struct.pack('<I', APP_BAUD))
 
-    last = time.monotonic()
+    last, done_max = time.monotonic(), 0.0
     while True:
         got = pending or frames(0.25)
         pending = []
@@ -625,7 +625,7 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
         for cmd, d in got:
             if cmd == CMD_BAUD:
                 if phase == 'app' and reads:
-                    log('Hand-over: the radio reset into the loader. Switching to 38400.')
+                    log('Hand-over: the radio reset into the loader. Switching to %d.' % LOADER_BAUD)
                     phase, touched = 'loader', True
                     send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
                     link.set_baud(LOADER_BAUD)
@@ -642,7 +642,8 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                 send(CMD_DATA, d[:8] + image[off:off + n])
                 reads += 1
                 if phase == 'loader' and area_len and off >= area_lo:
-                    progress(min(1.0, (off + n - area_lo) / area_len))
+                    done_max = max(done_max, min(1.0, (off + n - area_lo) / area_len))   # reads come out of order
+                    progress(done_max)
             elif cmd == CMD_LENGTH and phase == 'loader' and len(d) >= 4:
                 area_len = struct.unpack('<I', d[:4])[0]
                 log('The radio is erasing its firmware area (0x%X bytes) and writing...' % area_len)

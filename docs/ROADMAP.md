@@ -4,11 +4,11 @@ What still has to be written before the C build can replace stock v0.27 on a rad
 
 ## Now: top priority
 
-1. **Cable update mode working on a radio (1.4, 1.6).** Until it works, every test of our build needs the case-open
-   rescue route. On a radio (2026-11-21, `d4a1a64`) ping and rate now work and the radio asks for the file
-   (`tools/uart_ping.py --rate`, nothing written). Next: a real flasher run, started by Sean with the rescue route ready. Next steps are at the end of
-   [UPDATE-MODE.md](UPDATE-MODE.md). The UART receive was rewritten since (`e9abb6b`, the JieLi way) and not yet
-   tried on a radio.
+1. **Cable update mode (1.4, 1.6): works on a radio at 9600** (2026-11-22, one radio): our update mode took the
+   loader, handed over, and the stock loader wrote stock V0.27 back (`tools/uv5r_flasher.py --loader-baud 9600`).
+   Left: the loader at 38400 (stock sets a 24 MHz system clock before the hand-over; we don't), fewer retries,
+   resuming a cut update, and the official Baofeng updater (not tried; its `.ufw` has no loader). Details at the end
+   of [UPDATE-MODE.md](UPDATE-MODE.md).
 2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what
    it does wrong (doesn't switch, doesn't stop on a signal, or the wrong side opens).
 3. **CHIRP:** work with CHIRP's existing UV-5R Mini driver, unchanged (5.3).
@@ -38,10 +38,10 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 1.1 | Update-mode protocol (ping, rate, reads, container and loader checks, hand-over record) | **done** | `src/update/update.c`, tested by `tests/update_host.py` against the real flasher host |
 | 1.2 | Loader store: choose the flash address, erase, write, read back and verify | **done** | `UPDATE_StoreLoader` writes the same bytes at the same addresses as the stock allocator (learnt in the emulator, `emu/loader_store.py`); checked by `tests/update_host.py` |
-| 1.3 | Hand-over reset: record to 0x2FF88, close interrupts, reset into the bootloader | **done** (untested on hardware) | `port_handover` in `src/update/update_radio.c` plus `src/update/handover.S` (run from RAM), our own version of the stock steps at `0x020011E6`; never reached on a radio yet |
-| 1.4 | Cable UART on the USB pins (RX 61 = D+, TX 62 = D−): pin routing and IO map | **partial** | `src/driver/uart.c`; on a radio (2026-11-21) pings over the K1 cable are answered at 9600 baud (48 MHz clock), but receiving stalls: the RX time-out flag doesn't come (UPDATE-MODE.md). Last build went silent: to find |
+| 1.3 | Hand-over reset: record to 0x2FF88, close interrupts, reset into the bootloader | **done** | `port_handover` in `src/update/update_radio.c` plus `src/update/handover.S` (run from RAM), our own version of the stock steps at `0x020011E6`, watchdog off first; on a radio (2026-11-22) the stock loader started and wrote the app. Not yet: the 24 MHz system clock stock sets first (needed for 38400?) |
+| 1.4 | Cable UART on the USB pins (RX 61 = D+, TX 62 = D−): pin routing and IO map | **done** (9600) | `src/driver/uart.c`; on a radio (2026-11-22) a whole update over the K1 cable at 9600 baud (48 MHz clock). Collects on the time-out/full flag, with a 1 s backstop; many retries still |
 | 1.5 | Internal-flash driver: read, page program, sector/block erase, JEDEC id | **partial** | our own RAM code (`src/driver/flash.c`): ID, read, 4 KB erase, program and read-back work on a radio (2026-11-21). The update mode now uses it, and our own hand-over (`src/update/handover.S`); `tests/update_host.py` passes; not yet on a radio |
-| 1.6 | Run the C update mode on the CPU emulator, then on a radio with a case-open recovery path at hand | **partial** | on a radio with the rescue route ready: ping works, the first flasher run stalled before anything was written; the radio is back on stock (full restore, byte for byte) |
+| 1.6 | Run the C update mode on the CPU emulator, then on a radio with a case-open recovery path at hand | **done** (one radio, 9600) | on a radio with the rescue route ready (2026-11-22): our update mode received the stock image and its loader, handed over, and the radio came up on stock V0.27 |
 | 1.7 | Setting (menu item, and a key combo at power-on) that restarts into the chip's ROM USB download mode, so a flash backup or recovery needs no key-sending dongle ([tools/jl_usbkey](../tools/jl_usbkey/README.md)) | **todo** | how the stock code or JieLi's SDK jumps to the ROM's download mode is to find; still needs the `G M P` wires, as the K-plug carries only D− |
 | 1.8 | Case-open recovery route: ROM USB download mode through the `G M P` pads | **done** (one radio) | entered with an ESP32 ([tools/jl_usbkey](../tools/jl_usbkey/README.md)); full 1 MB read, and erase, write and read-back of a test sector, then the flash equal to the backup (RE-NOTES). Full restore of all 256 sectors from the backup: done, equal byte for byte |
 | 1.9 | Flasher guard for the cable route: before sending any image, check that its app keeps a working cable update mode (entered with PTT A + `=`, answers ping, rate and reads, stores the loader, hands over) and never writes PRCT (calibration) or VM (settings) outside the loader slot. If it can't prove that, refuse, or show a big warning that the radio can then only be recovered by opening the case and using the ROM USB rescue mode (`G M P` wires and a key sender, 1.8) | **partial** | `tools/uv5r_flasher.py` checks the image's app before sending: the stock update-mode code byte for byte (entry, UART, parser, record, loader store, RAM code), or our marker (`src/update/update_radio.c`) whose declared write windows must stay inside the app area and loader slot; anything else is refused. Our own update mode passes only after the big rescue warning and a typed `I CAN OPEN THE CASE` (GUI: a second warning). `python tests/flasher_guard.py`. Still to do: let `tools/mkufw.py` build flashable images of the C build once its update mode has worked on a radio |
