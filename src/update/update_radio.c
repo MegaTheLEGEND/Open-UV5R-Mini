@@ -172,27 +172,6 @@ static void ram_protect_close(void)
 	lock_give();
 }
 
-/* System clock to 24 MHz, as the stock hand-over does first (sub_01E43174: clk_set("sys", 24000000), sub_01E69AAC);
- * the loader seems to expect it: without it the loader died when told to switch to 38400 (radio, 2026-11-22). Only
- * the clock fields, with the values stock computes for 24 MHz (emu/clk_trace.py); left out: the flash controller's
- * divider (stock RAM code 0x02000114, needs RAM code; slower clock is safe as is) and the P33 voltage fields 9 and 6
- * (0x020000E2; the present voltage is safe at a lower clock). */
-static void clock_sys_24mhz(void)
-{
-	REG32(0x1E000Cu) &= ~0xCu;
-	REG32(0x1E000Cu) = (REG32(0x1E000Cu) & ~0x1C0u) | 0x100u;
-	REG32(0x1E0014u) = (REG32(0x1E0014u) & ~0x3u) | 0u;          /* sub_01E699F2: bits 0-1 = 0 */
-	REG32(0x1E0014u) = (REG32(0x1E0014u) & ~0x3Cu) | (4u << 2);  /* bits 2-5 = 4 */
-	for (int i = 0; i < 6; i++)                                   /* sub_01E69A26: six reads as a short wait */
-		(void)REG32(0x1E0014u);
-	for (uint32_t b = 0x10000000u; b >= 0x01000000u; b >>= 1)
-		REG32(0x1E0044u) |= b;
-	REG32(0x1E0008u) &= ~0x7000u;                                 /* sub_01E69A4E: bits 12-14 = 0 */
-	REG32(0x1E0008u) = (REG32(0x1E0008u) & ~0xFFu) | 3u;          /* bits 0-7 = 3 */
-	REG32(0x1E0008u) &= ~0x700u;                                  /* bits 8-10 = 0 */
-	REG32(0x1E000Cu) |= 0x1C0u;
-}
-
 static void port_handover(const uint8_t *record, uint32_t len)
 {
 	volatile uint8_t *dst = (volatile uint8_t *)(uintptr_t)UPDATE_RECORD_ADDR;
@@ -207,7 +186,6 @@ static void port_handover(const uint8_t *record, uint32_t len)
 	REG32(0x0010F1A8u) = 6;              /* as stock 0x020012BE */
 	for (uint32_t i = 0; i < len; i++)
 		dst[i] = record[i];
-	clock_sys_24mhz();
 	ram_protect_close();
 	P33_Write(0x32, (REG32(0x001E511Cu) & 0x20u) ? 8 : 4);   /* as stock 0x0200083A */
 	UPDATE_JumpToBoot();
