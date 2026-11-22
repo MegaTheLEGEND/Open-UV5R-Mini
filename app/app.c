@@ -185,6 +185,20 @@ static void draw_main_static(void)
 	s_shown_batt = s_shown_scan = -1;
 }
 
+/* text, then spaces to n characters, so the old text is covered without a clear */
+static void pad_print(const char *t, uint8_t x, uint8_t y, uint16_t fg, unsigned n)
+{
+	char p[24];
+	unsigned i = 0;
+
+	for (; i < n && i < sizeof p - 1 && t[i]; i++)
+		p[i] = t[i];
+	for (; i < n && i < sizeof p - 1; i++)
+		p[i] = ' ';
+	p[i] = 0;
+	UI_PrintString(p, x, y, fg, BLACK, 1);
+}
+
 static void draw_status(void)
 {
 	char b[12];
@@ -194,8 +208,6 @@ static void draw_status(void)
 	if (st == s_shown_status && !s_redraw)
 		return;
 	s_shown_status = st;
-	ST7735S_FillRect(0, 0, 128, 10, BLACK);
-	ST7735S_FillRect(0, 54, 128, 10, BLACK);
 	UI_PrintString(RADIO_IsAm() ? "AM" : "FM", 0, 1, BLUE, BLACK, 1);
 	UI_PrintString(gVfo.narrow || RADIO_IsAm() ? "N" : "W", 16, 1, BLUE, BLACK, 1);
 	UI_PrintString("SQ", 30, 1, WHITE, BLACK, 1);
@@ -203,27 +215,21 @@ static void draw_status(void)
 	UI_PrintString("V", 54, 1, WHITE, BLACK, 1);
 	UI_PrintString(UI_FormatDec(b, gVfo.volume, 2), 60, 1, YELLOW, BLACK, 1);
 	UI_PrintString(gVfo.power == POWER_LOW ? "L" : "H", 76, 1, BLUE, BLACK, 1);
-	if (s_lamp_mode)
-		UI_PrintString(s_lamp_mode == 2 ? "STRB" : "LAMP", 100, 1, YELLOW, BLACK, 1);
-	else if (!CALIB_Present())
-		UI_PrintString("NOCAL", 94, 1, RED, BLACK, 1);
+	/* every field is printed over its old text with padding (no clear first: clearing made it flicker) */
+	UI_PrintString(s_lamp_mode == 2 ? " STRB" : s_lamp_mode ? " LAMP" : !CALIB_Present() ? "NOCAL" : "     ", 94, 1,
+	               s_lamp_mode ? YELLOW : RED, BLACK, 1);
 	if (s_mr) {
 		UI_PrintString("CH", 0, 55, GREY, BLACK, 1);
 		UI_PrintString(s_ch >= 0 ? UI_FormatDec(b, (uint32_t)s_ch + 1, 3) : "---", 14, 55, WHITE, BLACK, 1);
-		UI_PrintString(s_ch_name, 36, 55, YELLOW, BLACK, 1);
+		pad_print(s_ch_name, 36, 55, YELLOW, 15);
 	} else {
 		UI_PrintString("STEP", 0, 55, GREY, BLACK, 1);
-		UI_PrintString(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, BLACK, 1);
+		pad_print(fmt_step(b, RADIO_Steps[gVfo.step]), 30, 55, WHITE, 16);
 	}
-	ST7735S_FillRect(0, 12, 100, 8, BLACK);
-	if (gVfo.rx_tone) {
-		UI_PrintString("R", 0, 12, GREY, BLACK, 1);
-		UI_PrintString(TONE_Format(b, gVfo.rx_tone), 8, 12, WHITE, BLACK, 1);
-	}
-	if (gVfo.tx_tone) {
-		UI_PrintString("T", 60, 12, GREY, BLACK, 1);
-		UI_PrintString(TONE_Format(b, gVfo.tx_tone), 68, 12, WHITE, BLACK, 1);
-	}
+	UI_PrintString(gVfo.rx_tone ? "R" : " ", 0, 12, GREY, BLACK, 1);
+	pad_print(gVfo.rx_tone ? TONE_Format(b, gVfo.rx_tone) : "", 8, 12, WHITE, 8);
+	UI_PrintString(gVfo.tx_tone ? "T" : " ", 60, 12, GREY, BLACK, 1);
+	pad_print(gVfo.tx_tone ? TONE_Format(b, gVfo.tx_tone) : "", 68, 12, WHITE, 5);
 }
 
 static void draw_freq(void)

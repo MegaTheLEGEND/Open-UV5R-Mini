@@ -22,12 +22,17 @@ static void LCD_SetDC(bool data)
 	P33_Write(P33_PR_OUT, out);
 }
 
+/* SCK and MOSI share port B: read OUT once, then two plain stores per bit (clock low with the data, clock high). */
 static void LCD_SendByte(uint8_t b)
 {
+	volatile uint32_t *out = &GPIO_PIN_TO_PORT(PIN_LCD_SCK)->OUT;
+	uint32_t base = *out & ~(GPIO_PIN_TO_BIT(PIN_LCD_SCK) | GPIO_PIN_TO_BIT(PIN_LCD_MOSI));
+	uint32_t sck = GPIO_PIN_TO_BIT(PIN_LCD_SCK), mosi = GPIO_PIN_TO_BIT(PIN_LCD_MOSI);
+
 	for (uint8_t bit = 0x80; bit; bit >>= 1) {
-		GPIO_ClearBit(PIN_LCD_SCK);
-		GPIO_Write(PIN_LCD_MOSI, b & bit);
-		GPIO_SetBit(PIN_LCD_SCK);
+		uint32_t v = base | (b & bit ? mosi : 0u);
+		*out = v;
+		*out = v | sck;
 	}
 }
 
