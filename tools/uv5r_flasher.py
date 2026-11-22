@@ -107,6 +107,9 @@ APP_BAUD, LOADER_BAUD = 9600, 38400
 # first 512 bytes four times and gave up (0x87) with stock and our image alike: an answer that comes back within a
 # millisecond or two may start before the loader listens again. --reply-delay changes it.
 REPLY_DELAY = 0.01
+# Above 9600, send in CHUNK-byte pieces with a CHUNK_GAP pause after each (--chunk-gap, ms; 0 = one burst). The
+# loader at 38400 took our short frames but never a 527-byte answer sent as one unbroken burst (Prolific cable).
+CHUNK, CHUNK_GAP = 32, 0.0
 MAX_READ = 0x1000
 T_LISTEN, T_PING, T_PING_TOTAL, T_SETTLE, T_IDLE = 2.0, 1.0, 30.0, 0.3, 60.0
 
@@ -284,8 +287,15 @@ class SerialLink:
         return self.s.read(4096)
 
     def write(self, b):
-        self.s.write(b)
-        self.s.flush()
+        if CHUNK_GAP and self.s.baudrate > APP_BAUD:
+            # In pieces with a gap, as USB adapters like the CH340 send (see CHUNK_GAP).
+            for i in range(0, len(b), CHUNK):
+                self.s.write(b[i:i + CHUNK])
+                self.s.flush()
+                time.sleep(CHUNK * 10.0 / self.s.baudrate + CHUNK_GAP)
+        else:
+            self.s.write(b)
+            self.s.flush()
         # flush() returns once the driver has the bytes; a USB adapter still sends them after that. 10 bits a byte,
         # plus a margin for the adapter's own buffer.
         self.idle_at = time.monotonic() + len(b) * 10.0 / self.s.baudrate + 0.04
@@ -942,9 +952,12 @@ def main():
                     help='rate asked of the loader (default 38400; 9600 keeps the rate the app stage used)')
     ap.add_argument('--reply-delay', type=float, default=REPLY_DELAY * 1000,
                     help='ms to wait before answering a loader read (default 10)')
+    ap.add_argument('--chunk-gap', type=float, default=0,
+                    help='above 9600: send in 32-byte pieces with this many ms between them (default 0: one burst)')
     a = ap.parse_args()
     globals()['LOADER_BAUD'] = a.loader_baud
     globals()['REPLY_DELAY'] = a.reply_delay / 1000.0
+    globals()['CHUNK_GAP'] = a.chunk_gap / 1000.0
     if a.cli:
         if not a.firmware:
             ap.error('--firmware is required with --cli')
