@@ -109,7 +109,7 @@ then `tools/lift/lift.py --variant nrfb`.
 
 - `make check` (also checks the generated icons are up to date), and `make TOOLCHAIN=…` if you touched firmware code.
 - Screen or icons changed: `python tests/ui_preview.py`, then look at `build/ui/*.png`.
-- Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`; stock settings reader or writer changed: `python tests/settings_host.py`; flasher guard or update-mode marker changed: `python tests/flasher_guard.py`.
+- Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`; stock settings reader or writer changed: `python tests/settings_host.py`; CHIRP programming (`src/app/program.c`) changed: `python tests/chirp_host.py` (needs a CHIRP checkout); flasher guard or update-mode marker changed: `python tests/flasher_guard.py`.
 - Lifter changed: `python tools/lift/insn_test.py` (0 must disagree) and
   `python tools/lift/func_test.py --steps 3000000` (all must match).
 - `git status`: nothing from `build/` or `firmware/` staged.

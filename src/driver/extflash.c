@@ -70,7 +70,7 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
  * status 05 until bit 0 clears; sub_01E404A6 program: 06, 02 + address + data). */
 static int fenced(uint32_t addr, uint32_t len)
 {
-	return len && addr >= EXTFLASH_LOG_LO && addr < EXTFLASH_LOG_HI && len <= EXTFLASH_LOG_HI - addr;
+	return len && addr + 1u > EXTFLASH_WRITE_LO && addr < EXTFLASH_WRITE_HI && len <= EXTFLASH_WRITE_HI - addr;
 }
 
 static void command(uint8_t c)
@@ -102,7 +102,7 @@ static void address(uint8_t c, uint32_t addr)
 	xfer((uint8_t)addr);
 }
 
-int EXTFLASH_LogErase4K(uint32_t addr)
+int EXTFLASH_Erase4K(uint32_t addr)
 {
 	if ((addr & 0xFFFu) || !fenced(addr, 0x1000u) || EXTFLASH_ReadId() != EXTFLASH_ID)
 		return -1;
@@ -135,7 +135,7 @@ static int program_page(uint32_t addr, const uint8_t *buf, uint32_t n)
 	return 0;
 }
 
-int EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len)
+int EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len)
 {
 	if (!fenced(addr, len) || EXTFLASH_ReadId() != EXTFLASH_ID)
 		return -1;

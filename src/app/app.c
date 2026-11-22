@@ -12,6 +12,7 @@
 #include "store/channels.h"
 #include "app/keys.h"
 #include "app/keytest.h"
+#include "app/program.h"
 #include "app/version.h"
 #include "radio/radio.h"
 #include "radio/dualwatch.h"
@@ -936,6 +937,8 @@ void APP_Init(void)
 	BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	RADIO_Init();
 	start_from_stock();
+	if (s_xf_ok)
+		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 	BT_Init(0);
 	go(SCREEN_MAIN);
 }
@@ -1006,6 +1009,16 @@ void APP_Tick(void)
 	bool ptt;
 
 	SYSTEM_WatchdogClear();
+
+	if (s_xf_ok && RADIO_State() != RADIO_TX) {
+		int p = PROGRAM_Poll();          /* a whole CHIRP session runs inside this call */
+		if (p == PROGRAM_DONE_WRITTEN)
+			start_from_stock();          /* new channels and settings */
+		if (p != PROGRAM_IDLE) {
+			go(SCREEN_MAIN);
+			return;
+		}
+	}
 
 	/* power switch: PB11 high = off (stock sub_01E4C978); act after 0.2 s */
 	if (GPIO_CheckBit(PIN_POWER_SENSE)) {

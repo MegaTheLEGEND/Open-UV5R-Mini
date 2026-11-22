@@ -18,7 +18,7 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 		*buf++ = addr < FLASH_SIZE ? flash[addr++] : 0xFF;
 }
 
-int EXTFLASH_LogErase4K(uint32_t addr)
+int EXTFLASH_Erase4K(uint32_t addr)
 {
 	if ((addr & 0xFFFu) || addr < 0x8000u || addr >= 0xA000u) {
 		outside++;
@@ -29,7 +29,7 @@ int EXTFLASH_LogErase4K(uint32_t addr)
 	return 0;
 }
 
-int EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len)
+int EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len)
 {
 	if (addr < 0x8000u || addr + len > 0xA000u) {
 		outside++;

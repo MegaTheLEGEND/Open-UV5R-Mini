@@ -23,11 +23,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Saving (writing the two logs back, as stock) is built in but OFF: with 0 there is no erase or program code for
- * the external flash in the image at all (driver/extflash.c). Turn it on only when the owner of the radio agrees;
- * it writes 0x8000-0x9FFF, between the channels and the calibration, and nothing else. */
+/* Saving (writing the two logs back, as stock; and CHIRP programming, app/program.c). On since 2026-11-22 (Sean asked
+ * for CHIRP support and saving). With 0 there is no erase or program code for the external flash in the image at
+ * all (driver/extflash.c); with 1 writes are fenced to 0x0000-0xAFFF, never the calibration at 0xF000. */
 #ifndef SETTINGS_ENABLE_SAVE
-#define SETTINGS_ENABLE_SAVE 0
+#define SETTINGS_ENABLE_SAVE 1
 #endif
 
 #define SETTINGS_VFO_HDR     0x8000u   /* slot bitmap, 8 bytes (stock reads 8) */
@@ -83,6 +83,8 @@ void     SETTINGS_EncodeVfo(uint8_t rec[32], const StockVfo_t *v);
 /* Write gStock.raw / gStock.vfo[] as a new slot of their log. 0 = written or unchanged, -1 = failed. */
 int      SETTINGS_SaveSettings(void);
 int      SETTINGS_SaveVfos(void);
+/* Write a whole VFO record pair (A, B; 64 bytes as CHIRP sends them) as a new slot, then load it into gStock. */
+int      SETTINGS_SaveVfoRaw(const uint8_t rec[64]);
 #endif
 /* Read both logs. false if neither had a good last slot (then the defaults stand). */
 bool     SETTINGS_Load(void);

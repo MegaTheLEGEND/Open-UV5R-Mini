@@ -5,8 +5,8 @@
 #include "driver/extflash.h"
 #else
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len);
-int  EXTFLASH_LogErase4K(uint32_t addr);
-int  EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len);
+int  EXTFLASH_Erase4K(uint32_t addr);
+int  EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len);
 #endif
 
 StockSettings_t gStock;
@@ -170,13 +170,13 @@ static int log_append(uint32_t header, uint32_t header_len, uint32_t first, uint
 			;
 		if (k == size)
 			return 0;
-		if (EXTFLASH_LogProgram(first + (i + 1u) * size, slot, size))
+		if (EXTFLASH_Program(first + (i + 1u) * size, slot, size))
 			return -1;
-		return EXTFLASH_LogProgram(header + (i >> 3), &CLEAR[i & 7u], 1);
+		return EXTFLASH_Program(header + (i >> 3), &CLEAR[i & 7u], 1);
 	}
-	if (EXTFLASH_LogErase4K(header & ~0xFFFu))
+	if (EXTFLASH_Erase4K(header & ~0xFFFu))
 		return -1;
-	return EXTFLASH_LogProgram(first, slot, size);
+	return EXTFLASH_Program(first, slot, size);
 }
 
 int SETTINGS_SaveSettings(void)
@@ -192,18 +192,33 @@ int SETTINGS_SaveSettings(void)
 	return log_append(SETTINGS_SET_HDR, SETTINGS_SET_HDR_LEN, SETTINGS_SET_LOG, SETTINGS_SET_SLOT, SETTINGS_SET_MAX, s);
 }
 
+static int save_vfo_slot(uint8_t s[SETTINGS_VFO_SLOT])
+{
+	uint16_t c = SETTINGS_Crc16(s, 0x40);
+
+	s[0x40] = (uint8_t)c;
+	s[0x41] = (uint8_t)(c >> 8);
+	return log_append(SETTINGS_VFO_HDR, SETTINGS_VFO_HDR_LEN, SETTINGS_VFO_LOG, SETTINGS_VFO_SLOT, SETTINGS_VFO_MAX, s);
+}
+
 int SETTINGS_SaveVfos(void)
 {
 	uint8_t s[SETTINGS_VFO_SLOT];
-	uint16_t c;
 
 	for (unsigned i = 0; i < 64; i++)
 		s[i] = gStock.vfo_raw[i];
 	SETTINGS_EncodeVfo(s, &gStock.vfo[0]);
 	SETTINGS_EncodeVfo(s + 32, &gStock.vfo[1]);
-	c = SETTINGS_Crc16(s, 0x40);
-	s[0x40] = (uint8_t)c;
-	s[0x41] = (uint8_t)(c >> 8);
-	return log_append(SETTINGS_VFO_HDR, SETTINGS_VFO_HDR_LEN, SETTINGS_VFO_LOG, SETTINGS_VFO_SLOT, SETTINGS_VFO_MAX, s);
+	return save_vfo_slot(s);
+}
+
+int SETTINGS_SaveVfoRaw(const uint8_t rec[64])
+{
+	uint8_t s[SETTINGS_VFO_SLOT];
+
+	for (unsigned i = 0; i < 64; i++)
+		s[i] = gStock.vfo_raw[i] = rec[i];
+	gStock.have_vfo = SETTINGS_DecodeVfo(rec, &gStock.vfo[0]) && SETTINGS_DecodeVfo(rec + 32, &gStock.vfo[1]);
+	return save_vfo_slot(s);
 }
 #endif

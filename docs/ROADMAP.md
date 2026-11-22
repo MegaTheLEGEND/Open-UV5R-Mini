@@ -11,7 +11,8 @@ What still has to be written before the C build can replace stock v0.27 on a rad
    `.ufw` has no loader). Details at the end of [UPDATE-MODE.md](UPDATE-MODE.md).
 2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what
    it does wrong (doesn't switch, doesn't stop on a signal, or the wrong side opens).
-3. **CHIRP:** work with CHIRP's existing UV-5R Mini driver, unchanged (5.3).
+3. **CHIRP (5.3): written, PC-tested** (2026-11-22): CHIRP's own UV-5R Mini driver, unchanged, downloads and uploads
+   against our programming mode (`src/app/program.c`, `python tests/chirp_host.py`). Not yet tried on a radio.
 
 Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
 **unknown** = needs reverse-engineering first.
@@ -92,7 +93,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document. The radio settings themselves are in the external flash: VFO log at `0x8010` (0x42-byte slots), settings log at `0x9010` (0x60-byte slots), CRC-16/XMODEM; read by `src/store/settings.c` (current slot from the header bitmap, as stock) and used at start-up. Writing them back the stock way is built (`SETTINGS_ENABLE_SAVE`, **off** by default: then the image has no external-flash write code), fenced to `0x8000`–`0x9FFF` with read-back; PC-tested on a simulated flash and on a dump (a save changes one slot and one header byte). Not tried on a radio |
 | 5.2 | Channel memory format as stock (so existing radios keep their channels) | **partial** | record format known; `src/store/channels.c` reads the stock channels (MENU → MEMORY), checked against one radio's dump on the PC; no writing |
-| 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Goal: CHIRP's existing UV-5R Mini driver works with our firmware **unchanged**, so the same cable, protocol, memory map and identification as stock. Codeplug Studio documents the protocol; CHIRP's driver source is the other reference. Needs channel and settings writing (5.1, 5.2) |
+| 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **done** (PC) | `src/app/program.c`: CHIRP's UV-5R Mini protocol at 115200 on the cable (ident `PROGRAMCOLORPROU`, `F`/`M`/`SEND!`, 64-byte `R`/`W` blocks scrambled with "CO 7"). CHIRP's addresses are the external-flash ones: channels in place, 0x8000/0x9000 the current VFO and settings slots of stock's logs, 0xA000 DTMF in place. `tests/chirp_host.py` runs CHIRP's own driver, unchanged, against it, starting from a radio's flash dump: download, edit, upload, read back, no erase for an unchanged upload, nothing past 0xAFFF touched. Not yet on a radio; Codeplug Studio not tried |
 | 5.4 | Bluetooth / Wireless CPS | **todo** | optional edition with JieLi blobs (docs/BLUETOOTH.md) |
 
 ## 6. Tooling and tests
