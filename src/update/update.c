@@ -134,6 +134,9 @@ static int host_read(uint32_t off, uint8_t *dst, uint32_t len)
 		uint32_t n;
 		int cmd;
 
+		gUpdateOff = off;
+		if (t)
+			gUpdateRetries++;
 		send(UPDATE_CMD_READ, req, 8);
 		while ((cmd = recv(READ_TIMEOUT, &n)) >= 0) {
 			const uint8_t *d = frame_data(n);
@@ -244,6 +247,8 @@ static int fail(int code)
 	return code;
 }
 
+volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries;
+
 static int download(void)
 {
 	uint8_t hdr[0x40], rec[0x50], ent[0x20];
@@ -251,6 +256,7 @@ static int download(void)
 	uint8_t record[UPDATE_RECORD_SIZE];
 
 	/* container header: one ENC block, CRC of bytes 2..63, chip name */
+	gUpdateStep = 1;
 	if (host_read(0, hdr, sizeof(hdr)))
 		return UPDATE_ERR_HOST;
 	UPDATE_Decrypt(hdr, sizeof(hdr), 0xFFFF);
@@ -262,6 +268,7 @@ static int download(void)
 		return fail(UPDATE_ERR_FILE);
 
 	/* the records (each its own ENC block): find ota.bin */
+	gUpdateStep = 2;
 	for (uint32_t i = 0; i < nrec; i++) {
 		if (host_read(0x40 + 0x50 * i, rec, sizeof(rec)))
 			return UPDATE_ERR_HOST;
@@ -275,6 +282,7 @@ static int download(void)
 		return fail(UPDATE_ERR_FILE);
 
 	/* ota.bin directory entry: the loader */
+	gUpdateStep = 3;
 	if (host_read(ota_off, ent, sizeof(ent)))
 		return UPDATE_ERR_HOST;
 	lo = rd32(&ent[4]);
@@ -282,21 +290,26 @@ static int download(void)
 	if (!name_is(&ent[16], "uart_user.bin") || rd16(ent) != UPDATE_Crc16(ent + 2, 30, 0)
 	    || ll == 0 || ll > UPDATE_MAX_LOADER || lo + ll > ota_len)
 		return fail(UPDATE_ERR_FILE);
+	gUpdateStep = 4;
 	for (uint32_t i = 0; i < ll; i += READ_CHUNK) {
 		uint32_t n = ll - i < READ_CHUNK ? ll - i : READ_CHUNK;
 		if (host_read(ota_off + lo + i, &g_loader[i], n))
 			return UPDATE_ERR_HOST;
 	}
+	gUpdateStep = 5;
 	if (rd16(&ent[2]) != UPDATE_Crc16(g_loader, ll, 0))
 		return fail(UPDATE_ERR_FILE);
 
 	/* store it, then hand over to the bootloader: the record goes to flash (survives a power cut) and RAM */
+	gUpdateStep = 6;
 	addr = UPDATE_StoreLoader(g_loader, ll);
 	if (!addr)
 		return fail(UPDATE_ERR_STORE);
+	gUpdateStep = 7;
 	UPDATE_BuildRecord(record, addr, g_baud);
 	if (program(UPDATE_REC_FLASH, record, 80) || verify(UPDATE_REC_FLASH, record, 80))
 		return fail(UPDATE_ERR_STORE);
+	gUpdateStep = 8;
 	g_port->handover(record, sizeof(record));
 	return UPDATE_OK;
 }

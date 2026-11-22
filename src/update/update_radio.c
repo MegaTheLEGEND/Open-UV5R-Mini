@@ -55,13 +55,13 @@ static void debug_draw(void)
 }
 
 /* The same over the cable, as a frame with cmd 0x7F (the flasher logs and ignores it): CON0, HRXCNT, RXCNT, bytes
- * received, frames sent, the last 8 bytes received, and a count of these frames. The LCD may not be usable once the
+ * the update step and last offset asked for (src/update/update.h), received, frames sent, the last 8 bytes received, and a count of these frames. The LCD may not be usable once the
  * UART is set up, so this is the reliable view. */
 static void debug_send(void)
 {
 	static uint32_t count;
 	uint8_t f[5 + 36 + 2];
-	uint32_t v[7] = { UART_Reg(0), UART_Reg(40), UART_Reg(36), s_rx_total, s_tx_frames, UART_Dropped(), ++count };
+	uint32_t v[7] = { UART_Reg(0), gUpdateStep, gUpdateOff | gUpdateRetries << 24, s_rx_total, s_tx_frames, UART_Dropped(), ++count };
 	uint16_t crc;
 
 	f[0] = 0xAA;
