@@ -655,6 +655,8 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
             elif cmd == CMD_DATA and len(d) >= 8:
                 off, n = struct.unpack_from('<II', d)
                 send(CMD_DATA, d[:8] + image[off:off + n])
+                if phase == 'loader' and not area_len:      # what the loader checks before it erases
+                    log('  loader read 0x%X, %d bytes' % (off, n))
                 reads += 1
                 if phase == 'loader' and area_len and off >= area_lo:
                     done_max = max(done_max, min(1.0, (off + n - area_lo) / area_len))   # reads come out of order
