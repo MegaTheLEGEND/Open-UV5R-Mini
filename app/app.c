@@ -60,14 +60,16 @@ static bool     s_ptt_down, s_tx_refused;
 static uint16_t s_tail_ms;     /* transmit still on after PTT was let go */
 static bool     s_eot;         /* the down code is being sent after PTT was let go */
 
-/* PTT-ID: the up (bit 0) or down (bit 1) code if the channel and the ANI block both ask for it (stock 0x01E507B0 /
- * 0x01E508C2: channel byte 13 bit, then the ANI byte 6 bit). Stock does something else when the channel asks and
+/* PTT-ID: the up (bit 0) or down (bit 1) code if the channel (in VFO mode setting 0x0B) and the ANI block both ask
+ * for it (stock 0x01E507B0 / 0x01E508C2: channel byte 13 bit, then the ANI byte 6 bit). Stock does something else when the channel asks and
  * the ANI byte doesn't (a group call path, not followed here). */
 static bool ptt_id_start(uint8_t bit)
 {
 	const uint8_t *codes = bit == 1 ? gStock.up_code : gStock.down_code;
 
-	if (!(gVfo.ptt_id & bit) || !(gStock.ani[6] & bit))
+	uint8_t mode = s_mr ? gVfo.ptt_id : gStock.raw[SET_PTT_ID];   /* stock sub_01E3F9D0 */
+
+	if (!(mode & bit) || !(gStock.ani[6] & bit))
 		return false;
 	return DTMFSEQ_Start(codes, bit == 1 ? DTMFSEQ_WaitMs(gStock.raw[0x0C]) : 0, DTMFSEQ_TimeMs(gStock.ani[7]),
 	                     DTMFSEQ_TimeMs(gStock.ani[8]));
@@ -1113,8 +1115,11 @@ void APP_Tick(void)
 		s_eot = false;
 	} else
 		ptt_id_tick();
-	if (s_tail_ms && (s_tail_ms = s_tail_ms > APP_TICK_MS ? (uint16_t)(s_tail_ms - APP_TICK_MS) : 0) == 0)
+	if (s_tail_ms && (s_tail_ms = s_tail_ms > APP_TICK_MS ? (uint16_t)(s_tail_ms - APP_TICK_MS) : 0) == 0) {
 		RADIO_EndTx();
+		/* stock 0x01E4FF94: setting 0x15 x 100 ms with the receive audio held off */
+		RADIO_MuteRx((uint16_t)((gStock.raw[SET_RPT_CLEAR] < 30 ? gStock.raw[SET_RPT_CLEAR] : 30) * 100u));
+	}
 	RADIO_Tick();
 	tot_tick();
 	tscan_tick();

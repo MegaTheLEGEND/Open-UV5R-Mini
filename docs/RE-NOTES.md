@@ -569,3 +569,13 @@ Timing: one counter at `0x198C0+5214` (`h[2607]`), decremented on every call of 
 `(0, 0)` for the gap time; after the last code (16 at most or 0xFF) a 10 ms wait and everything off. The monitor
 (TX mode 4, AF 241, amp source 4) is switched on once at the start when setting `0x09` bit 1 is set.
 
+### Transmit end and the repeater tail
+
+- At PTT release (`sub_01E4DCC2`): roger, tail tone, PTT-ID down code, then a 400 ms count; if setting `0x16` is not
+  0, `sub_01E419B6` loads the count at `0x198C0+2803` with setting `0x16` + 2.
+- When the 400 ms run out (`0x01E4FF68`): BK4819 mode 0, band switch off, then the count at `0x198C0+2803` = setting
+  `0x15`. While it isn't 0 the receive audio isn't switched on (`sub_01E4E2C0`, `0x01E50864`). Codeplug Studio counts
+  it in 100 ms (decrement at `0x01E55140`).
+- VFO mode takes its PTT-ID from setting `0x0B` (0 off, 1 BOT, 2 EOT, 3 both); channel mode from channel byte 13
+  (`sub_01E3F9D0`, into `0x198C0+5905`).
+

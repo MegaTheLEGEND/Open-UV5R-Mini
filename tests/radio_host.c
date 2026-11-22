@@ -355,6 +355,15 @@ int main(void)
 		CHECK(BATTERY_Raw() < 100, "no reading pulls down");
 	}
 
+	/* receive audio held off after transmit (repeater tail clear) */
+	gVfo.squelch = 0;
+	at(14552000u);
+	RADIO_MuteRx(300);
+	ticks(2);
+	CHECK(!amp && af == BK4819_AF_MUTE, "muted while the count runs");
+	ticks(30);
+	CHECK(amp && af == BK4819_AF_FM, "audio back after 300 ms");
+
 	/* tones sent while transmitting: the stock DTMF table, one tones of 1000-2100 Hz, roger beep */
 	gVfo.power = POWER_LOW;
 	at(14552000u);

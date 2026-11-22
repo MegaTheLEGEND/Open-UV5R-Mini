@@ -65,6 +65,8 @@ bool         RADIO_TxToneOn(void);
 void         RADIO_Roger(void);
 /* Squelch tail elimination (stock setting 0x14): the 55 Hz tail, or the DCS turn-off, until RADIO_EndTx. */
 void         RADIO_TxTail(void);
+/* Receive audio stays off for ms (stock "repeater tail clear", setting 0x15 x 100 ms after transmit ends). */
+void         RADIO_MuteRx(uint16_t ms);
 /* Stock keeps transmitting 400 ms after PTT is let go (sub_01E4DCC2 sets a 40-tick count, 0x01E4FB9E waits for it). */
 #define RADIO_TX_TAIL_MS 400u
 

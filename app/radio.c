@@ -90,8 +90,12 @@ static BK4819_Tone_t css_kind(uint16_t tone)
 bool RADIO_ToneHeard(void) { return s_tone_heard; }
 
 /* ------------------------------------------------------------------------------------------- receive */
+static uint16_t s_mute_ms;     /* receive audio held off after transmit (repeater tail) */
+
 static void audio(bool open)
 {
+	if (s_mute_ms)
+		open = false;
 	BK4819_SetAF(open ? (RADIO_IsAm() ? BK4819_AF_AM : BK4819_AF_FM) : BK4819_AF_MUTE);
 	IO_Amp(AUDIO_RX, open);
 	IO_LedRx(open);
@@ -166,6 +170,8 @@ static void squelch_levels(void)
 
 void RADIO_Tick(void)
 {
+	if (s_mute_ms && (s_mute_ms = s_mute_ms > 10u ? (uint16_t)(s_mute_ms - 10u) : 0) == 0 && s_state == RADIO_RX_OPEN)
+		audio(true);
 	if (s_beep_ms) {
 		if (s_beep_ms > 10u)
 			s_beep_ms -= 10u;
@@ -363,6 +369,13 @@ void RADIO_Roger(void)
 	SYSTEM_DelayMs(40);
 	s_txtone = s_txmon = true;
 	RADIO_TxToneOff();
+}
+
+void RADIO_MuteRx(uint16_t ms)
+{
+	s_mute_ms = ms;
+	if (ms)
+		audio(false);
 }
 
 void RADIO_TxTail(void)
