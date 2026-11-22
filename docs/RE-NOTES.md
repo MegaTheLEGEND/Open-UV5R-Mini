@@ -354,6 +354,14 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
   (if anything) is wired to the MCU's mic pin, is open. VOX, tones and DTMF are all done by the BK4819.
 - **FM broadcast radio: the AC695N's built-in FM receiver** (`fm_inside`, `sub_01E4B3D0`/`sub_01E4B49A`/`sub_01E4B688`),
   87.5–108.0 MHz in 100 kHz steps (frequency at `0x198C0+104`, set by `sub_01E3DE8E`), heard through the DAC.
+  It is a driver in a one-entry table at `0x01E00674` (name at +20; functions: `0x01E3D184` open, `0x01E3DD50`,
+  `0x01E3DE4C`, `0x01E3DE80`, `0x01E3DE8A`). Not a tuner chip: the open function sets the band (8750–10800, step
+  100), allocates about 10 KB (6040 + 36 + 4096 + 8 bytes), fills a table of fixed-point filter coefficients, gates a
+  clock (`0x1E0010` +52 bit 24, CON bits 22–23 = 1) and installs interrupt 43 (handler `0x02003D8A`, in the RAM
+  code). The front end is a block at `0x1F1700` (+0 CON, bits 0 and 3 on; +8, +12 bit 31), tuning goes through RAM
+  code (`0x0200382C`, `0x02003950`), and the sound goes out through the audio DAC (`0x1E2F00`). So the demodulation is
+  partly in software on the MCU: an FM mode needs a front-end driver, the DSP and a DAC driver, none of which exists in
+  our code yet, and none of which can be checked on the PC (the emulator has no FM block).
 
 ### Clocks, timer tick, watchdog
 
