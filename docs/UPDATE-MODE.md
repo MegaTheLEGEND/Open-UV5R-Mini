@@ -199,10 +199,16 @@ What it took on the way:
 
 Still open:
 
-1. **38400 for the loader.** The stock hand-over (`sub_01E43174`, the callback `sub_01E42EE4` runs last) sets the
-   system clock to 24 MHz (`clk_set("sys", 24000000)`, `sub_01E69AAC`) and tells Bluetooth to stop, before the RAM
-   protection and the reset. Ours skips the clock, and our start-up doesn't set clocks; the likely reason the loader
-   fails at 38400. At 9600 the write takes about 10–12 minutes.
+1. **38400 for the loader: a flasher and cable problem, not ours** (radio, 2026-11-22, Prolific K1 cable). Stock
+   firmware failed at the switch exactly as ours did. Found and fixed in `tools/uv5r_flasher.py`, step by step:
+   changing the port's rate while the rate frame was still leaving the adapter garbled it (now waits, and falls back to
+   9600 if no hello comes; as Codeplug Studio's updater); then the loader took our short frames at 38400 but never a
+   527-byte answer sent in one burst (four reads of 0x0, then 0x87, nothing erased; a 10 ms wait before answering
+   didn't help). Sent in 32-byte pieces with 2 ms gaps (`--chunk-gap 2`) it got as far as erasing, then still lost
+   too many answers and stopped part-way (0x87); power on with no keys (dark screen, the loader waits) and the flasher
+   at 9600 continued and finished it: resuming works. Next: a larger gap. Until then `--loader-baud 9600`, about 10
+   minutes. The stock hand-over also sets a 24 MHz system clock (`sub_01E43174`, `clk_set("sys")`, `sub_01E69AAC`;
+   values from `emu/clk_trace.py`); ours doesn't, and trying it changed nothing at 38400.
 2. Many retries: the flag collects only about a third of the replies, the 1 s backstop the rest.
 3. If the loader resets mid-update, stock's app resumes it at power-on (the record at `0xFDF00`); ours doesn't yet,
    so the radio comes back in our app (seen when the 38400 switch failed). Update mode again recovers it.
