@@ -159,6 +159,17 @@ int main(void)
 		CHECK(read_all(buf, 5, 100) == 5 && buf[0] == 0xAA && buf[4] == 0x01, "host frame during our send kept");
 	}
 
+	/* 8. no echo, and the host's reply starts like our request (AA 55 xx 00): nothing of it may be dropped */
+	reset();
+	{
+		static const uint8_t req[7] = { 0xAA, 0x55, 0x09, 0x00, 0x02, 0x00, 0x00 };
+		static const uint8_t rep[7] = { 0xAA, 0x55, 0x49, 0x00, 0x02, 0x00, 0x00 };
+		queue(rep, sizeof rep, 1, 0);
+		uart_test_delay_ms(1);
+		UART_Send(req, sizeof req);
+		CHECK(read_all(buf, 7, 100) == 7 && !memcmp(buf, rep, 7), "reply with the request's prefix kept whole");
+	}
+
 	printf(fails ? "uart_host: %d FAILED\n" : "uart_host: all passed\n", fails);
 	return fails != 0;
 }

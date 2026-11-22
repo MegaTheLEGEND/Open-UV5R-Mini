@@ -8,8 +8,9 @@
  *     OTCNT, as stock does. The bytes go into a FIFO, so the DMA can never overwrite bytes not yet handed out.
  *   - Backstop: every 20 ms without a flag the same RDC-and-copy runs anyway, so bytes can't sit unseen if the
  *     time-out flag doesn't come (seen on a radio 2026-11-21: 105 bytes waited with no flag).
- *   - After a send, only our own echo (the bytes we sent, in order) and leading FF noise are dropped; the first other
- *     byte and everything after it is kept. Dropping everything lost the flasher's rate frame on a radio
+ *   - After a send, only leading FF noise and a whole copy of what we sent (an echo) are dropped; everything else is
+ *     kept. A partial match is not an echo: our read request and the host's reply both start AA 55 xx 00, and
+ *     dropping a matching prefix cut the start off every reply (radio, 2026-11-21). Dropping everything lost the flasher's rate frame on a radio
  *     (2026-11-21): the host answers at once, and the TX-done wait can outlast our last byte. Stray FF bytes were
  *     seen on a radio.
  * Every wait has a time-out.
@@ -92,8 +93,7 @@ static void rx_arm(void)
  * at the start (see above). */
 static void rx_collect(int echo)
 {
-	uint32_t n, j = 0;
-	int skipping = echo;
+	uint32_t n, i = 0;
 
 	CON0 |= CON_RDC;
 	CON0 |= CON_CLR_OT;
@@ -101,17 +101,23 @@ static void rx_collect(int echo)
 	n = HRXCNT;
 	if (n > RXBUF_LEN)
 		n = RXBUF_LEN;
-	for (uint32_t i = 0; i < n; i++) {
-		uint8_t b = s_rx[i];
-		if (skipping && j < s_tx_n && b == s_tx[j]) {
-			j++;
-			s_dropped++;
-		} else if (skipping && b == 0xFF)
-			s_dropped++;
-		else if (s_head - s_tail < FIFO_LEN) {
-			skipping = 0;
-			s_fifo[s_head++ & (FIFO_LEN - 1)] = b;
-		} else
+	if (echo) {
+		while (i < n && s_rx[i] == 0xFF)
+			i++, s_dropped++;
+		if (s_tx_n && n - i >= s_tx_n) {
+			uint32_t k = 0;
+			while (k < s_tx_n && s_rx[i + k] == s_tx[k])
+				k++;
+			if (k == s_tx_n)
+				i += k, s_dropped += k;
+		}
+		while (i < n && s_rx[i] == 0xFF)
+			i++, s_dropped++;
+	}
+	for (; i < n; i++) {
+		if (s_head - s_tail < FIFO_LEN)
+			s_fifo[s_head++ & (FIFO_LEN - 1)] = s_rx[i];
+		else
 			s_dropped++;
 	}
 	rx_arm();
