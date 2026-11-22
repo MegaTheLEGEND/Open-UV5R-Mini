@@ -252,6 +252,22 @@ void BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level)
 	BK4819_WriteRegister(BK4819_REG_08, (uint16_t)(0x8000u | (word >> 12 & 0xFFFu)));
 }
 
+/* Squelch tail elimination when transmit ends, as stock sub_01E4D7BA(1): with no tone or CTCSS, a 55 Hz tone
+ * (REG_51 = (level | 0x9000) & 0x907F, REG_07 = 1137 = 55.06 Hz) and REG_52 bits 13-15 cleared; with DCS, REG_52 bit
+ * 15 set (bits 13-14 cleared). */
+void BK4819_TailTone(bool dcs, uint8_t level)
+{
+	uint16_t r52 = BK4819_ReadRegister(BK4819_REG_52) & 0x1FFFu;
+
+	if (dcs)
+		r52 |= 0x8000u;
+	else {
+		BK4819_WriteRegister(BK4819_REG_51, (uint16_t)((level | 0x9000u) & 0x907Fu));
+		BK4819_WriteRegister(BK4819_REG_07, 1137);
+	}
+	BK4819_WriteRegister(BK4819_REG_52, r52);
+}
+
 /* Sub-audio scan (stock: mode off, REG_51 = 0x0300, mode RX; the 0x01E4FCE6 path of the tone scan). */
 void BK4819_CssScanStart(void)
 {

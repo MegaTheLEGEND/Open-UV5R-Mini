@@ -545,7 +545,9 @@ LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12
 | One tone frequency | `sub_01E40B52(f)` | `REG_71 = f x 1032444 / 10000`, f in 10 Hz; codes 17-20 = 100, 145, 175, 210 (bytes at `0x01E654A2`) |
 | Off | `0x01E5072C` | `REG_71/72 = 0`, `REG_24` bit 5 cleared, `REG_70 = 0`, back to TX mode 2, AF mute, amp source 4 off |
 | Heard locally | `sub_01E510A2`, setting `0x09` bit 0 | TX mode 4 (`REG_30 = 0xC3FA`, the mic out), `SetAF(241)` = `REG_47 = 0x6140`, `REG_48 = 0xB8A2` |
-| Roger beep | `sub_01E4DCC2`, setting `0x17` | the above with 1000 Hz then 850 Hz, 40 ms each, then the PTT-ID at the end if setting `0x14` (`sub_01E4D7BA`, not decoded) |
+| Roger beep | `sub_01E4DCC2`, setting `0x17` | the above with 1000 Hz then 850 Hz, 40 ms each |
+| Tail elimination | `sub_01E4D7BA(1)` from `sub_01E4DCC2`, setting `0x14` | no tone or CTCSS: `REG_51 = (level \| 0x9000) & 0x907F`, `REG_07 = 1137` (55 Hz), `REG_52` bits 13-15 cleared; DCS: `REG_52` bit 15 set. Off: `REG_51 = 0` |
+| Transmit tail | `sub_01E4DCC2` sets a 16-bit count at `0x198C0+2797` to 40; the 10 ms tick (`0x01E55044`, inside the 2 ms timer's divide-by-5) counts it down and the main loop (`0x01E4FB9E`) keeps transmitting until 0 | 400 ms after PTT is let go, with or without the settings above |
 
 `sub_01E510A2(code)` is called only from the key handler during transmit (`0x01E5457E`): digits give their own code,
 four other keys give 12-15. `sub_01E400D6(n)` is the amp vote: odd n = a source on, even = off (9/10 = tones).

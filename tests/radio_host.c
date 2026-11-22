@@ -60,6 +60,8 @@ void BK4819_TxTonePair(uint16_t a, uint16_t b)
 void BK4819_TxTonesOff(void) { tx_tones_on = 0; tx_w1 = tx_w2 = 0; }
 void BK4819_TxMonitor(bool on) { tx_mon = on; reg30 = on ? 0xC3FA : 0xC1FE; }
 void SYSTEM_DelayMs(uint32_t ms) { delay_ms += ms; }
+static int tail_mode = -1;     /* -1 none, 0 55 Hz, 1 DCS */
+void BK4819_TailTone(bool dcs, uint8_t level) { (void)level; tail_mode = dcs; }
 void BK4819_Beep(uint16_t hz) { (void)hz; }
 void IO_Init(void) {}
 void IO_Amp(uint8_t who, bool on) { (void)who; amp = on; }
@@ -371,8 +373,21 @@ int main(void)
 		RADIO_Roger();
 		CHECK(tx_log_n >= 2 && tx_log[0][0] == 0x2854 && !tx_log[0][1] && tx_log[1][0] == 0x2248 && delay_ms == 80 &&
 		      !tx_tones_on && !tx_mon, "roger: 1000 Hz then 850 Hz, 40 ms each (stock words 0x2854, 0x2248)");
+		gVfo.tx_tone = 0;
+		RADIO_TxTail();
+		CHECK(tail_mode == 0, "tail with no tone: 55 Hz as stock");
+		gVfo.tx_tone = TONE_Ctcss[12];
+		RADIO_TxTail();
+		CHECK(tail_mode == 0, "tail with CTCSS: 55 Hz");
+		gVfo.tx_tone = 5;
+		RADIO_TxTail();
+		CHECK(tail_mode == 1, "tail with DCS: turn-off code");
+		gVfo.tx_tone = 0;
 		RADIO_TxTone(5, true);
 		RADIO_EndTx();
+		tail_mode = -1;
+		RADIO_TxTail();
+		CHECK(tail_mode == -1, "no tail unless transmitting");
 		CHECK(!tx_tones_on && !tx_mon && !RADIO_TxToneOn(), "transmit end stops a tone");
 	} else
 		CHECK(!RADIO_ENABLE_TX, "TX at 145.52 MHz");

@@ -56,6 +56,7 @@ static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
+static uint16_t s_tail_ms;     /* transmit still on after PTT was let go */
 
 /* The two sides, A and B, as stock has them. gVfo, s_mr, s_ch and s_ch_name are the active side's working copy;
  * s_side[] holds both and is brought up to date before the other side is tuned. */
@@ -1036,6 +1037,10 @@ void APP_Tick(void)
 		dw_end();
 		tscan_stop();
 	}
+	if (ptt && s_tail_ms) {             /* pressed again during the tail: start over */
+		s_tail_ms = 0;
+		RADIO_EndTx();
+	}
 	if (ptt && !s_ptt_down) {
 		light_wake();
 		s_tot_hit = false;
@@ -1044,14 +1049,20 @@ void APP_Tick(void)
 			RADIO_Beep(400, 150);
 		s_shown_state = -1;
 	} else if (!ptt && s_ptt_down) {
-		if (gStock.raw[SET_ROGER] && RADIO_State() == RADIO_TX)
-			RADIO_Roger();
-		RADIO_EndTx();
+		if (RADIO_State() == RADIO_TX) {   /* stock sub_01E4DCC2: roger, tail tone, then 400 ms more */
+			if (gStock.raw[SET_ROGER])
+				RADIO_Roger();
+			if (gStock.raw[SET_STE])
+				RADIO_TxTail();
+			s_tail_ms = RADIO_TX_TAIL_MS;
+		}
 		s_tx_refused = s_tot_hit = false;
 		s_shown_state = -1;
 	}
 	s_ptt_down = ptt;
 
+	if (s_tail_ms && (s_tail_ms = s_tail_ms > APP_TICK_MS ? (uint16_t)(s_tail_ms - APP_TICK_MS) : 0) == 0)
+		RADIO_EndTx();
 	RADIO_Tick();
 	tot_tick();
 	tscan_tick();

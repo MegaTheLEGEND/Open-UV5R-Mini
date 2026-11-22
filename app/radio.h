@@ -61,5 +61,9 @@ void         RADIO_TxToneOff(void);
 bool         RADIO_TxToneOn(void);
 /* Roger beep at the end of transmit (stock sub_01E4DCC2): 1000 Hz then 850 Hz, 40 ms each, mic out. Blocks 80 ms. */
 void         RADIO_Roger(void);
+/* Squelch tail elimination (stock setting 0x14): the 55 Hz tail, or the DCS turn-off, until RADIO_EndTx. */
+void         RADIO_TxTail(void);
+/* Stock keeps transmitting 400 ms after PTT is let go (sub_01E4DCC2 sets a 40-tick count, 0x01E4FB9E waits for it). */
+#define RADIO_TX_TAIL_MS 400u
 
 #endif

@@ -67,6 +67,7 @@ void     BK4819_DtmfRxOn(void);
 void     BK4819_DtmfRxOff(void);
 int      BK4819_DtmfTake(void);                      /* 0-15 or -1 */
 uint16_t BK4819_ToneWord(uint16_t hz);               /* REG_71 / REG_72 value */
+void     BK4819_TailTone(bool dcs, uint8_t level);  /* squelch tail elimination at TX end */
 void     BK4819_TxTonesOn(bool dual);                /* dual: DTMF generator; else one tone */
 void     BK4819_TxTonePair(uint16_t w1, uint16_t w2);
 void     BK4819_TxTonesOff(void);

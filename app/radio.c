@@ -354,6 +354,15 @@ void RADIO_Roger(void)
 	RADIO_TxToneOff();
 }
 
+void RADIO_TxTail(void)
+{
+	ToneKind_t k = TONE_Kind(gVfo.tx_tone);
+
+	if (s_state != RADIO_TX)
+		return;
+	BK4819_TailTone(k == TONE_DCS_N || k == TONE_DCS_I, CALIB_CtcssLevel());
+}
+
 /* A short local tone (key beep, errors), never sent over the air. */
 void RADIO_Beep(uint16_t hz, uint16_t ms)
 {
