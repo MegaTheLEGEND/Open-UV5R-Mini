@@ -103,6 +103,10 @@ def needs_rescue_warning(checks):
 
 CMD_BAUD, CMD_DATA, CMD_RESULT, CMD_LENGTH, CMD_PING = 1, 2, 3, 4, 6
 APP_BAUD, LOADER_BAUD = 9600, 38400
+# Pause before answering a loader read. At 38400 (radio, 2026-11-22, Prolific K1 cable) the loader asked for the
+# first 512 bytes four times and gave up (0x87) with stock and our image alike: an answer that comes back within a
+# millisecond or two may start before the loader listens again. --reply-delay changes it.
+REPLY_DELAY = 0.01
 MAX_READ = 0x1000
 T_LISTEN, T_PING, T_PING_TOTAL, T_SETTLE, T_IDLE = 2.0, 1.0, 30.0, 0.3, 60.0
 
@@ -654,6 +658,8 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                         send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
             elif cmd == CMD_DATA and len(d) >= 8:
                 off, n = struct.unpack_from('<II', d)
+                if phase == 'loader' and REPLY_DELAY:
+                    time.sleep(REPLY_DELAY)                 # let the loader re-arm its receive first
                 send(CMD_DATA, d[:8] + image[off:off + n])
                 if phase == 'loader' and not area_len:      # what the loader checks before it erases
                     log('  loader read 0x%X, %d bytes' % (off, n))
@@ -934,8 +940,11 @@ def main():
     ap.add_argument('--cut', type=float, help='emu only: cut the power at this fraction of the write, then resume')
     ap.add_argument('--loader-baud', type=int, default=LOADER_BAUD,
                     help='rate asked of the loader (default 38400; 9600 keeps the rate the app stage used)')
+    ap.add_argument('--reply-delay', type=float, default=REPLY_DELAY * 1000,
+                    help='ms to wait before answering a loader read (default 10)')
     a = ap.parse_args()
     globals()['LOADER_BAUD'] = a.loader_baud
+    globals()['REPLY_DELAY'] = a.reply_delay / 1000.0
     if a.cli:
         if not a.firmware:
             ap.error('--firmware is required with --cli')
