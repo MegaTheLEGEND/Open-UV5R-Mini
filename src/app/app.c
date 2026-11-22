@@ -12,6 +12,7 @@
 #include "store/channels.h"
 #include "app/keys.h"
 #include "app/keytest.h"
+#include "app/version.h"
 #include "radio/radio.h"
 #include "radio/dualwatch.h"
 #include "radio/dtmfseq.h"
@@ -35,7 +36,7 @@
 #include "ui/theme.h"
 
 
-typedef enum { SCREEN_MAIN, SCREEN_MENU } Screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT } Screen_t;
 
 static Screen_t s_screen;
 static bool     s_redraw = true;         /* whole screen */
@@ -318,10 +319,10 @@ static void draw_main(void)
 
 /* ------------------------------------------------------------------------------------------- menu */
 enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_TSCAN,
-       M_TSCANSAVE, M_POWER, M_KEYTEST, M_COUNT };
+       M_TSCANSAVE, M_POWER, M_KEYTEST, M_ABOUT, M_COUNT };
 static const char *const MENU_NAMES[M_COUNT] = {
 	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
-	"RX TONE", "TX TONE", "TONE SCAN", "TSCAN SAVE", "TX POWER", "KEY TEST",
+	"RX TONE", "TX TONE", "TONE SCAN", "TSCAN SAVE", "TX POWER", "KEY TEST", "ABOUT",
 };
 #define MENU_ROWS 8                      /* rows on screen; the list scrolls */
 
@@ -351,6 +352,7 @@ static const char *menu_value(int i, char *b)
 	case M_RXTONE:  return TONE_Format(b, gVfo.rx_tone);
 	case M_TXTONE:  return TONE_Format(b, gVfo.tx_tone);
 	case M_POWER:   return gVfo.power == POWER_LOW ? "LOW" : "HIGH";
+	case M_ABOUT:   return FW_VERSION;
 	default:        return "";
 	}
 }
@@ -650,6 +652,23 @@ static void key_main(KEY_Code_t k)
 	}
 }
 
+/* MENU -> ABOUT: name, version and build; any key goes back to the menu. */
+static void draw_about(void)
+{
+	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+	ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
+	UI_PrintString("ABOUT", 49, 2, COLOR_TEXT, COLOR_BAR, 1);
+	UI_PrintString(FW_NAME, 22, 20, COLOR_ACCENT, COLOR_BG, 1);
+	UI_PrintString("VERSION", 4, 38, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(FW_VERSION, 58, 38, COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("BUILD", 4, 52, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(VERSION_Build(), 58, 52, COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("RADIO", 4, 66, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(FW_TARGET, 4, 78, COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
+}
+
 static void key_menu(KEY_Code_t k)
 {
 	if (k == KEY_ACT_EXIT) {
@@ -660,6 +679,10 @@ static void key_menu(KEY_Code_t k)
 	} else if (k == KEY_ACT_MENU) {
 		if (s_menu_sel == M_KEYTEST)
 			KEYTEST_Run();
+		if (s_menu_sel == M_ABOUT) {
+			go(SCREEN_ABOUT);
+			return;
+		}
 		if (s_menu_sel == M_SCAN) {
 			scan_start(+1);
 			go(SCREEN_MAIN);
@@ -1114,13 +1137,17 @@ void APP_Tick(void)
 			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)
 			key_main(k);
+		else if (s_screen == SCREEN_ABOUT)
+			go(SCREEN_MENU);
 		else
 			key_menu(k);
 	}
 
 	if (s_screen == SCREEN_MAIN) {
 		draw_main();
-	} else if (s_redraw)
+	} else if (s_redraw && s_screen == SCREEN_ABOUT)
+		draw_about();
+	else if (s_redraw)
 		draw_menu();
 	s_redraw = false;
 }

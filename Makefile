@@ -17,7 +17,7 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/update/update.c src/update/update_radio.c \
+SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/app/version.c src/update/update.c src/update/update_radio.c \
        src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
        src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c \
        src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c
@@ -30,6 +30,12 @@ LDFLAGS := -T src/firmware.ld --gc-sections
 OBJ := $(addprefix $(BUILD)/,$(SRC:.c=.o) $(ASM:.S=.o))
 
 all: $(TARGET).bin
+
+# The build id in MENU -> ABOUT: the git commit, "-dirty" with uncommitted changes. version.o is always rebuilt.
+FW_BUILD := $(shell git describe --always --dirty --abbrev=7 2>/dev/null || echo dev)
+$(BUILD)/src/app/version.o: CFLAGS += -DFW_BUILD='"$(FW_BUILD)"'
+$(BUILD)/src/app/version.o: FORCE
+FORCE:
 
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
@@ -72,4 +78,4 @@ ISA ?= ../pi32v2-isa
 matching:
 	$(PYTHON) tools/build_matching.py --toolchain $(TOOLCHAIN) --isa $(ISA)
 
-.PHONY: all assets check clean ufw matching
+.PHONY: all assets check clean ufw matching FORCE

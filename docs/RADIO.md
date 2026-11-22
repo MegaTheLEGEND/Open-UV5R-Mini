@@ -26,6 +26,7 @@ holds on a nearby radio, closes after). Everything else here is PC-tested only u
 | Stock settings | `src/store/settings.c` | the stock VFO A/B and settings logs (external flash `0x8010`, `0x9010`), read only: start-up squelch, key beep, VFO and channel mode as stock left them |
 | Channels | `src/store/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
 | External flash | `src/driver/extflash.c` | read only: no erase or write code exists |
+| About | `src/app/version.h`, `src/app/version.c` | MENU → ABOUT: name, version, git build id, the kind of radio the build is for |
 | Key test | `src/app/keytest.c` | the old test screen, now the menu item KEY TEST (runs until switched off) |
 | Update mode | `src/update/update_radio.c` | kept: PTT-A + `=` at power-on |
 
