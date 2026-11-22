@@ -5,8 +5,8 @@ What still has to be written before the C build can replace stock v0.27 on a rad
 ## Now: top priority
 
 1. **Cable update mode working on a radio (1.4, 1.6).** Until it works, every test of our build needs the case-open
-   rescue route. On a radio the update mode answers pings at 9600 baud, then stalls after the rate frame (the UART
-   receive time-out flag never comes); the build at `690b169` went completely silent. Next steps are at the end of
+   rescue route. On a radio (2026-11-21, `d4a1a64`) ping and rate now work and the radio asks for the file
+   (`tools/uart_ping.py --rate`, nothing written). Next: a real flasher run, started by Sean with the rescue route ready. Next steps are at the end of
    [UPDATE-MODE.md](UPDATE-MODE.md). The UART receive was rewritten since (`e9abb6b`, the JieLi way) and not yet
    tried on a radio.
 2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what

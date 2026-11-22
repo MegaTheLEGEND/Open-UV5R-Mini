@@ -176,9 +176,14 @@ byte on, so a false `AA 55` can't swallow the real frame), and drops a part fram
 `python tests/uart_host.py`, a PC model of the UART (stale `HRXCNT`, missing time-out flag, 15 queued pings, a full
 buffer, echo), and `tests/update_host.py` still passes. Not yet on a radio.
 
+**Past the rate frame on a radio (2026-11-21, `d4a1a64`).** The flasher run with the `e9abb6b` receive path still
+stalled after the rate frame: after each send the driver dropped everything received as echo, and the flasher's rate
+frame, sent as soon as our ping answer arrived, fell in that window. Now only our own echo and leading `FF` noise are
+dropped (`tests/uart_host.py` case 7). With that, `tools/uart_ping.py --rate` on a radio: ping answered, rate frame
+taken, then the radio asked for the file header (cmd 2, offset 0, 64 bytes), four times with no answer, then only its
+debug frames. Nothing was written.
+
 Next, in order:
-1. On a radio: `tools/uart_ping.py`, then ping, rate and the loader reads with the read-only probe (no answers to
-   reads, so nothing is written).
 2. Only then a real flasher run, sending the stock image with the pinned loader (`build/stock-flashable-reference.ufw`),
    started by Sean, rescue route ready.
 3. Roadmap 1.9: the flasher's guard for our own update mode.
