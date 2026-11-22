@@ -914,7 +914,10 @@ def main():
     ap.add_argument('--firmware')
     ap.add_argument('--port', default='emu', help='emu (built-in emulated radio), COMn, or a pyserial URL')
     ap.add_argument('--cut', type=float, help='emu only: cut the power at this fraction of the write, then resume')
+    ap.add_argument('--loader-baud', type=int, default=LOADER_BAUD,
+                    help='rate asked of the loader (default 38400; 9600 keeps the rate the app stage used)')
     a = ap.parse_args()
+    globals()['LOADER_BAUD'] = a.loader_baud
     if a.cli:
         if not a.firmware:
             ap.error('--firmware is required with --cli')
