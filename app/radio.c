@@ -148,24 +148,22 @@ void RADIO_Init(void)
 	RADIO_Apply();
 }
 
-/* Squelch on the RSSI (REG_67, 0.5 dB steps: dBm = raw / 2 - 160), a few ticks of debounce each way.
- * Thresholds: the radio's own (app/calib.h; the stock app writes them to REG_78, which compares them with the
- * RSSI, so they are taken to be in the same units), else level 1 opens at about -122 dBm, each level 5 dB more,
- * 3 dB hysteresis. */
-static uint16_t s_open_at, s_close_at;
-
+/* Squelch the stock way: the thresholds go into the BK4819 (REG_78, open << 8 | close) and the chip's own squelch
+ * result, REG_0C bit 1, opens and closes the audio (stock sub_01E4DE3C, read by the squelch-open routine
+ * sub_01E4E408). Thresholds: the radio's own (app/calib.h), else level 1 opens at about -122 dBm, each level 5 dB
+ * more, 3 dB hysteresis. An RSSI compare in software (the first receiver build) opened only for a blink on a radio
+ * (2026-11-21), so the RSSI is now read only for the bar. */
 static void squelch_levels(void)
 {
-	if (CALIB_Present()) {
-		uint8_t o, c;
+	uint8_t o, c;
+
+	if (CALIB_Present())
 		CALIB_Squelch(gVfo.freq, gVfo.squelch, &o, &c);
-		s_open_at = o;
-		s_close_at = c;
-		BK4819_WriteRegister(BK4819_REG_78, (uint16_t)(o << 8 | c));
-	} else {
-		s_open_at = (uint16_t)((-127 + 5 * gVfo.squelch + 160) * 2);
-		s_close_at = s_open_at - 6u;
+	else {
+		o = (uint8_t)((-127 + 5 * gVfo.squelch + 160) * 2);
+		c = (uint8_t)(o - 6u);
 	}
+	BK4819_WriteRegister(BK4819_REG_78, (uint16_t)(o << 8 | c));
 }
 
 void RADIO_Tick(void)
@@ -206,8 +204,9 @@ void RADIO_Tick(void)
 				s_tone_heard = false;
 		}
 	}
+	bool sq = BK4819_SquelchOpen();
 	if (s_state == RADIO_RX) {
-		s_open_count = s_rssi >= s_open_at ? s_open_count + 1 : 0;
+		s_open_count = sq ? s_open_count + 1 : 0;
 		if (s_open_count >= 3 && s_tone_heard) {
 			s_state = RADIO_RX_OPEN;
 			s_close_count = 0;
@@ -215,7 +214,7 @@ void RADIO_Tick(void)
 				audio(true);
 		}
 	} else {
-		s_close_count = s_rssi < s_close_at ? s_close_count + 1 : 0;
+		s_close_count = !sq ? s_close_count + 1 : 0;
 		if (s_close_count >= 15 || !s_tone_heard) {         /* 150 ms of quiet, or the tone gone */
 			s_state = RADIO_RX;
 			s_open_count = 0;

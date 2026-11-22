@@ -11,7 +11,7 @@ code was copied from it.
 
 | Part | Where | What |
 | --- | --- | --- |
-| Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); software squelch on the RSSI; speaker amp, AF unmute and green LED when it opens; key beeps |
+| Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); the BK4819's own squelch (thresholds in `REG_78`, result in `REG_0C` bit 1, as stock); speaker amp, AF unmute and green LED when it opens; key beeps |
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
 | Stock behaviours | `app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
 | A/B and dual watch | `app/app.c`, `app/dualwatch.c` | two sides as stock (each with its own VFO or channel), MENU → A/B switches; with DUAL WATCH on (stock setting), the other side is checked while the active one is quiet and shown in green when it opens; PTT-B transmits on B; the other side shows in small text under the frequency |

@@ -82,5 +82,6 @@ void     BK4819_SetMicGain(uint8_t gain);           /* 0..31 */
 void     BK4819_TxOn(void);
 void     BK4819_Beep(uint16_t hz);
 uint8_t  BK4819_GetNoise(void);
+bool     BK4819_SquelchOpen(void);   /* REG_0C bit 1: the chip's squelch is open */
 
 #endif

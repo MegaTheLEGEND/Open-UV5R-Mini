@@ -427,6 +427,13 @@ void BK4819_Beep(uint16_t hz)
 	BK4819_SetAF(BK4819_AF_BEEP);
 }
 
+/* The chip's own squelch result (RSSI, noise and glitch against REG_78 / REG_4F / REG_4D-4E): REG_0C bit 1, set
+ * while open. Stock sub_01E4DE3C reads it this way. */
+bool BK4819_SquelchOpen(void)
+{
+	return (BK4819_ReadRegister(BK4819_REG_0C) & 0x0002u) != 0;
+}
+
 uint8_t BK4819_GetNoise(void)
 {
 	return (uint8_t)(BK4819_ReadRegister(BK4819_REG_65) & 0x7F);

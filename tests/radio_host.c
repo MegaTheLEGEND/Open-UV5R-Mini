@@ -23,6 +23,14 @@ static BK4819_AF_t af;
 
 uint16_t BK4819_GetRSSI(void) { return rssi; }
 static uint16_t reg78;
+/* the chip's squelch as REG_0C bit 1: opens at REG_78's high byte, closes below its low byte */
+static bool chip_sq;
+bool BK4819_SquelchOpen(void)
+{
+	if (chip_sq ? rssi < (reg78 & 0xFFu) : rssi >= (reg78 >> 8))
+		chip_sq = !chip_sq;
+	return chip_sq;
+}
 void BK4819_WriteRegister(uint8_t r, uint16_t v) { if (r == 0x78) reg78 = v; }
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len) { (void)addr; while (len--) *buf++ = 0xFF; }
 void BK4819_SetFrequency(uint32_t f) { (void)f; }
