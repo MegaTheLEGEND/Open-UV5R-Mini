@@ -6,8 +6,8 @@ What still has to be written before the C build can replace stock v0.27 on a rad
 
 1. **Cable update mode (1.4, 1.6): works on a radio at 9600** (2026-11-22, one radio): our firmware installed
    from stock and stock put back from ours, twice each way, with only the K1 cable
-   (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes); a cut update resumes. Left: 38400 (fails on this
-   radio for stock too; suspect its rescue wiring), fewer retries, and the official Baofeng updater (not tried; its
+   (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes); a cut update resumes. Left: 38400 (19200 works once
+   the rescue ESP32 is disconnected from the D+/D− wires), fewer retries, and the official Baofeng updater (not tried; its
    `.ufw` has no loader). Details at the end of [UPDATE-MODE.md](UPDATE-MODE.md).
 2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what
    it does wrong (doesn't switch, doesn't stop on a signal, or the wrong side opens).
