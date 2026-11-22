@@ -5,14 +5,14 @@ radio running an app without it can never be flashed again.
 
 | File | What |
 | --- | --- |
-| `app/update.c`, `app/update.h` | The update stage, hardware-independent: frames, rate exchange, container parsing, loader fetch and CRC checks, hand-over record |
-| `app/update_radio.c` | On the radio: entry check, `UPDATE...` screen, the `UPDATE_Port` (UART, loader store, hand-over) |
-| `driver/uart.c` | The cable UART at 0x1E2100, polled with DMA receive |
-| `tests/update_host.py` | Runs `app/update.c` on the PC against the real flasher host |
+| `src/update/update.c`, `src/update/update.h` | The update stage, hardware-independent: frames, rate exchange, container parsing, loader fetch and CRC checks, hand-over record |
+| `src/update/update_radio.c` | On the radio: entry check, `UPDATE...` screen, the `UPDATE_Port` (UART, loader store, hand-over) |
+| `src/driver/uart.c` | The cable UART at 0x1E2100, polled with DMA receive |
+| `tests/update_host.py` | Runs `src/update/update.c` on the PC against the real flasher host |
 
 ## Status (2026-11-19)
 
-**Protocol: done and tested on the PC.** `python tests/update_host.py` builds `app/update.c` with the host gcc and
+**Protocol: done and tested on the PC.** `python tests/update_host.py` builds `src/update/update.c` with the host gcc and
 runs it against `flash_radio()` from `tools/uv5r_flasher.py`, the same code that flashes real radios. After the
 C code hands over, the flasher's emulated loader finishes the update. Checked:
 
@@ -30,7 +30,7 @@ the C build until they are done:
    checks it.
 2. **Routing the UART to the USB pins.** Done: the stock entry receives on pin 61 (USB D+) and transmits on pin 62
    (USB D−). `emu/uart_pins.py` runs the stock pin setup in the emulator and prints every bit it sets or clears;
-   `driver/uart.c` (`route_usb_pins`) does the same.
+   `src/driver/uart.c` (`route_usb_pins`) does the same.
 
 Then: test on the CPU emulator ([EMULATOR.md](EMULATOR.md)), then on a radio with a case-open recovery path at hand.
 
@@ -117,21 +117,21 @@ at `0x1127C0`. Its two flash entries are short:
 does; without it the answer read `FFFFFF`), the ID read on a radio: **`856014`** through **PA13**, a Puya P25Q80
 (1 MB). PA13 is the flash chip select.
 
-`driver/flash.c` now has read (`03`), 4 KB erase (`20`), page program (`02`), write enable (`06`) and status (`05`),
+`src/driver/flash.c` now has read (`03`), 4 KB erase (`20`), page program (`02`), write enable (`06`) and status (`05`),
 all in RAM code; erase and program refuse anything outside `0x1000`–`0x7C000`. On a radio (2026-11-21) the
 key-test app's second PTT A press erased, programmed and read back `0x40000` (unused bytes past our app), then put
 the original bytes back: **`WR OK`**, all 4096 bytes matched both times. Status register `00` (no block protection).
 Our own erase and program work without any stock code.
 
-**Update mode switched over (2026-11-21).** `app/update_radio.c` no longer calls any stock RAM code: flash reads,
-erases and writes go through `driver/flash.c`, and the hand-over is our own:
+**Update mode switched over (2026-11-21).** `src/update/update_radio.c` no longer calls any stock RAM code: flash reads,
+erases and writes go through `src/driver/flash.c`, and the hand-over is our own:
 
 | Step | Ours | Stock it follows |
 | --- | --- | --- |
 | Interrupts off, `0x10F1A8` = 6 | `port_handover` | `0x020012BE` |
 | Record to `0x2FF88`, RAM protection opened | `port_handover` | as before |
 | P33 register `0x32` = 8 if `0x1E511C` bit 5, else 4 | `port_handover` | `0x0200083A` |
-| Stacks `0x10C20`/`0x11020`; `0x100300` bit 0 off; `0x1E0008` bits 8–10 = 3; flash controller off; `0x1E000C` \|= 3, wait, &= ~0x1C0; `0x1E0040` bit 0 off; `0x1E0008` = 0; registers 0; `rti` to `0x110000` | `app/handover.S` (RAM) | `0x020011E6` with `0x02000F18`, `0x02000F00`, `0x02000AF0` and the boot ROM's lock(0) |
+| Stacks `0x10C20`/`0x11020`; `0x100300` bit 0 off; `0x1E0008` bits 8–10 = 3; flash controller off; `0x1E000C` \|= 3, wait, &= ~0x1C0; `0x1E0040` bit 0 off; `0x1E0008` = 0; registers 0; `rti` to `0x110000` | `src/update/handover.S` (RAM) | `0x020011E6` with `0x02000F18`, `0x02000F00`, `0x02000AF0` and the boot ROM's lock(0) |
 
 `tests/update_host.py` passes against the real flasher host. On a radio: not yet. Open question: the UART baud
 assumes a 48 MHz clock, and our start-up doesn't set clocks; `tools/uart_ping.py --scan` pings over the cable
@@ -144,7 +144,7 @@ K1 cable plugged in, the ROM USB rescue mode doesn't start (the plug's sleeve si
 unplug it first.
 
 **The first real flasher run stalled** after the rate frame (nothing written; a read-back matched the image). Debug
-frames from the radio (cmd 0x7F, `app/update_radio.c`) showed why: 105 bytes sat in the RX buffer (`HRXCNT = 0x69`)
+frames from the radio (cmd 0x7F, `src/update/update_radio.c`) showed why: 105 bytes sat in the RX buffer (`HRXCNT = 0x69`)
 with no time-out flag in CON0 (`0x141`), so the driver never handed them on, and later frames queued behind them
 until another burst came. Stray `FF` bytes also arrive on the RX line. Fix: reload OTCNT on every re-arm and clear the
 time-out flag with bit 7 then bit 10, as the stock ISR (`0x01E5949E`) does, plus a backstop: a byte count that hasn't
@@ -162,7 +162,7 @@ sectors, equal to the backup byte for byte.
 count only after CON0 bit 7 (`RDC`) is written: the stock ISR writes bit 7, then bit 10, then reads `HRXCNT`; the
 BR23 SDK's driver does the same. The `690b169` backstop read `HRXCNT` without it, so it acted on a stale count (the
 bootloader leaves one behind) every 20 ms, re-arming the DMA again and again and handing on whatever was in the
-buffer. `driver/uart.c` now:
+buffer. `src/driver/uart.c` now:
 
 | Step | How |
 | --- | --- |
@@ -171,7 +171,7 @@ buffer. `driver/uart.c` now:
 | Echo | bytes that arrive while we send are dropped (the protocol is half duplex; stray `FF`s were seen) |
 | Waits | the TX wait has a time-out too |
 
-The frame parser (`app/update.c`) also no longer drops a whole frame's worth of bytes after a bad CRC (it moves one
+The frame parser (`src/update/update.c`) also no longer drops a whole frame's worth of bytes after a bad CRC (it moves one
 byte on, so a false `AA 55` can't swallow the real frame), and drops a part frame that goes quiet. Tested with
 `python tests/uart_host.py`, a PC model of the UART (stale `HRXCNT`, missing time-out flag, 15 queued pings, a full
 buffer, echo), and `tests/update_host.py` still passes. Not yet on a radio.

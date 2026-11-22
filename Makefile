@@ -17,15 +17,15 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := main.c board.c app/app.c app/radio.c app/calib.c app/channels.c app/tones.c app/settings.c app/battery.c app/scan.c app/dualwatch.c app/vox.c app/dtmfseq.c app/keytest.c app/update.c app/update_radio.c \
-       driver/uart.c bt/bt_none.c driver/gpio.c driver/system.c driver/bk4819.c driver/st7735s.c driver/keyboard.c \
-       driver/flash.c driver/io.c driver/adc.c driver/mem.c driver/extflash.c \
-       ui/font.c ui/helper.c
-ASM := start.S app/handover.S
+SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/update/update.c src/update/update_radio.c \
+       src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
+       src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c \
+       src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c
+ASM := src/start.S src/update/handover.S
 
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
-          -std=c11 -Wall -Wextra -I.
-LDFLAGS := -T firmware.ld --gc-sections
+          -std=c11 -Wall -Wextra -Isrc
+LDFLAGS := -T src/firmware.ld --gc-sections
 
 OBJ := $(addprefix $(BUILD)/,$(SRC:.c=.o) $(ASM:.S=.o))
 
@@ -39,7 +39,7 @@ $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) --target=pi32v2 -c $< -o $@
 
-$(TARGET).elf: $(OBJ) firmware.ld
+$(TARGET).elf: $(OBJ) src/firmware.ld
 	$(LD) $(LDFLAGS) $(OBJ) -o $@
 	$(SIZE) $@
 
@@ -51,13 +51,18 @@ $(TARGET).bin: $(TARGET).elf
 #   make ufw BASE_UFW=firmware/stock-nrf-v0.27.ufw
 BASE_UFW ?= firmware/stock-nrf-v0.27.ufw
 PYTHON ?= python
+# Icons: assets/icons/*.txt -> src/ui/icons.c / icons.h (generated, committed; docs/LAYOUT.md).
+assets:
+	$(PYTHON) tools/mkassets.py
+
 ufw: $(TARGET).bin
 	$(PYTHON) tools/mkufw.py --base $(BASE_UFW) --app $(TARGET).bin -o build/open-uv5r-mini.ufw
 	$(PYTHON) tools/ufwcheck.py build/open-uv5r-mini.ufw --app $(TARGET).bin
 
 # Host syntax check with any GCC/Clang (no pi32v2 toolchain needed).
 check:
-	gcc -fsyntax-only -std=c11 -Wall -Wextra -I. $(SRC)
+	$(PYTHON) tools/mkassets.py --check
+	gcc -fsyntax-only -std=c11 -Wall -Wextra -Isrc $(SRC)
 
 clean:
 	rm -rf $(BUILD)
@@ -67,4 +72,4 @@ ISA ?= ../pi32v2-isa
 matching:
 	$(PYTHON) tools/build_matching.py --toolchain $(TOOLCHAIN) --isa $(ISA)
 
-.PHONY: all check clean ufw matching
+.PHONY: all assets check clean ufw matching

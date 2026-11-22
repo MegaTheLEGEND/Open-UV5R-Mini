@@ -1,6 +1,6 @@
 # The radio app
 
-`app/app.c` and `app/radio.c` turn the key-test build into a first receiver. They are written fresh for this radio
+`src/app/app.c` and `src/radio/radio.c` turn the key-test build into a first receiver. They are written fresh for this radio
 from the stock app's hardware facts ([RE-NOTES](RE-NOTES.md), "Peripheral sweep"). The UV-K5 open firmware
 (DualTachyon, Apache-2.0) was a reference for how a radio firmware is laid out and for BK4819 register meanings. No
 code was copied from it.
@@ -12,22 +12,22 @@ holds on a nearby radio, closes after). Everything else here is PC-tested only u
 
 | Part | Where | What |
 | --- | --- | --- |
-| Radio core | `app/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); the BK4819's own squelch (thresholds in `REG_78`, result in `REG_0C` bit 1, as stock); speaker amp, AF unmute and green LED when it opens; key beeps |
-| Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
-| Stock behaviours | `app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
-| A/B and dual watch | `app/app.c`, `app/dualwatch.c` | two sides as stock (each with its own VFO or channel), MENU → A/B switches; with DUAL WATCH on (stock setting), the other side is checked while the active one is quiet and shown in green when it opens; PTT-B transmits on B; the other side shows in small text under the frequency |
-| DTMF | `app/radio.c`, `driver/bk4819.c` | DTMF heard while receiving shows above the key help (`DTMF 123*`), up to 16 characters, cleared after the stock hang time (3 s and up) |
-| Scanning | `app/scan.c` | MENU → SCAN: the VFO over the stock scan range (400–470 MHz by default), or the channels marked for scan; resume by the stock SCAN MODE (TIME 5 s, CARRIER 2 s after the signal goes, SEARCH stops); any key stops it, UP/DOWN turn it round |
-| Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red and blinking below the second calibrated threshold, as stock blinks its icon |
-| Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
-| BK4819 | `driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
-| Tones | `app/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `app/radio.c`; MENU → TONE SCAN finds the tone a signal carries (kept in RX, TX or both by TSCAN SAVE, the stock setting) |
-| Calibration | `app/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
-| Stock settings | `app/settings.c` | the stock VFO A/B and settings logs (external flash `0x8010`, `0x9010`), read only: start-up squelch, key beep, VFO and channel mode as stock left them |
-| Channels | `app/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
-| External flash | `driver/extflash.c` | read only: no erase or write code exists |
-| Key test | `app/keytest.c` | the old test screen, now the menu item KEY TEST (runs until switched off) |
-| Update mode | `app/update_radio.c` | kept: PTT-A + `=` at power-on |
+| Radio core | `src/radio/radio.c` | one VFO; band switch as stock; FM or AM (airband 108–136 MHz is AM on "AUTO"); the BK4819's own squelch (thresholds in `REG_78`, result in `REG_0C` bit 1, as stock); speaker amp, AF unmute and green LED when it opens; key beeps |
+| Screen and keys | `src/app/app.c`, `src/ui/screen_main.c` | both sides at once, each with its badge, channel label, frequency, receive/transmit icon, S-meter and tags (FM/AM, W/N, power bars, shift, CTCSS/DCS); a status bar with volume, squelch, dual watch, scan, lamp, warning and battery icons; 6-digit frequency entry; menu. Preview on the PC: `python tests/ui_preview.py` |
+| Stock behaviours | `src/app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
+| A/B and dual watch | `src/app/app.c`, `src/radio/dualwatch.c` | two sides as stock (each with its own VFO or channel), MENU → A/B switches; with DUAL WATCH on (stock setting), the other side is checked while the active one is quiet and shown in green when it opens; PTT-B transmits on B; the other side shows in small text under the frequency |
+| DTMF | `src/radio/radio.c`, `src/driver/bk4819.c` | DTMF heard while receiving shows above the key help (`DTMF 123*`), up to 16 characters, cleared after the stock hang time (3 s and up) |
+| Scanning | `src/radio/scan.c` | MENU → SCAN: the VFO over the stock scan range (400–470 MHz by default), or the channels marked for scan; resume by the stock SCAN MODE (TIME 5 s, CARRIER 2 s after the signal goes, SEARCH stops); any key stops it, UP/DOWN turn it round |
+| Battery | `src/driver/adc.c`, `src/app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red and blinking below the second calibrated threshold, as stock blinks its icon |
+| Board I/O | `src/driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
+| BK4819 | `src/driver/bk4819.c` | audio mode, volume, filter, REG_33 GPIOs, squelch registers, interrupts, CTCSS and DCS, PA, TX on, beep |
+| Tones | `src/radio/tones.c` | CTCSS and DCS in the stock encoding and tables; the DCS word; tone squelch in `src/radio/radio.c`; MENU → TONE SCAN finds the tone a signal carries (kept in RX, TX or both by TSCAN SAVE, the stock setting) |
+| Calibration | `src/store/calib.c` | the radio's own PA bias and squelch thresholds from the external flash (`0xF000`) |
+| Stock settings | `src/store/settings.c` | the stock VFO A/B and settings logs (external flash `0x8010`, `0x9010`), read only: start-up squelch, key beep, VFO and channel mode as stock left them |
+| Channels | `src/store/channels.c` | the stock channel memory (external flash `0x0000`, 999 × 32 bytes), read only |
+| External flash | `src/driver/extflash.c` | read only: no erase or write code exists |
+| Key test | `src/app/keytest.c` | the old test screen, now the menu item KEY TEST (runs until switched off) |
+| Update mode | `src/update/update_radio.c` | kept: PTT-A + `=` at power-on |
 
 Settings are not saved yet. At power-on the app reads the stock app's own settings (read only): the squelch, key
 beep, the active side's VFO (frequency, tones, power, width, step, shift) and, if that side was in channel mode,
@@ -35,13 +35,13 @@ channel mode at the first filled slot (which channel each side was on isn't know
 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
 own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
 frequencies, RX and TX tones (CTCSS or DCS), power and width are used. Checked against a dump of one radio on the PC: 76 channels
-decoded with their names. If the external flash doesn't answer, MEMORY stays on VFO and the status line shows
-`NOCAL`.
+decoded with their names. If the external flash doesn't answer, MEMORY stays on VFO and the status bar shows a red
+warning triangle.
 
 ## Keys
 
 Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 2026-11-21). Codes are in
-`driver/keyboard.h`, actions in `app/keys.h`:
+`src/driver/keyboard.h`, actions in `src/app/keys.h`:
 
 | Key (code) | Action |
 | --- | --- |
@@ -58,7 +58,7 @@ Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
 
 ## Transmit
 
-Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `app/radio.h`). With it on (and only then), mic gain comes from
+Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `src/radio/radio.h`). With it on (and only then), mic gain comes from
 the radio's calibration and VOX works as stock (stock VOX setting; the mic level on PA1). Transmit is guarded:
 
 - only 144–148 and 420–450 MHz, never AM, never airband or 200–300 MHz (no TX path there);
@@ -75,7 +75,7 @@ Turn it on only after receive works on a radio.
 python tests/radio_host.py
 ```
 
-This builds `app/radio.c` with stand-in drivers, with transmit compiled off and then on. It checks the band-switch
+This builds `src/radio/radio.c` with stand-in drivers, with transmit compiled off and then on. It checks the band-switch
 outputs, the squelch opening and closing (fallback and calibrated), AM on airband, the PA rows and gain bytes, the
 transmit guard at the band edges, channel TX frequencies, receive-only channels, and channel-record decoding. The
 calibration in the test is made up: no radio's own data is kept in the repo.
@@ -87,7 +87,7 @@ Only with the case-open rescue route ready and a full backup made (memory: `uv5r
 changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`, and back with `uv5r_restore.ps1`.
 
 1. Switch on. You should see the frequency or channel the stock firmware was last on, and a signal bar.
-2. The status line should not say `NOCAL`. If it does, the external flash didn't answer.
+2. The status bar should not show a red warning triangle. If it does, the external flash didn't answer.
 3. Press each key and check it does what the Keys table says.
 4. If a key is wrong, hold A/B at power-on to open KEY TEST and note its ROWS readout.
 5. Set squelch 0 (MENU → SQUELCH). You should hear noise from the speaker, and the green LED should light.
@@ -111,7 +111,7 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 ## Still to do
 
 - **Confirm on a radio:** the function keys, the amp, the LEDs and the lamp.
-- **Persistence:** saving the stock settings and VFO logs is written (`SETTINGS_ENABLE_SAVE` in `app/settings.h`) but
+- **Persistence:** saving the stock settings and VFO logs is written (`SETTINGS_ENABLE_SAVE` in `src/store/settings.h`) but
   **off**: with it off the image has no external-flash write code. On, every erase and program is refused outside
   `0x8000`–`0x9FFF` (between the channels and the calibration) and read back. Only turn it on with the radio owner's
   agreement and a fresh external-flash backup.

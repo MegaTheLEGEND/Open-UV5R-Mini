@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the C update mode (app/update.c) on the PC against the real flasher host (tools/uv5r_flasher.py).
+"""Run the C update mode (src/update/update.c) on the PC against the real flasher host (tools/uv5r_flasher.py).
 
     python tests/update_host.py [--firmware build/open-uv5r-mini-nrf-v0.27.patch.json]
 
@@ -43,8 +43,8 @@ def build_dll():
     out = os.path.join(ROOT, 'build', 'host')
     os.makedirs(out, exist_ok=True)
     dll = os.path.join(out, 'update.dll')
-    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-shared', '-I', ROOT,
-                    os.path.join(ROOT, 'app', 'update.c'), '-o', dll], check=True)
+    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-shared', '-I', os.path.join(ROOT, 'src'),
+                    os.path.join(ROOT, 'src', 'update', 'update.c'), '-o', dll], check=True)
     return ctypes.CDLL(dll)
 
 

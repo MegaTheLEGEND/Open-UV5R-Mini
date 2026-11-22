@@ -1,17 +1,17 @@
-/* PC test of app/radio.c with stand-in drivers (tests/radio_host.py builds it twice: transmit off and on).
+/* PC test of radio/radio.c with stand-in drivers (tests/radio_host.py builds it twice: transmit off and on).
  * Checks the transmit guard (amateur bands only, never airband or AM, never with RADIO_ENABLE_TX 0), the band switch
  * outputs, and the squelch opening and closing on the RSSI. */
 #include <stdio.h>
 #include <string.h>
-#include "app/radio.h"
+#include "radio/radio.h"
 #include "app/battery.h"
-#include "app/calib.h"
-#include "app/channels.h"
-#include "app/dualwatch.h"
-#include "app/dtmfseq.h"
-#include "app/scan.h"
-#include "app/vox.h"
-#include "app/tones.h"
+#include "store/calib.h"
+#include "store/channels.h"
+#include "radio/dualwatch.h"
+#include "radio/dtmfseq.h"
+#include "radio/scan.h"
+#include "radio/vox.h"
+#include "radio/tones.h"
 #include "board.h"
 #include "driver/bk4819.h"
 #include "driver/io.h"

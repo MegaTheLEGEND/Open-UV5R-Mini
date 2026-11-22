@@ -21,7 +21,7 @@ Evidence:
 - Registers read: `0B 0C 0D 0E 24 30 33 3F 40 52 67 68 69 6A 70 7D`
   (REG_0C status/interrupts, REG_67 RSSI, REG_68–6A tone scan results).
 
-Most of egzumer's `driver/bk4819.c` should therefore carry over almost unchanged; only the GPIO layer differs.
+Most of egzumer's `src/driver/bk4819.c` should therefore carry over almost unchanged; only the GPIO layer differs.
 
 ### BK4819 pins (JieLi GPIO numbers, via `sub_01E0019C(pin)` → port registers)
 
@@ -63,7 +63,7 @@ Written to the internal flash over the ROM download mode (`tools/mkflashimg.py`)
 - **P33 interface** at `0x1E3E08` (+0 CON, +4 DAT), from the stock routine at RAM `0x58`/`0xA0`: CON bit 0 selects,
   bit 8 picks the bank for addresses with bit 15 set (`0x8099`); a byte goes out with DAT = byte, CON |= 0x10,
   wait while CON bit 1; read = `((a>>8)&3)|0x80`, `a&0xFF`, dummy `0x5E`; write = `(a>>8)&3`, `a&0xFF`, value;
-  or = first byte `| 0x20`. Our version is in `bsp/ac695n.h`.
+  or = first byte `| 0x20`. Our version is in `src/bsp/ac695n.h`.
 - **Speed** after the bootloader: about 0.75 turns of a volatile delay loop per µs.
 - **The watchdog runs after the bootloader.** Without clears our app restarted at the same point each time;
   with `p33_or(0x80, 0x40)` through our own P33 access it **runs stably**.
@@ -330,10 +330,10 @@ V0.04); the V0.27 code agrees where checked here:
 | `0xF210`–`0xF216` | mic sensitivity, sub-tone levels, AF gain, frequency trim index | (Codeplug Studio) |
 | `0xF230` | BCD band limits for the programming software; not used by the radio | `sub_01E4CCDA` reads it for the clone reply |
 
-The menu offers "High" and "Low" only (strings at `0x01E5C1EC`). Read with our own code (`app/calib.c`) from a dump of
+The menu offers "High" and "Low" only (strings at `0x01E5C1EC`). Read with our own code (`src/store/calib.c`) from a dump of
 one radio: High 0xD7 / Low 0x96 at 145 MHz, High 0xD2 / Low 0x96 at 446 MHz, nothing at 350 MHz; squelch 3 opens at
 an RSSI count of 108 at 145 MHz (about −106 dBm if the count is in the RSSI register's 0.5 dB steps). It is unique
-to each radio: our code never writes the external flash (`driver/extflash.c` has no write or erase code).
+to each radio: our code never writes the external flash (`src/driver/extflash.c` has no write or erase code).
 
 Internal flash `0x93000` (the sector before `VM`) is 4 KB of high-entropy data, not this table, and the app
 never reads it directly. It may be JieLi's own factory data. `VM` itself holds only a few short JieLi records

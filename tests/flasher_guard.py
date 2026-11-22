@@ -3,7 +3,7 @@
 
     python tests/flasher_guard.py
 
-Checks that the marker our firmware carries (app/update_radio.c) names exactly the windows driver/flash.c may
+Checks that the marker our firmware carries (src/update/update_radio.c) names exactly the windows src/driver/flash.c may
 write, that the guard accepts it only with the rescue warning, refuses markers that reach into VM or the rest of
 PRCT, and refuses an app with neither marker nor the stock update mode. With your own stock file in firmware/, it
 also checks that the stock app passes as the stock update mode and that a change in its update code is caught.
@@ -26,18 +26,18 @@ def check(cond, what):
 
 
 def main():
-    src = open(os.path.join(ROOT, 'app', 'update_radio.c'), encoding='utf-8').read()
+    src = open(os.path.join(ROOT, 'src', 'update', 'update_radio.c'), encoding='utf-8').read()
     m = re.search(r'"(OPENUV5R-UPDATE-MODE/1 writes=[^"]*)"', src)
-    check(m is not None, 'marker found in app/update_radio.c')
+    check(m is not None, 'marker found in src/update/update_radio.c')
     marker = m.group(1).encode() if m else b''
 
-    flash = open(os.path.join(ROOT, 'driver', 'flash.c'), encoding='utf-8').read()
+    flash = open(os.path.join(ROOT, 'src', 'driver', 'flash.c'), encoding='utf-8').read()
     w = re.search(r'#define WRITABLE\(a, n\) \((.*)\)\s*$', flash, re.M)
     wins = sorted((int(lo, 16), int(hi, 16)) for lo, hi in
                   re.findall(r'IN_AREA\(a, n, 0x([0-9A-Fa-f]+)u, 0x([0-9A-Fa-f]+)u\)', w.group(1) if w else ''))
     spec = marker.split(b'=', 1)[1].rstrip(b';').decode() if marker else ''
     mwins = sorted(tuple(int(x, 16) for x in s.split('-')) for s in spec.split(',') if s)
-    check(wins and wins == mwins, 'marker windows = driver/flash.c WRITABLE %s' % wins)
+    check(wins and wins == mwins, 'marker windows = src/driver/flash.c WRITABLE %s' % wins)
 
     app = b'\0' * 64 + marker + b'\0' * 64
     kind, detail = F.update_mode_status(app, None)

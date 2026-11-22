@@ -5,22 +5,22 @@
 > done and tested on the PC; loader store and USB-pin routing still open). Test on a radio with the matching build instead ([MATCHING.md](MATCHING.md),
 > [TESTING.md](TESTING.md)); the C drivers will be moved into it function by function.
 
-Layout follows egzumer's UV-K5 firmware: `driver/` for chips, `ui/` for drawing, `board.*` for the pin map,
-`main.c` for the application. Everything is written from the reverse-engineering notes; no stock or JieLi
+Layout follows egzumer's UV-K5 firmware: `src/driver/` for chips, `src/ui/` for drawing, `board.*` for the pin map,
+`src/main.c` for the application. Everything is written from the reverse-engineering notes; no stock or JieLi
 code is used.
 
 | Part | File | State |
 | --- | --- | --- |
-| Register map | `bsp/ac695n.h` | GPIO ports, SPI1 base, mask-ROM P33 accessors |
-| GPIO | `driver/gpio.*` | done |
-| Delays | `driver/system.*` | busy loops, calibrated for ≤96 MHz (clock not known yet) |
-| BK4819 | `driver/bk4819.*` | bus, stock init sequence, RX/TX mode, frequency, RSSI, tone scan |
-| ST7735S | `driver/st7735s.*` | stock init sequence; bit-banged on PB0/PB1 for now |
-| Keypad, PTT | `driver/keyboard.*` | stock scan algorithm and key codes |
-| Text | `ui/font.*`, `ui/helper.*` | 5×7 font, scalable |
-| App | `app/app.c` | key-test screen: key code, PTT A/B, BK4819 REG_00, RSSI, Bluetooth state. Never transmits. |
-| Entry (open build) | `main.c`, `start.S` | bare-metal loop calling `APP_Tick()` every 10 ms |
-| Bluetooth | `bt/`, `platform/jl_sdk/` | optional edition using JieLi's closed libraries from your own SDK; see [BLUETOOTH.md](BLUETOOTH.md) |
+| Register map | `src/bsp/ac695n.h` | GPIO ports, SPI1 base, mask-ROM P33 accessors |
+| GPIO | `src/driver/gpio.*` | done |
+| Delays | `src/driver/system.*` | busy loops, calibrated for ≤96 MHz (clock not known yet) |
+| BK4819 | `src/driver/bk4819.*` | bus, stock init sequence, RX/TX mode, frequency, RSSI, tone scan |
+| ST7735S | `src/driver/st7735s.*` | stock init sequence; bit-banged on PB0/PB1 for now |
+| Keypad, PTT | `src/driver/keyboard.*` | stock scan algorithm and key codes |
+| Text | `src/ui/font.*`, `src/ui/helper.*` | 5×7 font, scalable |
+| App | `src/app/app.c` | key-test screen: key code, PTT A/B, BK4819 REG_00, RSSI, Bluetooth state. Never transmits. |
+| Entry (open build) | `src/main.c`, `src/start.S` | bare-metal loop calling `APP_Tick()` every 10 ms |
+| Bluetooth | `src/bt/`, `src/platform/jl_sdk/` | optional edition using JieLi's closed libraries from your own SDK; see [BLUETOOTH.md](BLUETOOTH.md) |
 
 ## Build
 

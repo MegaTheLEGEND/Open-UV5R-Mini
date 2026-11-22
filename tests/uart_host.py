@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and run tests/uart_host.c: driver/uart.c's receive path against a model of the JieLi UART, on the PC.
+"""Build and run tests/uart_host.c: src/driver/uart.c's receive path against a model of the JieLi UART, on the PC.
 
     python tests/uart_host.py
 
@@ -16,8 +16,8 @@ def main():
     out = os.path.join(ROOT, 'build', 'host')
     os.makedirs(out, exist_ok=True)
     exe = os.path.join(out, 'uart_host.exe' if os.name == 'nt' else 'uart_host')
-    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DUART_HOST_TEST', '-I', ROOT,
-                    os.path.join(ROOT, 'tests', 'uart_host.c'), os.path.join(ROOT, 'driver', 'uart.c'), '-o', exe],
+    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DUART_HOST_TEST', '-I', os.path.join(ROOT, 'src'),
+                    os.path.join(ROOT, 'tests', 'uart_host.c'), os.path.join(ROOT, 'src', 'driver', 'uart.c'), '-o', exe],
                    check=True)
     return subprocess.run([exe]).returncode
 

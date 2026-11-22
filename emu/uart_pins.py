@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run the stock update mode's cable-pin setup (the tail of sub_01E492C0) in the emulator and print what it does to
-the SFRs, as set/clear masks, so driver/uart.c can do the same.
+the SFRs, as set/clear masks, so src/driver/uart.c can do the same.
 
     python emu/uart_pins.py --isa E:/pi32v2-isa
 

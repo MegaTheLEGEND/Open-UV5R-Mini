@@ -1,0 +1,1126 @@
+/* Open-UV5R-Mini: the radio application: main screen, frequency entry, menu, PTT.
+ *
+ * Laid out the way the UV-K5 open firmware splits a radio (a radio core in radio/radio.c, screens drawn from state,
+ * keys turned into actions), written fresh for this radio. Not tried on a radio yet. The cable update mode is kept:
+ * PTT-A + '=' at power-on, as stock (update/update_radio.c).
+ */
+#include <stdbool.h>
+#include <stdint.h>
+#include "app/app.h"
+#include "app/battery.h"
+#include "store/calib.h"
+#include "store/channels.h"
+#include "app/keys.h"
+#include "app/keytest.h"
+#include "radio/radio.h"
+#include "radio/dualwatch.h"
+#include "radio/dtmfseq.h"
+#include "radio/scan.h"
+#include "radio/vox.h"
+#include "store/settings.h"
+#include "radio/tones.h"
+#include "update/update.h"
+#include "board.h"
+#include "bt/bt.h"
+#include "driver/adc.h"
+#include "driver/bk4819.h"
+#include "driver/extflash.h"
+#include "driver/gpio.h"
+#include "driver/io.h"
+#include "driver/keyboard.h"
+#include "driver/st7735s.h"
+#include "driver/system.h"
+#include "ui/helper.h"
+#include "ui/screen_main.h"
+#include "ui/theme.h"
+
+
+typedef enum { SCREEN_MAIN, SCREEN_MENU } Screen_t;
+
+static Screen_t s_screen;
+static bool     s_redraw = true;         /* whole screen */
+#define LAMP_STROBE_MS 500u          /* strobe half-period: a guess, the stock rate is not read yet */
+static uint8_t  s_lamp_mode;             /* 0 off, 1 on, 2 strobe (stock flashlight key) */
+static uint16_t s_lamp_ms;
+static char     s_entry[7];              /* digits typed, MHz then kHz */
+static uint8_t  s_entry_len;
+static uint8_t  s_menu_sel, s_menu_edit;
+static int      s_menu_top = -1;
+static uint16_t s_off_ticks, s_batt_ticks;
+static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
+static bool     s_light_on = true, s_tot_hit;
+static bool     s_mr;                    /* channel mode */
+static int      s_ch = -1;               /* channel slot shown, 0-based */
+static char     s_ch_name[13];
+static bool     s_xf_ok;                 /* external flash answered */
+static bool     s_ptt_down, s_tx_refused;
+static uint16_t s_tail_ms;     /* transmit still on after PTT was let go */
+static bool     s_eot;         /* the down code is being sent after PTT was let go */
+
+/* PTT-ID: the up (bit 0) or down (bit 1) code if the channel (in VFO mode setting 0x0B) and the ANI block both ask
+ * for it (stock 0x01E507B0 / 0x01E508C2: channel byte 13 bit, then the ANI byte 6 bit). Stock does something else when the channel asks and
+ * the ANI byte doesn't (a group call path, not followed here). */
+static bool ptt_id_start(uint8_t bit)
+{
+	const uint8_t *codes = bit == 1 ? gStock.up_code : gStock.down_code;
+
+	uint8_t mode = s_mr ? gVfo.ptt_id : gStock.raw[SET_PTT_ID];   /* stock sub_01E3F9D0 */
+
+	if (!(mode & bit) || !(gStock.ani[6] & bit))
+		return false;
+	return DTMFSEQ_Start(codes, bit == 1 ? DTMFSEQ_WaitMs(gStock.raw[0x0C]) : 0, DTMFSEQ_TimeMs(gStock.ani[7]),
+	                     DTMFSEQ_TimeMs(gStock.ani[8]));
+}
+
+/* transmit end, the stock order: roger, tail tone, then 400 ms more (sub_01E4DCC2) */
+static void tx_release(void)
+{
+	if (gStock.raw[SET_ROGER])
+		RADIO_Roger();
+	if (gStock.raw[SET_STE])
+		RADIO_TxTail();
+	s_tail_ms = RADIO_TX_TAIL_MS;
+}
+
+static void ptt_id_tick(void)
+{
+	int c = DTMFSEQ_Tick(APP_TICK_MS);
+
+	if (c >= 0)
+		RADIO_TxTone((uint8_t)c, (gStock.raw[SET_DTMF_MON] & 2u) != 0);
+	else if (c == DTMFSEQ_GAP)
+		RADIO_TxToneSilence();
+	else if (c == DTMFSEQ_DONE) {
+		RADIO_TxToneOff();
+		if (s_eot) {
+			s_eot = false;
+			tx_release();
+		}
+	}
+}
+
+/* The two sides, A and B, as stock has them. gVfo, s_mr, s_ch and s_ch_name are the active side's working copy;
+ * s_side[] holds both and is brought up to date before the other side is tuned. */
+typedef struct {
+	Vfo_t vfo;
+	bool  mr;
+	int   ch;
+	char  name[13];
+} Side_t;
+static Side_t   s_side[2];
+static uint8_t  s_active;                /* 0 = A, 1 = B */
+static bool     s_peek;                  /* dual watch: tuned to the other side for a moment */
+static bool     s_peek_held;             /* ... and it opened */
+static void side_save(void);
+static bool     s_tscan;                 /* tone scan running */
+static uint16_t s_tscan_last, s_tscan_ms;
+static uint8_t  s_tscan_same;
+static char     s_dtmf[17];              /* DTMF heard on receive */
+static uint8_t  s_dtmf_len;
+static uint32_t s_dtmf_ms;
+static void     tscan_start(void);
+static void side_switch(void);
+static void dw_end(void);
+
+static char *fmt_step(char *b, uint16_t s)        /* 10 Hz units -> "12.5K", "6.25K", "100K" */
+{
+	char *p = b, t[6];
+	uint32_t whole = s / 100u, frac = s % 100u;
+	int n = 0;
+
+	do
+		t[n++] = (char)('0' + whole % 10);
+	while ((whole /= 10) && n < 5);
+	while (n)
+		*p++ = t[--n];
+	if (frac) {
+		*p++ = '.';
+		*p++ = (char)('0' + frac / 10);
+		if (frac % 10)
+			*p++ = (char)('0' + frac % 10);
+	}
+	*p++ = 'K';
+	*p = 0;
+	return b;
+}
+
+/* DTMF heard: shown above the key help for the stock hang time (setting 0x39: min(n, 7) + 3 s), up to 16 characters
+ * as the stock buffer. */
+static void dtmf_tick(void)
+{
+	char c = RADIO_DtmfPoll();
+	uint8_t hang = gStock.raw[0x39] > 7 ? 7 : gStock.raw[0x39];
+
+	if (c) {
+		if (s_dtmf_len >= 16)
+			s_dtmf_len = 0;
+		s_dtmf[s_dtmf_len++] = c;
+		s_dtmf[s_dtmf_len] = 0;
+		s_dtmf_ms = 0;
+	} else if (s_dtmf_len && (s_dtmf_ms += APP_TICK_MS) >= (hang + 3u) * 1000u) {
+		s_dtmf_len = 0;
+		s_dtmf[0] = 0;
+	}
+}
+
+/* ------------------------------------------------------------------------------------------- main screen
+ * Both sides at once (src/ui/screen_main.h): this fills the screen's snapshot from the radio state, and the screen
+ * draws what changed. */
+static UiMain_t s_view;
+static int8_t   s_meter_kept = -1;       /* the active side's meter while dual watch looks at the other side */
+
+static int8_t meter_bars(void)          /* RSSI to 0..7 bars: about -125 dBm and up, 9 dB a bar */
+{
+	int dbm = (int)RADIO_Rssi() / 2 - 160, n = (dbm + 125) / 9;
+
+	return (int8_t)(n < 0 ? 0 : n > UI_METER_BARS ? UI_METER_BARS : n);
+}
+
+static void copy_text(char *d, const char *s, unsigned n)
+{
+	unsigned i = 0;
+
+	for (; i + 1 < n && s[i]; i++)
+		d[i] = s[i];
+	d[i] = 0;
+}
+
+static void side_view(UiSide_t *u, uint8_t n, const Vfo_t *vf, bool mr, int ch, const char *name)
+{
+	char b[8], t[8];
+	ToneKind_t rk = TONE_Kind(vf->rx_tone), tk = TONE_Kind(vf->tx_tone);
+	uint8_t dm = gStock.raw[n ? SET_DISP_B : SET_DISP_A];   /* stock display mode: 0 name, 1 frequency, 2 number */
+
+	u->freq = vf->freq;
+	u->label[0] = u->big[0] = 0;
+	if (mr && ch >= 0) {
+		char *p = u->label;
+		const char *d = UI_FormatDec(b, (uint32_t)ch + 1, 3);
+		*p++ = 'C'; *p++ = 'H'; *p++ = '-';
+		while (*d)
+			*p++ = *d++;
+		*p++ = ' ';
+		copy_text(p, name, (unsigned)(sizeof u->label - (unsigned)(p - u->label)));
+		if (dm == 2)
+			copy_text(u->big, u->label, 7);
+		else if (dm == 0 && name[0])
+			copy_text(u->big, name, sizeof u->big);
+	}
+	u->am = vf->mod == MOD_AM || (vf->mod == MOD_AUTO && vf->freq >= 10800000u && vf->freq < 13600000u);
+	u->narrow = vf->narrow || u->am;
+	u->high_power = vf->power == POWER_HIGH;
+	u->shift = (int8_t)(!vf->tx_freq || vf->tx_freq == vf->freq ? 0 : vf->tx_freq > vf->freq ? 1 : -1);
+	u->tone_kind = UI_TONE_NONE;
+	u->tone[0] = 0;
+	if (rk != TONE_NONE || tk != TONE_NONE) {
+		ToneKind_t k = rk != TONE_NONE ? rk : tk;
+		u->tone_kind = k == TONE_CTCSS ? UI_TONE_CTCSS : UI_TONE_DCS;
+		if (rk != TONE_NONE && tk != TONE_NONE && vf->rx_tone != vf->tx_tone) {
+			char *p = u->tone;
+			const char *q = TONE_Format(t, vf->rx_tone);
+			while (*q)
+				*p++ = *q++;
+			*p++ = '/';
+			copy_text(p, TONE_Format(t, vf->tx_tone), (unsigned)(sizeof u->tone - (unsigned)(p - u->tone)));
+		} else
+			copy_text(u->tone, TONE_Format(t, rk != TONE_NONE ? vf->rx_tone : vf->tx_tone), sizeof u->tone);
+	}
+	u->state = UI_STATE_IDLE;
+	u->meter = -1;
+}
+
+static void main_view(UiMain_t *v)
+{
+	uint8_t other = (uint8_t)(s_active ^ 1u), tuned = (uint8_t)(s_active ^ (s_peek ? 1u : 0u));
+	const Side_t *o = &s_side[other];
+	RadioState_t st = RADIO_State();
+	int lvl = BATTERY_Level();
+	char b[12];
+
+	/* while dual watch looks at the other side, gVfo is that side's; the active side is in s_side[] */
+	side_view(&v->side[s_active], s_active, s_peek ? &s_side[s_active].vfo : &gVfo, s_mr, s_ch, s_ch_name);
+	side_view(&v->side[other], other, &o->vfo, o->mr, o->ch, o->name);
+	v->active = s_active;
+	if (!s_peek || s_peek_held) {
+		UiSide_t *u = &v->side[tuned];
+		u->state = st == RADIO_TX ? UI_STATE_TX : st == RADIO_RX_OPEN ? UI_STATE_RX : UI_STATE_IDLE;
+		u->meter = st == RADIO_TX ? UI_METER_BARS : meter_bars();
+		if (!s_peek)
+			s_meter_kept = u->meter;
+	} else
+		v->side[s_active].meter = s_meter_kept;   /* a 100 ms look at the other side: keep the meter still */
+
+	v->entry[0] = 0;
+	if (s_entry_len) {
+		unsigned i = 0;
+		if (s_mr) {
+			v->entry[i++] = 'C'; v->entry[i++] = 'H'; v->entry[i++] = ' ';
+			for (int k = 0; k < 3; k++)
+				v->entry[i++] = k < s_entry_len ? s_entry[k] : '-';
+		} else
+			for (int k = 0; k < 6; k++) {
+				if (k == 3)
+					v->entry[i++] = '.';
+				v->entry[i++] = k < s_entry_len ? s_entry[k] : '-';
+			}
+		while (i < 9)
+			v->entry[i++] = ' ';
+		v->entry[i] = 0;
+	}
+
+	v->volume = gVfo.volume;
+	v->squelch = gVfo.squelch;
+	v->dual_watch = gStock.raw[SET_DUAL_WATCH] != 0;
+	v->scan = SCAN_Active() || SCAN_Holding();
+	v->scan_hold = SCAN_Holding();
+	v->lamp = s_lamp_mode != 0;
+	v->strobe = s_lamp_mode == 2;
+	v->warning = !CALIB_Present();
+	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
+	v->battery_low = BATTERY_Low();
+	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
+
+	/* bottom line, most important first */
+	v->bottom_color = COLOR_DIM;
+	if (s_tx_refused) {
+		copy_text(v->bottom, "NO TX HERE", sizeof v->bottom);
+		v->bottom_color = COLOR_TX;
+	} else if (s_tscan) {
+		char *p = v->bottom;
+		const char *q = "TONE SCAN ";
+		while (*q)
+			*p++ = *q++;
+		copy_text(p, s_tscan_last ? TONE_Format(b, s_tscan_last) : "...", 8);
+		v->bottom_color = COLOR_WARN;
+	} else if (s_dtmf_len) {
+		char *p = v->bottom;
+		*p++ = 'D'; *p++ = 'T'; *p++ = 'M'; *p++ = 'F'; *p++ = ' ';
+		copy_text(p, s_dtmf, 17);
+		v->bottom_color = COLOR_WARN;
+	} else if (s_entry_len)
+		copy_text(v->bottom, "# ENTER  EXIT CLEAR", sizeof v->bottom);
+	else if (s_mr)
+		copy_text(v->bottom, "MENU  *BW  #LAMP", sizeof v->bottom);
+	else {
+		char *p = v->bottom;
+		const char *q = "STEP ";
+		while (*q)
+			*p++ = *q++;
+		copy_text(p, fmt_step(b, RADIO_Steps[gVfo.step]), 8);
+	}
+}
+
+static void draw_main(void)
+{
+	main_view(&s_view);
+	UI_MainDraw(&s_view, s_redraw);
+}
+
+/* ------------------------------------------------------------------------------------------- menu */
+enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_TSCAN,
+       M_TSCANSAVE, M_POWER, M_KEYTEST, M_COUNT };
+static const char *const MENU_NAMES[M_COUNT] = {
+	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
+	"RX TONE", "TX TONE", "TONE SCAN", "TSCAN SAVE", "TX POWER", "KEY TEST",
+};
+#define MENU_ROWS 8                      /* rows on screen; the list scrolls */
+
+static const char *menu_value(int i, char *b)
+{
+	static const char *const MOD[] = { "AUTO", "FM", "AM" };
+
+	switch (i) {
+	case M_AB:      return s_active ? "B" : "A";
+	case M_DW:      return gStock.raw[SET_DUAL_WATCH] ? "ON" : "OFF";
+	case M_MEM:     return s_mr ? "CHANNELS" : "VFO";
+	case M_SCAN:    return "START";
+	case M_TSCAN:   return "START";
+	case M_TSCANSAVE: {
+		static const char *const TS[] = { "RX+TX", "RX", "TX" };
+		return TS[gStock.raw[0x2B] <= 2 ? gStock.raw[0x2B] : 0];
+	}
+	case M_SCANMODE: {
+		static const char *const SM[] = { "TIME", "CARRIER", "SEARCH" };
+		return SM[gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1];
+	}
+	case M_SQL:     return UI_FormatDec(b, gVfo.squelch, 1);
+	case M_VOL:     return UI_FormatDec(b, gVfo.volume, 2);
+	case M_STEP:    return fmt_step(b, RADIO_Steps[gVfo.step]);
+	case M_BW:      return gVfo.narrow ? "NARROW" : "WIDE";
+	case M_MOD:     return MOD[gVfo.mod];
+	case M_RXTONE:  return TONE_Format(b, gVfo.rx_tone);
+	case M_TXTONE:  return TONE_Format(b, gVfo.tx_tone);
+	case M_POWER:   return gVfo.power == POWER_LOW ? "LOW" : "HIGH";
+	default:        return "";
+	}
+}
+
+static void channel_show(int n);
+
+static void menu_change(int i, int dir)
+{
+	switch (i) {
+	case M_MEM:
+		s_mr = s_xf_ok && !s_mr;
+		if (s_mr)
+			channel_show(CHANNEL_Next(s_ch < 0 ? -1 : s_ch - 1, +1));
+		else {
+			gVfo.tx_freq = 0;
+			gVfo.rx_only = false;
+		}
+		break;
+	case M_AB:
+		side_switch();
+		return;
+	case M_DW:
+		gStock.raw[SET_DUAL_WATCH] = !gStock.raw[SET_DUAL_WATCH];
+		break;
+	case M_TSCANSAVE:
+		gStock.raw[0x2B] = (uint8_t)(((gStock.raw[0x2B] <= 2 ? gStock.raw[0x2B] : 0) + 3 + dir) % 3);
+		break;
+	case M_SCANMODE:
+		gStock.raw[SET_SCAN_MODE] = (uint8_t)(((gStock.raw[SET_SCAN_MODE] <= 2 ? gStock.raw[SET_SCAN_MODE] : 1)
+		                                       + 3 + dir) % 3);
+		break;
+	case M_SQL:   gVfo.squelch = (uint8_t)((gVfo.squelch + 10 + dir) % 10); break;
+	case M_VOL:   gVfo.volume = (uint8_t)((gVfo.volume + 16 + dir) % 16); break;
+	case M_STEP:  gVfo.step = (uint8_t)((gVfo.step + RADIO_StepCount + dir) % RADIO_StepCount); break;
+	case M_BW:    gVfo.narrow = !gVfo.narrow; break;
+	case M_MOD:   gVfo.mod = (Modulation_t)((gVfo.mod + 3 + dir) % 3); break;
+	case M_RXTONE: gVfo.rx_tone = TONE_Step(gVfo.rx_tone, dir); break;
+	case M_TXTONE: gVfo.tx_tone = TONE_Step(gVfo.tx_tone, dir); break;
+	case M_POWER: gVfo.power = gVfo.power == POWER_LOW ? POWER_HIGH : POWER_LOW; break;
+	default: break;
+	}
+	RADIO_Apply();
+}
+
+static void draw_menu(void)
+{
+	char b[12];
+
+	if (s_redraw) {
+		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+		UI_PrintString("MENU", 52, 2, COLOR_WARN, COLOR_BG, 1);
+		UI_PrintString("UP/DN MENU EXIT", 0, 120, COLOR_DIM, COLOR_BG, 1);
+	}
+	int top = s_menu_sel < MENU_ROWS ? 0 : s_menu_sel - MENU_ROWS + 1;
+
+	if (top != s_menu_top) {
+		s_menu_top = top;
+		ST7735S_FillRect(0, 14, 128, 12 * MENU_ROWS + 2, COLOR_BG);
+	}
+	for (int i = top; i < M_COUNT && i < top + MENU_ROWS; i++) {
+		uint8_t y = (uint8_t)(16 + 12 * (i - top));
+		bool sel = i == s_menu_sel;
+		uint16_t bg = sel ? COLOR_BAR : COLOR_BG;
+		ST7735S_FillRect(0, y - 1, 128, 10, bg);
+		UI_PrintString(MENU_NAMES[i], 2, y, COLOR_TEXT, bg, 1);
+		UI_PrintString(menu_value(i, b), 76, y, sel && s_menu_edit ? COLOR_RX : COLOR_WARN, bg, 1);
+	}
+}
+
+/* ------------------------------------------------------------------------------------------- keys */
+static void go(Screen_t s)
+{
+	s_screen = s;
+	s_redraw = true;
+}
+
+static void freq_step(int dir)
+{
+	uint32_t st = RADIO_Steps[gVfo.step];
+	uint32_t f = gVfo.freq - gVfo.freq % st;
+
+	if (dir > 0)
+		f += st;
+	else if (f == gVfo.freq)
+		f -= st;
+	if (f < FREQ_MIN || f > FREQ_MAX) {
+		RADIO_Beep(400, 80);
+		return;
+	}
+	gVfo.freq = f;
+	RADIO_Apply();
+}
+
+/* Show channel slot n (0-based): its frequencies, tones, power and width go into the VFO. */
+static void channel_show(int n)
+{
+	Channel_t ch;
+
+	if (n < 0 || !CHANNEL_Load((uint16_t)n, &ch)) {
+		RADIO_Beep(400, 120);
+		return;
+	}
+	s_ch = n;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = ch.name[i];
+	gVfo.freq = ch.rx;
+	gVfo.tx_freq = ch.tx;
+	gVfo.rx_only = ch.tx == 0;
+	gVfo.rx_tone = ch.rx_tone;
+	gVfo.tx_tone = ch.tx_tone;
+	gVfo.power = ch.low_power ? POWER_LOW : POWER_HIGH;
+	gVfo.ptt_id = ch.ptt_id;
+	gVfo.narrow = ch.narrow;
+	RADIO_Apply();
+}
+
+static void entry_finish(void)
+{
+	if (s_mr) {
+		uint32_t n = 0;
+		for (int i = 0; i < s_entry_len; i++)
+			n = n * 10 + (uint32_t)(s_entry[i] - '0');
+		s_entry_len = 0;
+		s_redraw = true;
+		channel_show(n >= 1 && n <= CHANNEL_COUNT ? (int)n - 1 : -1);
+		return;
+	}
+	uint32_t khz = 0;
+
+	for (int i = 0; i < 6; i++)
+		khz = khz * 10 + (uint32_t)(i < s_entry_len ? s_entry[i] - '0' : 0);
+	s_entry_len = 0;
+	if (khz * 100u < FREQ_MIN || khz * 100u > FREQ_MAX) {
+		RADIO_Beep(400, 120);
+		s_redraw = true;
+		return;
+	}
+	gVfo.freq = khz * 100u;
+	RADIO_Apply();
+	s_redraw = true;
+}
+
+/* ------------------------------------------------------------------------------------------- tone scan
+ * As the stock tone scan: the chip's sub-audio scan, read every 100 ms; a result read twice in a row is kept, in
+ * the receive tone, the transmit tone or both by stock setting 0x2B (0 both, 1 receive, 2 transmit). */
+static void tscan_start(void)
+{
+	SCAN_Stop();
+	gVfo.rx_tone = 0;                    /* no tone squelch while looking */
+	RADIO_Apply();
+	BK4819_CssScanStart();
+	s_tscan = true;
+	s_tscan_last = s_tscan_ms = 0;
+	s_tscan_same = 0;
+	s_entry_len = 0;
+}
+
+static void tscan_stop(void)
+{
+	if (!s_tscan)
+		return;
+	s_tscan = false;
+	RADIO_Apply();                       /* REG_51 back to the VFO's own tone */
+}
+
+static void tscan_tick(void)
+{
+	uint32_t v;
+	uint16_t t = 0;
+
+	if (!s_tscan || (s_tscan_ms += APP_TICK_MS) < 100u)
+		return;
+	s_tscan_ms = 0;
+	switch (BK4819_CssScanRead(&v)) {
+	case BK4819_TONE_CTCSS: t = TONE_FromCtcss(v); break;
+	case BK4819_TONE_DCS_N: t = TONE_FromDcsWord(v); break;
+	default: break;
+	}
+	if (!t) {
+		s_tscan_same = 0;
+		return;
+	}
+	s_tscan_same = t == s_tscan_last ? (uint8_t)(s_tscan_same + 1) : 1;
+	s_tscan_last = t;
+	if (s_tscan_same < 2)
+		return;
+	if (gStock.raw[0x2B] != 2)
+		gVfo.rx_tone = t;
+	if (gStock.raw[0x2B] != 1)
+		gVfo.tx_tone = t;
+	tscan_stop();
+	RADIO_Beep(1200, 120);
+}
+
+/* ------------------------------------------------------------------------------------------- scanning */
+/* The stock VFO scan range, whole MHz (setting bytes 0x2C-0x2F); stock defaults 400-470. */
+static void scan_range(uint32_t *lo, uint32_t *hi)
+{
+	uint32_t l = (uint32_t)(gStock.raw[0x2C] | gStock.raw[0x2D] << 8), h = (uint32_t)(gStock.raw[0x2E] | gStock.raw[0x2F] << 8);
+
+	if (!l || h <= l || h > FREQ_MAX / 100000u) {
+		l = 400;
+		h = 470;
+	}
+	*lo = l * 100000u;
+	*hi = h * 100000u;
+}
+
+static void scan_hop(void)
+{
+	if (s_mr) {
+		int n = s_ch;
+		for (unsigned i = 0; i < CHANNEL_COUNT; i++) {
+			Channel_t ch;
+			n = CHANNEL_Next(n, SCAN_Dir());
+			if (n < 0)
+				break;
+			if (CHANNEL_Load((uint16_t)n, &ch) && ch.scan) {
+				channel_show(n);
+				return;
+			}
+		}
+		SCAN_Stop();                     /* no channel to scan */
+		RADIO_Beep(400, 150);
+		return;
+	}
+	uint32_t lo, hi, st = RADIO_Steps[gVfo.step], f;
+	scan_range(&lo, &hi);
+	f = gVfo.freq - gVfo.freq % st;
+	f = SCAN_Dir() > 0 ? f + st : f - st;
+	if (f < lo || f > hi || gVfo.freq < lo || gVfo.freq > hi)
+		f = SCAN_Dir() > 0 ? lo : hi;
+	gVfo.freq = f;
+	RADIO_Apply();
+}
+
+static void scan_start(int dir)
+{
+	uint8_t m = gStock.raw[SET_SCAN_MODE];
+
+	SCAN_Start(dir, (ScanResume_t)(m <= 2 ? m : 1), APP_TICK_MS);
+	s_entry_len = 0;
+}
+
+static void key_main(KEY_Code_t k)
+{
+	int d = KEY_Digit(k);
+
+	if (s_tscan) {                       /* any key ends the tone scan */
+		tscan_stop();
+		return;
+	}
+	if (SCAN_Active()) {                 /* any key ends the scan; UP/DOWN turn it round */
+		if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
+			scan_start(k == KEY_ACT_UP ? +1 : -1);
+		else
+			SCAN_Stop();
+		return;
+	}
+
+	if (d >= 0) {
+		if (s_entry_len < 6)
+			s_entry[s_entry_len++] = (char)('0' + d);
+		if (s_entry_len == (s_mr ? 3 : 6))
+			entry_finish();
+		return;
+	}
+	if (s_entry_len) {
+		if (k == KEY_ACT_EXIT) {
+			s_entry_len = 0;
+			s_redraw = true;
+		} else if (k == KEY_ACT_MENU)
+			entry_finish();
+		return;
+	}
+	if ((k == KEY_ACT_UP || k == KEY_ACT_DOWN) && s_mr)
+		channel_show(CHANNEL_Next(s_ch, k == KEY_ACT_UP ? +1 : -1));
+	else if (k == KEY_ACT_UP)
+		freq_step(+1);
+	else if (k == KEY_ACT_DOWN)
+		freq_step(-1);
+	else if (k == KEY_ACT_MENU) {
+		s_menu_edit = 0;
+		go(SCREEN_MENU);
+	} else if (k == KEY_ACT_BW) {
+		gVfo.narrow = !gVfo.narrow;
+		RADIO_Apply();
+	} else if (k == KEY_ACT_LAMP) {
+		/* stock 0x01E537C8: the flashlight key steps off, on, strobe (RAM 0x198C0+2831, mod 3) */
+		s_lamp_mode = (uint8_t)((s_lamp_mode + 1u) % 3u);
+		s_lamp_ms = 0;
+		IO_Lamp(s_lamp_mode != 0);
+	}
+	else if (k == KEY_ACT_AB || k == KEY_ACT_VM) {
+		menu_change(k == KEY_ACT_AB ? M_AB : M_MEM, 0);
+		s_redraw = true;
+	}
+}
+
+static void key_menu(KEY_Code_t k)
+{
+	if (k == KEY_ACT_EXIT) {
+		if (s_menu_edit)
+			s_menu_edit = 0;
+		else
+			go(SCREEN_MAIN);
+	} else if (k == KEY_ACT_MENU) {
+		if (s_menu_sel == M_KEYTEST)
+			KEYTEST_Run();
+		if (s_menu_sel == M_SCAN) {
+			scan_start(+1);
+			go(SCREEN_MAIN);
+			return;
+		}
+		if (s_menu_sel == M_TSCAN) {
+			tscan_start();
+			go(SCREEN_MAIN);
+			return;
+		}
+		s_menu_edit = !s_menu_edit;
+	} else if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
+		int dir = k == KEY_ACT_UP ? -1 : 1;
+		if (s_menu_edit)
+			menu_change(s_menu_sel, -dir);
+		else
+			s_menu_sel = (uint8_t)((s_menu_sel + M_COUNT + dir) % M_COUNT);
+	}
+	draw_menu();
+}
+
+/* press events, with repeat for UP/DOWN after 0.5 s */
+static KEY_Code_t s_key_held = KEY_INVALID;
+
+static KEY_Code_t key_event(void)
+{
+	static KEY_Code_t last = KEY_INVALID;
+	static uint16_t held;
+	KEY_Code_t k = KEYBOARD_Poll();
+
+	s_key_held = k;
+	if (k != last) {
+		last = k;
+		held = 0;
+		return k;
+	}
+	if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
+		if (++held >= 50 && held % 10 == 0)
+			return k;
+	}
+	return KEY_INVALID;
+}
+
+/* ------------------------------------------------------------------------------------------- entry points */
+/* Start where the stock app left off: its squelch and beep setting, the active side's VFO, and channel mode if
+ * that side was in it (store/settings.h; read only, nothing is written back). The channel number each side was on
+ * isn't known yet, so channel mode starts at the first filled slot. */
+static void start_side(uint8_t side);
+
+static void start_from_stock(void)
+{
+	SETTINGS_Defaults();
+	s_active = 0;
+	side_save();                            /* without stock settings both sides start as the default VFO */
+	s_side[1] = s_side[0];
+	if (!s_xf_ok || !SETTINGS_Load())
+		return;
+	if (gStock.raw[SET_SQUELCH] <= 9)
+		gVfo.squelch = gStock.raw[SET_SQUELCH];
+	s_side[0].vfo = s_side[1].vfo = gVfo;
+	s_side[0].ch = s_side[1].ch = -1;
+	for (uint8_t side = 0; side < 2; side++) {
+		s_active = side;
+		start_side(side);
+		side_save();
+	}
+	s_active = gStock.raw[SET_ACTIVE_SIDE] ? 1 : 0;
+	gVfo = s_side[s_active].vfo;
+	s_mr = s_side[s_active].mr;
+	s_ch = s_side[s_active].ch;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = s_side[s_active].name[i];
+	RADIO_Apply();
+}
+
+/* One side from the stock VFO log and work mode, into the working copy. */
+static void start_side(uint8_t side)
+{
+	gVfo = s_side[side].vfo;
+	s_mr = false;
+	s_ch = -1;
+	s_ch_name[0] = 0;
+	if (gStock.have_vfo) {
+		const StockVfo_t *v = &gStock.vfo[side];
+		gVfo.freq = v->freq;
+		gVfo.rx_tone = v->rx_tone;
+		gVfo.tx_tone = v->tx_tone;
+		gVfo.power = v->power ? POWER_LOW : POWER_HIGH;
+		gVfo.narrow = v->narrow;
+		gVfo.step = v->step < RADIO_StepCount ? v->step : 4;
+		if (v->shift && v->offset)
+			gVfo.tx_freq = v->shift > 0 ? v->freq + v->offset : v->freq - v->offset;
+	}
+	RADIO_Apply();
+	if ((gStock.raw[SET_WORK_MODE] >> (side ? 4 : 0) & 0xFu) == 1) {
+		int n = CHANNEL_Next(-1, +1);
+		if (n >= 0) {
+			s_mr = true;
+			channel_show(n);
+		}
+	}
+}
+
+/* ------------------------------------------------------------------------------------------- A/B and dual watch */
+static void side_save(void)
+{
+	Side_t *s = &s_side[s_active];
+
+	s->vfo = gVfo;
+	s->mr = s_mr;
+	s->ch = s_ch;
+	for (int i = 0; i < 13; i++)
+		s->name[i] = s_ch_name[i];
+}
+
+static void side_load(uint8_t side)
+{
+	const Side_t *s = &s_side[side];
+	uint8_t squelch = gVfo.squelch, volume = gVfo.volume;
+
+	s_active = side;
+	gVfo = s->vfo;
+	gVfo.squelch = squelch;                 /* one squelch and volume for both sides, as stock */
+	gVfo.volume = volume;
+	s_mr = s->mr;
+	s_ch = s->ch;
+	for (int i = 0; i < 13; i++)
+		s_ch_name[i] = s->name[i];
+	RADIO_Apply();
+	s_redraw = true;
+}
+
+static void side_switch(void)
+{
+	dw_end();
+	side_save();
+	side_load(s_active ^ 1u);
+}
+
+/* Tune the other side for a moment. Only the radio settings are swapped in; the screen keeps the active side
+ * until the other side opens. */
+static void dw_begin(void)
+{
+	Vfo_t keep = gVfo;
+
+	side_save();
+	gVfo = s_side[s_active ^ 1u].vfo;
+	gVfo.squelch = keep.squelch;          /* one squelch and volume for both, as stock */
+	gVfo.volume = keep.volume;
+	RADIO_Apply();
+	s_peek = true;
+	s_peek_held = false;
+}
+
+static void dw_end(void)
+{
+	if (!s_peek)
+		return;
+	s_peek = s_peek_held = false;
+	DW_Reset();
+	gVfo = s_side[s_active].vfo;
+	RADIO_Apply();
+}
+
+static void dw_tick(bool busy)
+{
+	switch (DW_Tick(gStock.raw[SET_DUAL_WATCH] != 0, busy, RADIO_State() == RADIO_RX_OPEN, APP_TICK_MS)) {
+	case DW_BEGIN:
+		dw_begin();
+		break;
+	case DW_END:
+		dw_end();
+		break;
+	case DW_HELD:
+		s_peek_held = true;
+		break;
+	default:
+		break;
+	}
+}
+
+#if SETTINGS_ENABLE_SAVE
+/* ------------------------------------------------------------------------------------------- saving
+ * Only with SETTINGS_ENABLE_SAVE (store/settings.h). 3 s after the last key, the state goes back into the stock
+ * layout and both logs are written (an unchanged log is not written). A side in channel mode keeps its stock VFO
+ * record: only the work-mode bit says it is in channel mode (the channel number is not known to us yet). */
+static uint32_t s_save_ms;
+static bool     s_save_due;
+
+static void save_tick(bool busy)
+{
+	if (!s_save_due || busy || (s_save_ms += APP_TICK_MS) < 3000u)
+		return;
+	s_save_due = false;
+	side_save();
+	gStock.raw[SET_SQUELCH] = gVfo.squelch;
+	gStock.raw[SET_ACTIVE_SIDE] = s_active;
+	gStock.raw[SET_WORK_MODE] = (uint8_t)((s_side[0].mr ? 0x01u : 0u) | (s_side[1].mr ? 0x10u : 0u));
+	for (int i = 0; i < 2; i++) {
+		const Vfo_t *v = &s_side[i].vfo;
+		StockVfo_t *sv = &gStock.vfo[i];
+		if (s_side[i].mr)
+			continue;
+		sv->freq = v->freq;
+		sv->rx_tone = v->rx_tone;
+		sv->tx_tone = v->tx_tone;
+		sv->power = v->power == POWER_LOW;
+		sv->narrow = v->narrow;
+		sv->step = v->step;
+		if (v->tx_freq && v->tx_freq != v->freq) {
+			sv->shift = v->tx_freq > v->freq ? 1 : -1;
+			sv->offset = v->tx_freq > v->freq ? v->tx_freq - v->freq : v->freq - v->tx_freq;
+		} else {
+			sv->shift = 0;
+			sv->offset = 0;
+		}
+	}
+	if (!s_xf_ok || SETTINGS_SaveSettings() || (gStock.have_vfo && SETTINGS_SaveVfos()))
+		RADIO_Beep(300, 400);        /* not saved */
+}
+
+static void save_soon(void)
+{
+	s_save_due = true;
+	s_save_ms = 0;
+}
+#endif
+
+void APP_Init(void)
+{
+	BOARD_Init();
+	ST7735S_Init();
+	KEYBOARD_Init();
+	if (UPDATE_Requested())
+		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
+	BK4819_Init();
+	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
+	if (!KEYBOARD_IsPttPressed()) {
+		KEY_Code_t k0 = KEYBOARD_Poll();
+		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP)
+			KEYTEST_Run();
+	}
+	EXTFLASH_Init();
+	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
+	if (s_xf_ok) {
+		static uint8_t cal[CALIB_LEN];
+		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
+		CALIB_Set(cal);
+	}
+	ADC_Init();
+	BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
+	RADIO_Init();
+	start_from_stock();
+	BT_Init(0);
+	go(SCREEN_MAIN);
+}
+
+/* Backlight as the stock setting 0x03: 0 always on, 1-4 = 5/10/15/20 s after the last key, PTT or signal. */
+static void light_wake(void)
+{
+	s_light_ms = 0;
+	if (!s_light_on) {
+		s_light_on = true;
+		ST7735S_SetBacklight(true);
+	}
+}
+
+static void light_tick(void)
+{
+	uint8_t bl = gStock.raw[SET_BACKLIGHT];
+
+	if (!bl || bl > 4 || !s_light_on)
+		return;
+	if ((s_light_ms += APP_TICK_MS) >= 5000u * bl) {
+		s_light_on = false;
+		ST7735S_SetBacklight(false);
+	}
+}
+
+/* Transmit refusals from the stock settings: busy lockout in VFO mode (0x0F) refuses PTT while a signal is
+ * heard; the time-out timer (0x05, n x 15 s) ends a long transmission until PTT is let go. */
+static bool tx_busy_locked(void)
+{
+	return !s_mr && gStock.raw[SET_BCL] && RADIO_State() == RADIO_RX_OPEN && gVfo.squelch;
+}
+
+static void tot_tick(void)
+{
+	uint8_t tot = gStock.raw[SET_TOT];
+
+	if (RADIO_State() != RADIO_TX) {
+		s_tx_ms = 0;
+		return;
+	}
+	if (tot && tot <= 12 && (s_tx_ms += APP_TICK_MS) >= 15000u * tot) {
+		RADIO_EndTx();
+		s_tot_hit = s_tx_refused = true;
+		RADIO_Beep(400, 300);
+	}
+}
+
+/* A PTT pin counts as changed only after PTT_STABLE_MS of the same reading (it bounced on a radio). */
+#define PTT_STABLE_MS 40u
+static bool ptt_debounced(bool raw, unsigned i)
+{
+	static bool    state[2];
+	static uint8_t ms[2];
+
+	if (raw == state[i])
+		ms[i] = 0;
+	else if ((ms[i] += APP_TICK_MS) >= PTT_STABLE_MS) {
+		state[i] = raw;
+		ms[i] = 0;
+	}
+	return state[i];
+}
+
+void APP_Tick(void)
+{
+	KEY_Code_t k;
+	bool ptt;
+
+	SYSTEM_WatchdogClear();
+
+	/* power switch: PB11 high = off (stock sub_01E4C978); act after 0.2 s */
+	if (GPIO_CheckBit(PIN_POWER_SENSE)) {
+		if (++s_off_ticks >= 200 / APP_TICK_MS) {
+			RADIO_EndTx();
+			IO_Amp(0xFF, false);
+			BOARD_PowerOff();
+		}
+	} else
+		s_off_ticks = 0;
+
+	/* PTT; PTT-B transmits on side B (it becomes the active side) */
+	ptt = ptt_debounced(KEYBOARD_IsPttPressed(), 0);
+	if (ptt_debounced(KEYBOARD_IsPtt2Pressed(), 1)) {
+		if (!s_ptt_down && s_active != 1)
+			side_switch();
+		ptt = true;
+	}
+	if (ptt) {
+		dw_end();
+		tscan_stop();
+	}
+	if (ptt && !s_ptt_down && (s_tail_ms || s_eot)) {   /* pressed again during the tail: start over */
+		s_tail_ms = 0;
+		s_eot = false;
+		DTMFSEQ_Stop();
+		RADIO_EndTx();
+	}
+	if (ptt && !s_ptt_down) {
+		light_wake();
+		s_tot_hit = false;
+		s_tx_refused = tx_busy_locked() || !RADIO_StartTx();
+		if (s_tx_refused)
+			RADIO_Beep(400, 150);
+		else
+			ptt_id_start(1);
+	} else if (!ptt && s_ptt_down) {
+		if (RADIO_State() == RADIO_TX) {
+			DTMFSEQ_Stop();                /* an up code still going is cut short */
+			RADIO_TxToneOff();
+			s_eot = ptt_id_start(2);
+			if (!s_eot)
+				tx_release();
+		}
+		s_tx_refused = s_tot_hit = false;
+	}
+	s_ptt_down = ptt;
+
+	if (RADIO_State() != RADIO_TX) {
+		DTMFSEQ_Stop();
+		s_eot = false;
+	} else
+		ptt_id_tick();
+	if (s_tail_ms && (s_tail_ms = s_tail_ms > APP_TICK_MS ? (uint16_t)(s_tail_ms - APP_TICK_MS) : 0) == 0) {
+		RADIO_EndTx();
+		/* stock 0x01E4FF94: setting 0x15 x 100 ms with the receive audio held off */
+		RADIO_MuteRx((uint16_t)((gStock.raw[SET_RPT_CLEAR] < 30 ? gStock.raw[SET_RPT_CLEAR] : 30) * 100u));
+	}
+	RADIO_Tick();
+	tot_tick();
+	tscan_tick();
+	dtmf_tick();
+#if RADIO_ENABLE_TX
+	/* VOX (stock setting 0x3A), not while PTT is held, scanning or in a menu */
+	if (gStock.raw[0x3A] && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
+		uint16_t a = ADC_Read(ADC_CH_PA1, 1);
+		VoxAction_t v = VOX_Tick(a == 0xFFFFu ? 0 : (uint8_t)(a >> 2), gStock.raw[0x02], gStock.raw[0x20],
+		                         RADIO_State() == RADIO_TX, APP_TICK_MS);
+		if (v == VOX_START && !tx_busy_locked()) {
+			dw_end();
+			RADIO_StartTx();
+		} else if (v == VOX_STOP)
+			RADIO_EndTx();
+	}
+#endif
+	dw_tick(ptt || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
+	if (RADIO_State() == RADIO_RX_OPEN)
+		light_wake();
+	else
+		light_tick();
+	if (ptt)
+		SCAN_Stop();
+	else if (SCAN_Tick(RADIO_State() == RADIO_RX_OPEN) == SCAN_HOP)
+		scan_hop();
+
+	/* battery about once a second, never while transmitting (the voltage sags) */
+	if (++s_batt_ticks >= 1000 / APP_TICK_MS && RADIO_State() != RADIO_TX) {
+		s_batt_ticks = 0;
+		BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
+	}
+
+	k = key_event();
+	/* while transmitting, a held digit, * or # sends its DTMF pair (stock 0x01E5457E / 0x01E5072C) */
+	if (RADIO_State() == RADIO_TX && DTMFSEQ_Busy())
+		k = KEY_INVALID;                   /* keys wait while a PTT-ID is sent */
+	else if (RADIO_State() == RADIO_TX) {
+		int d = KEY_Digit(s_key_held);
+
+		if (s_key_held == KEY_STAR)
+			d = 14;
+		else if (s_key_held == KEY_HASH)
+			d = 15;
+		if (d >= 0) {
+			if (k != KEY_INVALID)
+				RADIO_TxTone((uint8_t)d, gStock.raw[SET_DTMF_MON] & 1u);
+			k = KEY_INVALID;
+		} else if (RADIO_TxToneOn())
+			RADIO_TxToneOff();
+	}
+	if (k != KEY_INVALID && !s_light_on) {       /* the first press only lights the screen */
+		light_wake();
+		k = KEY_INVALID;
+	}
+	if (k != KEY_INVALID)
+		light_wake();
+	if (k != KEY_INVALID)
+		dw_end();                          /* keys act on the active side */
+#if SETTINGS_ENABLE_SAVE
+	if (k != KEY_INVALID)
+		save_soon();
+	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
+#endif
+	if (s_lamp_mode == 2 && (s_lamp_ms += APP_TICK_MS) >= LAMP_STROBE_MS) {
+		s_lamp_ms = 0;
+		IO_Lamp(!IO_LampIsOn());
+	}
+	if (k != KEY_INVALID && !ptt) {
+		if (gStock.raw[SET_BEEP])
+			RADIO_Beep(1000, 40);
+		if (s_screen == SCREEN_MAIN)
+			key_main(k);
+		else
+			key_menu(k);
+	}
+
+	if (s_screen == SCREEN_MAIN) {
+		draw_main();
+	} else if (s_redraw)
+		draw_menu();
+	s_redraw = false;
+}

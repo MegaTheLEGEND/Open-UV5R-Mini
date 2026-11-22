@@ -60,10 +60,8 @@ then `tools/lift/lift.py --variant nrfb`.
 
 | Path | What |
 | --- | --- |
-| `driver/` | Our hardware drivers: `bk4819`, `st7735s` (LCD), `keyboard`, `uart`, `gpio`, `system` |
-| `app/` | Our application: `app.c` (screens, keys), `radio.c` (radio core), `keytest.c`; `update.c` / `update_radio.c` is the cable update mode (safety-critical). See docs/RADIO.md |
-| `ui/`, `bt/` | Drawing and font; Bluetooth interface (stub by default) |
-| `main.c`, `board.c`, `start.S`, `firmware.ld`, `bsp/` | Start-up, board setup, link map, chip registers |
+| `src/` | All radio firmware. `driver/` chips; `radio/` radio core (`radio.c`), tones, scan, dual watch; `store/` calibration, channels, settings; `app/` keys and main loop (`app.c`); `ui/` screens (`screen_main.c`), font, generated icons; `update/` the cable update mode (safety-critical); `bsp/`, `bt/`; start-up `main.c`, `board.c`, `start.S`, `firmware.ld`. Rules and naming: [docs/LAYOUT.md](docs/LAYOUT.md) |
+| `assets/` | Icons as pixel-art text (`assets/icons/<group>_<name>.txt`); `python tools/mkassets.py` makes `src/ui/icons.c`. Never edit the generated C |
 | `tools/` | `setup.py`, `jl_ufw_unpack.py`, `disasm.py`, `mkufw.py`, `ufwcheck.py`, `flashcheck.py`, `uv5r_flasher.py` (has an emulated radio), `ufwpatch.py`, `build_matching.py`, `variant_diff.py`, `symbols.txt` (names for stock addresses) |
 | `tools/lift/` | Lifter (stock → C), `insn_test.py`, `func_test.py` (checks against the stock code), `local_rewrite.py` (readable C with a local model) |
 | `emu/` | CPU and hardware emulator running the real stock app |
@@ -105,7 +103,8 @@ then `tools/lift/lift.py --variant nrfb`.
 
 ## Checks before you commit
 
-- `make check`, and `make TOOLCHAIN=…` if you touched firmware code.
+- `make check` (also checks the generated icons are up to date), and `make TOOLCHAIN=…` if you touched firmware code.
+- Screen or icons changed: `python tests/ui_preview.py`, then look at `build/ui/*.png`.
 - Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`; stock settings reader or writer changed: `python tests/settings_host.py`; flasher guard or update-mode marker changed: `python tests/flasher_guard.py`.
 - Lifter changed: `python tools/lift/insn_test.py` (0 must disagree) and
   `python tools/lift/func_test.py --steps 3000000` (all must match).

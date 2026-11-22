@@ -63,7 +63,7 @@ STOCK_UPDATE_CODE = [
     (0x01E6AAAC, 0x01E6AAAC + 53492),  # RAM code: flash driver, hand-over
 ]
 # Our own C update mode declares itself with this marker and the flash windows its code may write
-# (app/update_radio.c). Allowed: the app area and the update loader's slot; never the rest of PRCT or VM.
+# (src/update/update_radio.c). Allowed: the app area and the update loader's slot; never the rest of PRCT or VM.
 OUR_MARKER = b'OPENUV5R-UPDATE-MODE/1 writes='
 ALLOWED_WRITES = [(0x1000, 0x7C000), (0xFA000, 0xFE000)]
 RESCUE_WARNING = (

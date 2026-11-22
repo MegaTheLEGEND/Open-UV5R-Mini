@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-r"""Build and run tests/settings_host.c (app/settings.c: the stock VFO and settings logs, read only).
+r"""Build and run tests/settings_host.c (src/store/settings.c: the stock VFO and settings logs, read only).
 
     python tests/settings_host.py
 
@@ -18,9 +18,9 @@ def main():
     out = os.path.join(ROOT, 'build', 'host')
     os.makedirs(out, exist_ok=True)
     exe = os.path.join(out, 'settings_host' + ('.exe' if os.name == 'nt' else ''))
-    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DCHANNELS_HOST_TEST', '-DSETTINGS_ENABLE_SAVE=1', '-I', ROOT,
-                    os.path.join(ROOT, 'tests', 'settings_host.c'), os.path.join(ROOT, 'app', 'settings.c'),
-                    os.path.join(ROOT, 'app', 'tones.c'), '-o', exe], check=True)
+    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DCHANNELS_HOST_TEST', '-DSETTINGS_ENABLE_SAVE=1', '-I', os.path.join(ROOT, 'src'),
+                    os.path.join(ROOT, 'tests', 'settings_host.c'), os.path.join(ROOT, 'src', 'store', 'settings.c'),
+                    os.path.join(ROOT, 'src', 'radio', 'tones.c'), '-o', exe], check=True)
     dumps = sorted(glob.glob(os.path.join(ROOT, 'firmware', 'backups', 'external-*.bin')))
     return subprocess.run([exe] + dumps[-1:]).returncode
 

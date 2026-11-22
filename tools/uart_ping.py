@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ping a radio in update mode over the cable and show what comes back. Sends nothing else: no data, no rate change.
 
-The update mode (app/update.c) answers a ping (cmd 6) with an empty cmd 1 frame. Frames are
+The update mode (src/update/update.c) answers a ping (cmd 6) with an empty cmd 1 frame. Frames are
 `AA 55 | len u16 | cmd u8 | data | crc16-xmodem u16` (tools/uv5r_flasher.py).
 
     python tools/uart_ping.py --port COM5                 # 9600 baud, as the flasher starts

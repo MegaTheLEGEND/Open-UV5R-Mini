@@ -1,4 +1,4 @@
-/* PC test of app/settings.c: reading the stock VFO and settings logs, and (built with SETTINGS_ENABLE_SAVE 1 here)
+/* PC test of store/settings.c: reading the stock VFO and settings logs, and (built with SETTINGS_ENABLE_SAVE 1 here)
  * writing them the stock way, on a simulated NOR flash: programming can only clear bits, erase sets a 4 KB sector to
  * 0xFF, and any erase or program outside 0x8000-0x9FFF counts as a failure.
  * tests/settings_host.py builds and runs it. With a path argument (a dump of a radio's external flash) it also
@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "app/settings.h"
+#include "store/settings.h"
 
 #define FLASH_SIZE 0x10000u
 static uint8_t flash[FLASH_SIZE];

@@ -37,7 +37,7 @@ the file against its pinned SHA-256 and refuses any other file.
 | Flasher with a built-in emulated radio, for practice | done |
 | Stock code turned into C and checked against the original (reference for porting) | done |
 | Own firmware: receiving (frequency, squelch, RSSI bar, audio) | **works on a radio** |
-| Own firmware: screen and keypad (every key) | **works on a radio** |
+| Own firmware: screen and keypad (every key) | **works on a radio**; new main screen with A and B together and icons: PC preview only |
 | Own firmware: cable update mode (so a radio can always be flashed again) | tested on the PC; on a radio pings are answered but the transfer stalls |
 | Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
 | Own firmware: transmit, VOX, PTT-ID, roger beep | written, compiled off until receive and the PA calibration are proven |
@@ -51,17 +51,15 @@ Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
 | Folder | What's in it |
 | --- | --- |
-| `driver/` | Hardware drivers: `bk4819` (radio chip), `st7735s` (display), `keyboard`, `uart`, `gpio`, `system`, `adc`, `extflash` (read only), `flash`, `io` |
-| `app/` | Application: screens and keys (`app.c`), radio core (`radio.c`), channels, scan, tones, settings, update mode |
-| `ui/` | Screen drawing and font |
-| `bt/` | Bluetooth (empty stub in the default build) |
-| `main.c`, `board.c`, `start.S`, `firmware.ld` | Start-up, board setup, memory layout |
-| `bsp/`, `platform/` | Chip registers (AC695N) and SDK glue |
+| `src/` | The radio firmware: `driver/` (chips), `radio/` (radio behaviour), `store/` (calibration, channels, settings), `app/` (keys, main loop), `ui/` (screens, icons), `update/` (cable update mode), `bsp/`, `bt/` |
+| `assets/` | Icons as editable pixel-art text, turned into C by `tools/mkassets.py` |
 | `tools/` | Unpack, build, check and flash `.ufw` files; disassembler; `tools/lift/` turns stock code into C |
 | `emu/` | Emulator that runs the real firmware on the PC, for tracing what the stock code does |
-| `tests/` | Tests run on the PC |
+| `tests/` | Tests run on the PC, and a preview of the screen (`tests/ui_preview.py`) |
 | `docs/` | Everything else, listed below |
 | `build/` | Generated locally; never committed (it holds stock-derived files) |
+
+Folder rules, naming and how assets are stored: **[docs/LAYOUT.md](docs/LAYOUT.md)**.
 
 ## Getting started
 
@@ -85,6 +83,7 @@ contribute.
 | Doc | Read it for |
 | --- | --- |
 | [ROADMAP](docs/ROADMAP.md) | What's done and what's next |
+| [LAYOUT](docs/LAYOUT.md) | Where code goes, naming, and how icons and other assets are stored |
 | [RADIO](docs/RADIO.md) | The radio app: what it does, the keys, how to test it |
 | [TESTING](docs/TESTING.md) | Flashing a radio safely, and getting back to stock |
 | [PORTING](docs/PORTING.md) | Building the C firmware |
