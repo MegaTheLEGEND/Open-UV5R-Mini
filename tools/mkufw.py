@@ -78,7 +78,11 @@ def build(base, app, allow_no_update_mode=False):
         raise SystemExit('base .ufw has no flash.bin')
     # The cable update mode (PTT-A + = at power-on, "UPDATE...") is run by the stock app, not the bootloader.
     # An app without it, flashed onto a radio, leaves no way to flash again short of a case-open repair.
-    if has_loader(ufw, recs) and b'UPDATE\x00' not in app and not allow_no_update_mode:
+    # Our own update mode (src/update/update_radio.c) counts too: it took a whole update on a radio (2026-11-22,
+    # docs/UPDATE-MODE.md); its marker must declare only the app area and loader slot (uv5r_flasher's check).
+    from uv5r_flasher import update_mode_status
+    ours = update_mode_status(bytes(app), None)[0] == 'ours'
+    if has_loader(ufw, recs) and b'UPDATE\x00' not in app and not ours and not allow_no_update_mode:
         raise SystemExit('refusing: this base is flashable (it carries a loader) but the app has no stock update\n'
                          'mode, so a radio running it could not be flashed again. Build on the matching source\n'
                          '(tools/build_matching.py) or pass --allow-no-update-mode if you have a recovery path.')
