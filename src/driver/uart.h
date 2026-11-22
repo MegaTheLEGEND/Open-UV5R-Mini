@@ -25,5 +25,6 @@ int  UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms);
 uint32_t UART_Reg(uint32_t offset);
 /* Bytes dropped as echo or overflow (debug). */
 uint32_t UART_Dropped(void);
+uint32_t UART_Stats(void);     /* collects by time-out/full flag << 16 | by the 1 s backstop */
 
 #endif

@@ -120,7 +120,7 @@ int main(void)
 	reset();
 	ot_works = 0;
 	queue(ping, 7, 5, 1);
-	CHECK(read_all(buf, 7, 200) == 7 && !memcmp(buf, ping, 7), "ping without time-out flag");
+	CHECK(read_all(buf, 7, 1500) == 7 && !memcmp(buf, ping, 7), "ping without time-out flag");
 
 	/* 4. fifteen pings in a row, flag missing (the 105-byte stall on a radio) */
 	reset();
@@ -128,7 +128,7 @@ int main(void)
 	for (int i = 0; i < 15; i++)
 		queue(ping, 7, 5 + 10u * (uint32_t)i, 1);
 	{
-		int n = read_all(buf, 105, 300), ok = n == 105;
+		int n = read_all(buf, 105, 1500), ok = n == 105;
 		for (int i = 0; ok && i < 15; i++)
 			ok = !memcmp(buf + 7 * i, ping, 7);
 		CHECK(ok, "15 pings without flag: got %d bytes", n);

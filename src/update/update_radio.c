@@ -71,7 +71,7 @@ static void debug_send(void)
 {
 	static uint32_t count;
 	uint8_t f[5 + 36 + 2];
-	uint32_t v[7] = { UART_Reg(0), gUpdateStep, gUpdateOff | gUpdateRetries << 24, s_rx_total, s_tx_frames, UART_Dropped(), ++count };
+	uint32_t v[7] = { UART_Stats(), gUpdateStep, gUpdateOff | gUpdateRetries << 24, s_rx_total, s_tx_frames, UART_Dropped(), ++count };
 	uint16_t crc;
 
 	f[0] = 0xAA;

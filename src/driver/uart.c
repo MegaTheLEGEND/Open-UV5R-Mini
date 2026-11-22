@@ -6,10 +6,10 @@
  *   - A burst ends with the time-out flag (bit 11, cleared with bit 10) or the buffer-full flag (bit 14, cleared with
  *     bit 12). Then: RDC, take the count, copy the bytes out at once, re-arm the DMA at the buffer start and reload
  *     OTCNT, as stock does. The bytes go into a FIFO, so the DMA can never overwrite bytes not yet handed out.
- *   - Backstop: if no flag comes, the count is latched (RDC) every millisecond, and once it has stood still for 20 ms
- *     with bytes waiting, the same copy runs (seen on a radio 2026-11-21: 105 bytes waited with no flag). Never in
- *     the middle of a burst: re-arming then lost a byte of most 527-byte replies on a radio (2026-11-21), so reads
- *     were retried again and again.
+ *   - Backstop: 1 s without a flag, the same copy runs anyway. It must not land in the middle of a reply: every 20 ms
+ *     it lost a byte of most 527-byte replies on a radio (2026-11-21). Latching the count (RDC) to watch it instead
+ *     is not harmless on the chip: done every millisecond, nothing was ever collected (radio, 2026-11-21).
+ *     UART_Stats counts the collects by time-out flag and by backstop, to see which one a radio uses.
  *   - After a send, only leading FF noise and a whole copy of what we sent (an echo) are dropped; everything else is
  *     kept. A partial match is not an echo: our read request and the host's reply both start AA 55 xx 00, and
  *     dropping a matching prefix cut the start off every reply (radio, 2026-11-21). Dropping everything lost the flasher's rate frame on a radio
@@ -75,7 +75,7 @@ void uart_test_rearm(void);
 #define CLOCK_HZ    48000000u
 #define RXBUF_LEN   0x220u               /* the stock app's DMA buffer size */
 #define FIFO_LEN    0x400u               /* power of two */
-#define BACKSTOP_MS 20u
+#define BACKSTOP_MS 1000u
 #define TX_WAIT     2000000u             /* loops; 64 bytes at 1200 baud is ~0.5 s */
 
 static uint8_t  s_rx[RXBUF_LEN] __attribute__((aligned(4)));
@@ -83,7 +83,7 @@ static uint8_t  s_tx[0x40] __attribute__((aligned(4)));
 static uint8_t  s_fifo[FIFO_LEN];
 static uint32_t s_head, s_tail;          /* FIFO write and read counts */
 static uint32_t s_tx_n;                          /* bytes in s_tx: the last chunk sent, for the echo check */
-static uint32_t s_otcnt, s_quiet_ms, s_dropped, s_seen;
+static uint32_t s_otcnt, s_quiet_ms, s_dropped, s_flagged, s_backstops;
 
 static void rx_arm(void)
 {
@@ -127,24 +127,19 @@ static void rx_collect(int echo)
 			s_dropped++;
 	}
 	rx_arm();
-	s_quiet_ms = s_seen = 0;
+	s_quiet_ms = 0;
 }
 
 /* One look at the receiver; called about once a millisecond while waiting. */
 static void rx_poll(void)
 {
-	if (CON0 & (CON_OT | CON_RXFULL))
+	if (CON0 & (CON_OT | CON_RXFULL)) {
+		s_flagged++;
 		rx_collect(0);
-	else {
-		uint32_t n;
-		CON0 |= CON_RDC;                      /* latch the count only: nothing is cleared or re-armed */
-		AFTER_RDC();
-		n = HRXCNT;
-		if (n != s_seen) {
-			s_seen = n;                       /* still arriving */
-			s_quiet_ms = 0;
-		} else if (n && ++s_quiet_ms >= BACKSTOP_MS)
-			rx_collect(0);
+	}
+	else if (++s_quiet_ms >= BACKSTOP_MS) {
+		s_backstops++;
+		rx_collect(0);
 	}
 }
 
@@ -219,6 +214,8 @@ uint32_t UART_Reg(uint32_t offset)
 {
 	return REG(offset);
 }
+
+uint32_t UART_Stats(void) { return (s_flagged & 0xFFFFu) << 16 | (s_backstops & 0xFFFFu); }
 
 uint32_t UART_Dropped(void)
 {
