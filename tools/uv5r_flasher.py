@@ -675,8 +675,10 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                     log('  loader read 0x%X, %d bytes' % (off, n))
                 reads += 1
                 if phase == 'loader' and area_len and off >= area_lo:
-                    done_max = max(done_max, min(1.0, (off + n - area_lo) / area_len))   # reads come out of order
-                    progress(done_max)
+                    # The loader doesn't read in order (it reached the end early on a radio, 2026-11-22), so count
+                    # the bytes sent instead of using the offset; a repeated read counts twice, hence the cap.
+                    done_max += n
+                    progress(min(0.99, done_max / area_len))
             elif cmd == CMD_LENGTH and phase == 'loader' and len(d) >= 4:
                 area_len = struct.unpack('<I', d[:4])[0]
                 log('The radio is erasing its firmware area (0x%X bytes) and writing...' % area_len)
