@@ -18,7 +18,7 @@ def main():
     out = os.path.join(ROOT, 'build', 'host')
     os.makedirs(out, exist_ok=True)
     exe = os.path.join(out, 'settings_host' + ('.exe' if os.name == 'nt' else ''))
-    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DCHANNELS_HOST_TEST', '-I', ROOT,
+    subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DCHANNELS_HOST_TEST', '-DSETTINGS_ENABLE_SAVE=1', '-I', ROOT,
                     os.path.join(ROOT, 'tests', 'settings_host.c'), os.path.join(ROOT, 'app', 'settings.c'),
                     os.path.join(ROOT, 'app', 'tones.c'), '-o', exe], check=True)
     dumps = sorted(glob.glob(os.path.join(ROOT, 'firmware', 'backups', 'external-*.bin')))

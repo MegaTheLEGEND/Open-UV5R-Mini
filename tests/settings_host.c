@@ -1,116 +1,212 @@
-/* PC test of app/settings.c (the stock VFO and settings logs). tests/settings_host.py builds and runs it.
- * With a path argument (a dump of a radio's external flash) it also reads that and prints what it found. */
+/* PC test of app/settings.c: reading the stock VFO and settings logs, and (built with SETTINGS_ENABLE_SAVE 1 here)
+ * writing them the stock way, on a simulated NOR flash: programming can only clear bits, erase sets a 4 KB sector to
+ * 0xFF, and any erase or program outside 0x8000-0x9FFF counts as a failure.
+ * tests/settings_host.py builds and runs it. With a path argument (a dump of a radio's external flash) it also
+ * checks the reader and the writer against that. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "app/settings.h"
 
-static uint8_t flash[0x10000];
+#define FLASH_SIZE 0x10000u
+static uint8_t flash[FLASH_SIZE];
+static int outside, programs, erases, fail_next;
 
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 {
 	while (len--)
-		*buf++ = addr < sizeof flash ? flash[addr++] : 0xFF;
+		*buf++ = addr < FLASH_SIZE ? flash[addr++] : 0xFF;
+}
+
+int EXTFLASH_LogErase4K(uint32_t addr)
+{
+	if ((addr & 0xFFFu) || addr < 0x8000u || addr >= 0xA000u) {
+		outside++;
+		return -1;
+	}
+	erases++;
+	memset(flash + addr, 0xFF, 0x1000);
+	return 0;
+}
+
+int EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len)
+{
+	if (addr < 0x8000u || addr + len > 0xA000u) {
+		outside++;
+		return -1;
+	}
+	if (fail_next) {
+		fail_next = 0;
+		return -1;
+	}
+	programs++;
+	for (uint32_t i = 0; i < len; i++)
+		flash[addr + i] &= buf[i];
+	for (uint32_t i = 0; i < len; i++)
+		if (flash[addr + i] != buf[i])
+			return -1;                         /* read back, as the driver does */
+	return 0;
 }
 
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { fails++; printf("FAIL: " __VA_ARGS__); printf("\n"); } } while (0)
 
-static void vfo_rec(uint8_t *r, const char *mhz8, uint16_t rx, uint16_t tx, uint8_t power, int narrow, uint8_t step)
+static void set_vfo(int side, uint32_t f, uint16_t rx, uint16_t tx, uint8_t power, int narrow, uint8_t step)
 {
-	memset(r, 0, 32);
-	for (int i = 0; i < 8; i++)
-		r[i] = (uint8_t)(mhz8[i] - '0');
-	r[8] = (uint8_t)rx; r[9] = (uint8_t)(rx >> 8);
-	r[10] = (uint8_t)tx; r[11] = (uint8_t)(tx >> 8);
-	r[12] = 0xFF;
-	r[14] = 0x40;                   /* shift - */
-	r[16] = power;
-	r[17] = narrow ? 0x40 : 0;
-	r[19] = step;
-	r[20] = 0; r[21] = 0; r[22] = 0; r[23] = 6;   /* 000.6000 MHz offset */
-	memset(r + 28, 0xFF, 4);
+	StockVfo_t *v = &gStock.vfo[side];
+	v->freq = f; v->rx_tone = rx; v->tx_tone = tx; v->power = power; v->narrow = narrow; v->step = step;
+	v->shift = side ? 0 : -1;
+	v->offset = side ? 0 : 60000u;
 }
 
-static void put_vfo_slot(uint32_t a, const char *fa, const char *fb, int good)
+static int dump_checks(const char *path)
 {
-	uint8_t *s = flash + a;
-	uint16_t c;
-	vfo_rec(s, fa, 885, 106, 1, 1, 4);
-	vfo_rec(s + 32, fb, 0, 0, 0, 0, 7);
-	c = SETTINGS_Crc16(s, 0x40);
-	if (!good)
-		c ^= 1;
-	s[0x40] = (uint8_t)c;
-	s[0x41] = (uint8_t)(c >> 8);
-}
+	static uint8_t orig[FLASH_SIZE];
+	FILE *f = fopen(path, "rb");
+	int n_vfo = 0, same = 0;
 
-static void put_set_slot(uint32_t a, uint8_t squelch, int good)
-{
-	uint8_t *s = flash + a;
-	uint16_t c;
-	memset(s, 0, 0x60);
-	s[SET_SQUELCH] = squelch;
-	s[SET_DUAL_WATCH] = 0;
-	s[SET_ACTIVE_SIDE] = 0;
-	s[SET_WORK_MODE] = 0x00;
-	c = SETTINGS_Crc16(s, 0x5E);
-	if (!good)
-		c ^= 1;
-	s[0x5E] = (uint8_t)c;
-	s[0x5F] = (uint8_t)(c >> 8);
+	if (!f)
+		return 0;
+	if (fread(flash, 1, FLASH_SIZE, f) != FLASH_SIZE) {
+		fclose(f);
+		return 0;
+	}
+	fclose(f);
+	memcpy(orig, flash, FLASH_SIZE);
+
+	CHECK(SETTINGS_Load() && gStock.have_settings && gStock.have_vfo, "the dump's logs read");
+	printf("dump: squelch %u, dual watch %u, active side %c, work mode %02X; A %lu, B %lu (10 Hz)\n",
+	       gStock.raw[SET_SQUELCH], gStock.raw[SET_DUAL_WATCH], 'A' + gStock.raw[SET_ACTIVE_SIDE],
+	       gStock.raw[SET_WORK_MODE], (unsigned long)gStock.vfo[0].freq, (unsigned long)gStock.vfo[1].freq);
+
+	/* every VFO record ever written: decode then encode gives the same bytes */
+	for (uint32_t a = SETTINGS_VFO_LOG; a + SETTINGS_VFO_SLOT <= 0x9000u; a += SETTINGS_VFO_SLOT) {
+		uint8_t rec[64], again[64];
+		StockVfo_t v;
+		memcpy(rec, flash + a, 64);
+		if (rec[0] == 0xFF)
+			break;
+		for (int s = 0; s < 2; s++) {
+			n_vfo++;
+			memcpy(again, rec, 64);
+			if (SETTINGS_DecodeVfo(rec + 32 * s, &v)) {
+				SETTINGS_EncodeVfo(again + 32 * s, &v);
+				if (memcmp(again, rec, 64)) {
+					for (int k = 0; k < 64; k++)
+						if (again[k] != rec[k])
+							printf("dump VFO 0x%04lX side %d byte %d: %02X -> %02X\n", (unsigned long)a, s, k, rec[k], again[k]);
+				} else
+					same++;
+			}
+		}
+	}
+	CHECK(n_vfo && same == n_vfo, "dump: %d of %d VFO records encode back unchanged", same, n_vfo);
+
+	/* a save on the dump: one new slot and one header byte, nothing else */
+	gStock.raw[SET_SQUELCH] = (uint8_t)(gStock.raw[SET_SQUELCH] == 5 ? 4 : 5);
+	{
+		uint8_t want = gStock.raw[SET_SQUELCH];
+		int changed = 0, lo = -1, hi = -1;
+		CHECK(SETTINGS_SaveSettings() == 0, "dump: settings saved");
+		for (uint32_t i = 0; i < FLASH_SIZE; i++)
+			if (flash[i] != orig[i]) {
+				changed++;
+				if (lo < 0)
+					lo = (int)i;
+				hi = (int)i;
+			}
+		printf("dump: save changed %d bytes, 0x%04X-0x%04X\n", changed, lo, hi);
+		CHECK(lo >= 0x9000 && hi < 0xA000, "dump: only the settings sector changed");
+		CHECK(flash[0x9004] == (orig[0x9004] & 0xFE) && orig[0x9004] == 0xFF, "dump: header bit of slot 32 cleared");
+		SETTINGS_Load();
+		CHECK(gStock.raw[SET_SQUELCH] == want, "dump: the new squelch reads back");
+		CHECK(!memcmp(flash, orig, 0x9000) && !memcmp(flash + 0xA000, orig + 0xA000, FLASH_SIZE - 0xA000),
+		      "dump: channels, VFOs and calibration untouched");
+	}
+	return 1;
 }
 
 int main(int argc, char **argv)
 {
 	/* nothing written: defaults */
 	memset(flash, 0xFF, sizeof flash);
-	CHECK(!SETTINGS_Load() && gStock.raw[SET_SQUELCH] == 3 && gStock.raw[SET_WORK_MODE] == 0x11, "empty: defaults");
+	CHECK(!SETTINGS_Load() && gStock.raw[SET_SQUELCH] == 3 && gStock.raw[SET_WORK_MODE] == 0x11, "blank: defaults");
 
-	/* three slots each; the last counts */
-	put_vfo_slot(0x8010, "14552000", "43562500", 1);
-	put_vfo_slot(0x8052, "14600000", "43500000", 1);
-	put_vfo_slot(0x8094, "14552500", "44600000", 1);
-	put_set_slot(0x9010, 5, 1);
-	put_set_slot(0x9070, 6, 1);
-	put_set_slot(0x90D0, 7, 1);
-	CHECK(SETTINGS_Load() && gStock.have_vfo && gStock.have_settings, "logs read");
-	CHECK(gStock.vfo[0].freq == 14552500u && gStock.vfo[1].freq == 44600000u, "last VFO slot: %lu %lu",
-	      (unsigned long)gStock.vfo[0].freq, (unsigned long)gStock.vfo[1].freq);
-	CHECK(gStock.vfo[0].rx_tone == 885 && gStock.vfo[0].tx_tone == 106 && gStock.vfo[0].power == 1
-	      && gStock.vfo[0].narrow && gStock.vfo[0].step == 4 && gStock.vfo[0].shift == -1
-	      && gStock.vfo[0].offset == 60000u, "VFO A fields (offset %lu)", (unsigned long)gStock.vfo[0].offset);
-	CHECK(gStock.vfo[1].step == 7 && !gStock.vfo[1].narrow && gStock.vfo[1].power == 0, "VFO B fields");
-	CHECK(gStock.raw[SET_SQUELCH] == 7, "last settings slot: squelch %u", gStock.raw[SET_SQUELCH]);
-
-	/* a bad CRC on the last slot: defaults, as stock */
-	put_set_slot(0x9130, 8, 0);
-	put_vfo_slot(0x80D6, "14400000", "43000000", 0);
-	CHECK(!SETTINGS_Load() && !gStock.have_vfo && gStock.raw[SET_SQUELCH] == 3, "bad CRC: defaults");
-
-	/* a frequency digit out of range: VFO refused */
-	put_vfo_slot(0x80D6, "1445200:", "43000000", 1);
-	SETTINGS_Load();
-	CHECK(!gStock.have_vfo, "bad digit refused");
-
-	if (argc > 1) {
-		FILE *f = fopen(argv[1], "rb");
-		if (f && fread(flash, 1, sizeof flash, f) == sizeof flash) {
-			bool ok = SETTINGS_Load();
-			printf("dump: settings %s, VFOs %s; squelch %u, dual watch %u, active side %c, work mode %02X\n",
-			       gStock.have_settings ? "ok" : "none", gStock.have_vfo ? "ok" : "none",
-			       gStock.raw[SET_SQUELCH], gStock.raw[SET_DUAL_WATCH], 'A' + gStock.raw[SET_ACTIVE_SIDE],
-			       gStock.raw[SET_WORK_MODE]);
-			for (int i = 0; i < 2 && gStock.have_vfo; i++)
-				printf("dump: VFO %c %lu.%05lu MHz, tones %u/%u, power %u, %s, step %u\n", 'A' + i,
-				       (unsigned long)(gStock.vfo[i].freq / 100000u), (unsigned long)(gStock.vfo[i].freq % 100000u),
-				       gStock.vfo[i].rx_tone, gStock.vfo[i].tx_tone, gStock.vfo[i].power,
-				       gStock.vfo[i].narrow ? "narrow" : "wide", gStock.vfo[i].step);
-			CHECK(ok, "the dump's logs read");
-		}
-		if (f)
-			fclose(f);
+	/* encode / decode */
+	{
+		uint8_t rec[32];
+		StockVfo_t v;
+		memset(rec, 0, sizeof rec);
+		set_vfo(0, 14552500u, 885, 106, 1, 1, 4);
+		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
+		CHECK(SETTINGS_DecodeVfo(rec, &v) && v.freq == 14552500u && v.rx_tone == 885 && v.tx_tone == 106 && v.power == 1
+		      && v.narrow && v.step == 4 && v.shift == -1 && v.offset == 60000u && rec[18] == 0, "VFO record round trip");
+		set_vfo(0, 12000000u, 0, 0, 0, 0, 0);
+		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
+		CHECK(rec[18] == 4, "airband: band byte 4");
 	}
+
+	/* saving on a blank log: slot 1 written, header bit 0 cleared (as stock: slot 0 is the blank current one) */
+	SETTINGS_Defaults();
+	gStock.raw[SET_SQUELCH] = 6;
+	set_vfo(0, 14552500u, 885, 0, 0, 0, 4);
+	set_vfo(1, 43562500u, 0, 106, 1, 1, 7);
+	memset(gStock.vfo_raw, 0, sizeof gStock.vfo_raw);
+	CHECK(SETTINGS_SaveSettings() == 0 && SETTINGS_SaveVfos() == 0, "saved");
+	CHECK(flash[0x9000] == 0xFE && flash[0x8000] == 0xFE, "header bit 0 cleared");
+	CHECK(SETTINGS_Load() && gStock.raw[SET_SQUELCH] == 6 && gStock.vfo[0].freq == 14552500u
+	      && gStock.vfo[1].freq == 43562500u && gStock.vfo[1].tx_tone == 106, "saved values read back");
+
+	/* the same again: nothing written */
+	programs = 0;
+	SETTINGS_SaveSettings();
+	SETTINGS_SaveVfos();
+	CHECK(programs == 0, "unchanged: no write (%d)", programs);
+
+	/* many saves: the log wraps with one sector erase each, and the last value always reads back */
+	{
+		int bad = 0;
+		erases = 0;
+		for (int i = 0; i < 130; i++) {
+			gStock.raw[SET_SQUELCH] = (uint8_t)(i % 10);
+			gStock.vfo[0].freq = 14400000u + (uint32_t)i * 1250u;
+			if (SETTINGS_SaveSettings() || SETTINGS_SaveVfos()) {
+				bad++;
+				break;
+			}
+			SETTINGS_Load();
+			if (gStock.raw[SET_SQUELCH] != i % 10 || gStock.vfo[0].freq != 14400000u + (uint32_t)i * 1250u) {
+				if (!bad)
+					printf("save %d: squelch %u freq %lu\n", i, gStock.raw[SET_SQUELCH], (unsigned long)gStock.vfo[0].freq);
+				bad++;
+			}
+		}
+		CHECK(!bad, "130 saves read back");
+		CHECK(erases == 3 + 2, "erases: settings every 41 slots, VFOs every 60 (%d)", erases);
+	}
+
+	/* a failed write: reported, and the previous values still read */
+	gStock.raw[SET_SQUELCH] = 9;
+	SETTINGS_SaveSettings();
+	gStock.raw[SET_SQUELCH] = 2;
+	fail_next = 1;
+	CHECK(SETTINGS_SaveSettings() == -1, "failed write reported");
+	SETTINGS_Load();
+	CHECK(gStock.raw[SET_SQUELCH] == 9, "after a failed write the last good value reads");
+
+	/* a bad CRC on the current slot: defaults, as stock */
+	{
+		uint32_t i = 0;
+		while (flash[0x9000 + (i >> 3)] >> (i & 7) & 1 ? 0 : 1)
+			i++;
+		flash[0x9010 + i * 0x60] ^= 0x01;
+		CHECK(!SETTINGS_Load() || !gStock.have_settings, "bad CRC: settings default");
+	}
+
+	CHECK(outside == 0, "no erase or program outside 0x8000-0x9FFF (%d)", outside);
+
+	if (argc > 1 && !dump_checks(argv[1]))
+		printf("(dump %s not read)\n", argv[1]);
 
 	printf(fails ? "settings_host: %d FAILED\n" : "settings_host: all passed\n", fails);
 	return fails != 0;

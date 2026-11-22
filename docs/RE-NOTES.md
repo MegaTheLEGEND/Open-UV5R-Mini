@@ -294,6 +294,23 @@ GPIO4 the UHF one; PC7 and GPIO5 pick the receive front end. Bands 2 and 4 get n
 
 ### Calibration: in the external flash, not at `0x93000`
 
+### Settings and VFO logs (external flash)
+
+The stock app keeps its settings and the two VFOs as logs, one 4 KB sector each (checked on one radio's dump: all
+slots pass their CRC):
+
+| Log | Header (slot bitmap) | Slots | Slot | Wrap |
+| --- | --- | --- | --- | --- |
+| VFO A and B | `0x8000`, 8 bytes | from `0x8010`, 0x42 bytes: A (32), B (32), CRC-16/XMODEM of the 64 | written after the current one while it is ≤ 59 | erase `0x8000`, write slot 0 (`0x01E40836`) |
+| settings | `0x9000`, 6 bytes | from `0x9010`, 0x60 bytes: 64 setting bytes, 30 zero, CRC of the first 0x5E | while ≤ 40 | erase `0x9000`, write slot 0 (`sub_01E40620`) |
+
+The header is one bit a slot, bit 0 of byte 0 first; the first bit still set is the current slot (`sub_01E40386`).
+A save writes the next slot, then clears the current slot's bit (byte `index / 8` written with `FE FC F8 F0 E0 C0
+80 00`[index % 8], table `0x01E5C06D`). The settings save is skipped when the slot would be the same. Programs are
+split at 256-byte pages (`sub_01E40526`); erase is `06`, `20` + address, then status `05` until bit 0 clears
+(`sub_01E40586`). VFO record byte 18 is 4 on every airband record and 0 on all others in one radio's log: not the
+band index; not traced.
+
 The calibration is a plain (unencrypted) table at **external flash `0xF000`–`0xF27F`**, read row by row at
 power-on by `sub_01E48E22` (16-byte rows into RAM `0x6AF8` and on; read with `sub_01E3EAEE(addr, buf, len)`).
 Codeplug Studio has a field-by-field map (its `docs/reference/radios/baofeng/uv-5r-mini/calibration.md`, traced on

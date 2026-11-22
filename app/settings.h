@@ -7,11 +7,12 @@
  *
  *   VFO log      0x8010, slots of 0x42: VFO A (32 bytes), VFO B (32), CRC of the 64 bytes
  *   settings log 0x9010, slots of 0x60: 64 setting bytes, 30 zero bytes, CRC of the first 0x5E bytes
- *   (0x8000 and 0x9000 hold a 16-byte header each; meaning not known yet)
+ *   0x8000 and 0x9000: the slot bitmap of each log (stock sub_01E40386): one bit a slot, cleared once the slot is
+ *   written and superseded; the first bit still set is the current slot.
  *
  * VFO record: 0-7 frequency, one decimal digit a byte (MMM.MMMMM); 8-9 RX tone, 10-11 TX tone (app/tones.h);
- * 14 bits 6:5 shift (1 +, 2 -); 16 power (0 High, 1 Low); 17 bit 6 narrow; 18 band (the stock band index: 4 on
- * every airband slot in one radio's log, 0 elsewhere); 19 step index (the stock steps, RADIO_Steps; 0 = 2.5 kHz,
+ * 14 bits 6:5 shift (1 +, 2 -); 16 power (0 High, 1 Low); 17 bit 6 narrow; 18 not traced (4 on every airband slot
+ * in one radio's log, 0 on all others); 19 step index (the stock steps, RADIO_Steps; 0 = 2.5 kHz,
  * while on airband the stock app moved in 8.33 kHz steps); 20-26 offset, one digit a byte (MMM.MMMM).
  *
  * The stock app loads its defaults when the last slot's CRC is bad; so do we (SETTINGS_Load returns false).
@@ -22,12 +23,23 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define SETTINGS_VFO_LOG   0x8010u
-#define SETTINGS_VFO_END   0x9000u
-#define SETTINGS_VFO_SLOT  0x42u
-#define SETTINGS_SET_LOG   0x9010u
-#define SETTINGS_SET_END   0xA000u
-#define SETTINGS_SET_SLOT  0x60u
+/* Saving (writing the two logs back, as stock) is built in but OFF: with 0 there is no erase or program code for
+ * the external flash in the image at all (driver/extflash.c). Turn it on only when the owner of the radio agrees;
+ * it writes 0x8000-0x9FFF, between the channels and the calibration, and nothing else. */
+#ifndef SETTINGS_ENABLE_SAVE
+#define SETTINGS_ENABLE_SAVE 0
+#endif
+
+#define SETTINGS_VFO_HDR     0x8000u   /* slot bitmap, 8 bytes (stock reads 8) */
+#define SETTINGS_VFO_HDR_LEN 8u
+#define SETTINGS_VFO_LOG     0x8010u
+#define SETTINGS_VFO_SLOT    0x42u
+#define SETTINGS_VFO_MAX     59u       /* current slot past this: erase and start again (stock) */
+#define SETTINGS_SET_HDR     0x9000u   /* 6 bytes */
+#define SETTINGS_SET_HDR_LEN 6u
+#define SETTINGS_SET_LOG     0x9010u
+#define SETTINGS_SET_SLOT    0x60u
+#define SETTINGS_SET_MAX     40u
 
 /* Stock setting bytes we use (offsets in the 64-byte block). */
 enum {
@@ -48,6 +60,7 @@ typedef struct {
 
 typedef struct {
 	uint8_t    raw[64];      /* the setting bytes as stock keeps them */
+	uint8_t    vfo_raw[64];  /* the current VFO slot as read (bytes we don't model are written back unchanged) */
 	StockVfo_t vfo[2];       /* A, B */
 	bool       have_settings, have_vfo;
 } StockSettings_t;
@@ -56,6 +69,12 @@ extern StockSettings_t gStock;
 
 uint16_t SETTINGS_Crc16(const uint8_t *p, uint32_t n);
 bool     SETTINGS_DecodeVfo(const uint8_t rec[32], StockVfo_t *v);
+void     SETTINGS_EncodeVfo(uint8_t rec[32], const StockVfo_t *v);
+#if SETTINGS_ENABLE_SAVE
+/* Write gStock.raw / gStock.vfo[] as a new slot of their log. 0 = written or unchanged, -1 = failed. */
+int      SETTINGS_SaveSettings(void);
+int      SETTINGS_SaveVfos(void);
+#endif
 /* Read both logs. false if neither had a good last slot (then the defaults stand). */
 bool     SETTINGS_Load(void);
 /* Stock defaults for the setting bytes we use (settings.md), when the flash had none. */

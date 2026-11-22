@@ -104,7 +104,10 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 ## Still to do
 
 - **Confirm on a radio:** the function keys, the amp, the LEDs and the lamp.
-- **Persistence:** our own settings. Not in the external flash: writing there risks the channels and calibration.
+- **Persistence:** saving the stock settings and VFO logs is written (`SETTINGS_ENABLE_SAVE` in `app/settings.h`) but
+  **off**: with it off the image has no external-flash write code. On, every erase and program is refused outside
+  `0x8000`–`0x9FFF` (between the channels and the calibration) and read back. Only turn it on with the radio owner's
+  agreement and a fresh external-flash backup.
 - **Squelch:** the calibrated thresholds go to `REG_78` too; the BK4819's own squelch status could replace the RSSI
   compare once a radio shows which works better.
 - **Not built yet:** priority scan, low-battery warning, the timer tick instead of the

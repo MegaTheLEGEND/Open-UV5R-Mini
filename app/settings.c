@@ -5,6 +5,8 @@
 #include "driver/extflash.h"
 #else
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len);
+int  EXTFLASH_LogErase4K(uint32_t addr);
+int  EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len);
 #endif
 
 StockSettings_t gStock;
@@ -50,28 +52,27 @@ bool SETTINGS_DecodeVfo(const uint8_t rec[32], StockVfo_t *v)
 	return true;
 }
 
-static bool all_ff(const uint8_t *p, uint32_t n)
+/* The current slot of a log, as stock sub_01E40386 finds it: the header is a bitmap, one bit a slot, bit 0 of
+ * byte 0 first; written slots have their bit cleared, and the first bit still set is the current slot. */
+static unsigned current_index(uint32_t header, uint32_t header_len)
 {
-	while (n--)
-		if (*p++ != 0xFF)
-			return false;
-	return true;
+	uint8_t h[8];
+
+	EXTFLASH_Read(header, h, header_len);
+	for (unsigned i = 0; i < header_len * 8u; i++)
+		if (h[i >> 3] >> (i & 7u) & 1u)
+			return i;
+	return 0xFFu;
 }
 
-/* The last written slot of a log: the one before the first all-0xFF slot (or the last that fits). */
-static bool last_slot(uint32_t base, uint32_t end, uint32_t size, uint8_t *buf)
+static bool read_current(uint32_t header, uint32_t header_len, uint32_t first, uint32_t size, unsigned max,
+                         uint8_t *buf)
 {
-	uint32_t a, last = 0;
+	unsigned i = current_index(header, header_len);
 
-	for (a = base; a + size <= end; a += size) {
-		EXTFLASH_Read(a, buf, size);
-		if (all_ff(buf, size))
-			break;
-		last = a;
-	}
-	if (!last)
+	if (i > max + 1u)            /* stock writes slot max + 1 while the current one is at max */
 		return false;
-	EXTFLASH_Read(last, buf, size);
+	EXTFLASH_Read(first + i * size, buf, size);
 	return true;
 }
 
@@ -95,14 +96,111 @@ bool SETTINGS_Load(void)
 
 	SETTINGS_Defaults();
 	gStock.have_settings = gStock.have_vfo = false;
-	if (last_slot(SETTINGS_SET_LOG, SETTINGS_SET_END, SETTINGS_SET_SLOT, s)
+	if (read_current(SETTINGS_SET_HDR, SETTINGS_SET_HDR_LEN, SETTINGS_SET_LOG, SETTINGS_SET_SLOT, SETTINGS_SET_MAX, s)
 	    && SETTINGS_Crc16(s, 0x5E) == (uint16_t)(s[0x5E] | s[0x5F] << 8)) {
 		for (unsigned i = 0; i < sizeof gStock.raw; i++)
 			gStock.raw[i] = s[i];
 		gStock.have_settings = true;
 	}
-	if (last_slot(SETTINGS_VFO_LOG, SETTINGS_VFO_END, SETTINGS_VFO_SLOT, s)
-	    && SETTINGS_Crc16(s, 0x40) == (uint16_t)(s[0x40] | s[0x41] << 8))
+	if (read_current(SETTINGS_VFO_HDR, SETTINGS_VFO_HDR_LEN, SETTINGS_VFO_LOG, SETTINGS_VFO_SLOT, SETTINGS_VFO_MAX, s)
+	    && SETTINGS_Crc16(s, 0x40) == (uint16_t)(s[0x40] | s[0x41] << 8)) {
+		for (unsigned i = 0; i < sizeof gStock.vfo_raw; i++)
+			gStock.vfo_raw[i] = s[i];
 		gStock.have_vfo = SETTINGS_DecodeVfo(s, &gStock.vfo[0]) && SETTINGS_DecodeVfo(s + 32, &gStock.vfo[1]);
+	}
 	return gStock.have_settings || gStock.have_vfo;
 }
+
+/* ------------------------------------------------------------------------------------------- byte 18 */
+/* Byte 18 of a VFO record: in one radio's whole log it is 4 on every airband record and 0 on all others (145, 160,
+ * 435 MHz), so not the stock band index (that would be 1 at 435 MHz). Its meaning is not traced. Kept as stock wrote
+ * it while the frequency is unchanged; else 4 on airband, 0 elsewhere (unconfirmed for 200-400 MHz). */
+static uint8_t byte18_for(const uint8_t rec[32], uint32_t f)
+{
+	StockVfo_t old;
+
+	if (SETTINGS_DecodeVfo(rec, &old) && old.freq == f)
+		return rec[18];
+	return f >= 10800000u && f < 13600000u ? 4 : 0;
+}
+
+static void put_digits(uint8_t *p, int n, uint32_t v)
+{
+	for (int i = n - 1; i >= 0; i--) {
+		p[i] = (uint8_t)(v % 10u);
+		v /= 10u;
+	}
+}
+
+/* Only the fields we model change; every other byte of the record stays as stock wrote it. */
+void SETTINGS_EncodeVfo(uint8_t rec[32], const StockVfo_t *v)
+{
+	rec[18] = byte18_for(rec, v->freq);
+	put_digits(rec, 8, v->freq);
+	rec[8] = (uint8_t)v->rx_tone;
+	rec[9] = (uint8_t)(v->rx_tone >> 8);
+	rec[10] = (uint8_t)v->tx_tone;
+	rec[11] = (uint8_t)(v->tx_tone >> 8);
+	rec[14] = (uint8_t)((rec[14] & ~0x60u) | (v->shift > 0 ? 0x20u : v->shift < 0 ? 0x40u : 0u));
+	rec[16] = v->power ? 1 : 0;
+	rec[17] = (uint8_t)((rec[17] & ~0x40u) | (v->narrow ? 0x40u : 0u));
+	rec[19] = v->step;
+	put_digits(rec + 20, 7, v->offset / 10u);
+}
+
+#if SETTINGS_ENABLE_SAVE
+/* ------------------------------------------------------------------------------------------- saving
+ * As stock (settings sub_01E40620, VFOs at 0x01E40836): write the next slot after the current one, then clear the
+ * current slot's header bit (table 0x01E5C06D: FE FC F8 F0 E0 C0 80 00, one byte of the header); past the last slot
+ * erase the 4 KB sector and write slot 0. A slot the same as the current one is not written again. */
+static int log_append(uint32_t header, uint32_t header_len, uint32_t first, uint32_t size, unsigned max,
+                      const uint8_t *slot)
+{
+	static const uint8_t CLEAR[8] = { 0xFE, 0xFC, 0xF8, 0xF0, 0xE0, 0xC0, 0x80, 0x00 };
+	unsigned i = current_index(header, header_len);
+	uint8_t cur[SETTINGS_SET_SLOT];
+	uint32_t k;
+
+	if (i <= max) {
+		EXTFLASH_Read(first + i * size, cur, size);
+		for (k = 0; k < size && cur[k] == slot[k]; k++)
+			;
+		if (k == size)
+			return 0;
+		if (EXTFLASH_LogProgram(first + (i + 1u) * size, slot, size))
+			return -1;
+		return EXTFLASH_LogProgram(header + (i >> 3), &CLEAR[i & 7u], 1);
+	}
+	if (EXTFLASH_LogErase4K(header & ~0xFFFu))
+		return -1;
+	return EXTFLASH_LogProgram(first, slot, size);
+}
+
+int SETTINGS_SaveSettings(void)
+{
+	uint8_t s[SETTINGS_SET_SLOT];
+	uint16_t c;
+
+	for (unsigned i = 0; i < SETTINGS_SET_SLOT; i++)
+		s[i] = i < sizeof gStock.raw ? gStock.raw[i] : 0;
+	c = SETTINGS_Crc16(s, 0x5E);
+	s[0x5E] = (uint8_t)c;
+	s[0x5F] = (uint8_t)(c >> 8);
+	return log_append(SETTINGS_SET_HDR, SETTINGS_SET_HDR_LEN, SETTINGS_SET_LOG, SETTINGS_SET_SLOT, SETTINGS_SET_MAX, s);
+}
+
+int SETTINGS_SaveVfos(void)
+{
+	uint8_t s[SETTINGS_VFO_SLOT];
+	uint16_t c;
+
+	for (unsigned i = 0; i < 64; i++)
+		s[i] = gStock.vfo_raw[i];
+	SETTINGS_EncodeVfo(s, &gStock.vfo[0]);
+	SETTINGS_EncodeVfo(s + 32, &gStock.vfo[1]);
+	c = SETTINGS_Crc16(s, 0x40);
+	s[0x40] = (uint8_t)c;
+	s[0x41] = (uint8_t)(c >> 8);
+	return log_append(SETTINGS_VFO_HDR, SETTINGS_VFO_HDR_LEN, SETTINGS_VFO_LOG, SETTINGS_VFO_SLOT, SETTINGS_VFO_MAX, s);
+}
+#endif

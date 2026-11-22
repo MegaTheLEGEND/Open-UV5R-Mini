@@ -1,5 +1,6 @@
-/* Open-UV5R-Mini: external SPI flash, read only. See driver/extflash.h. */
+/* Open-UV5R-Mini: external SPI flash. See driver/extflash.h. */
 #include "driver/extflash.h"
+#include "app/settings.h"        /* SETTINGS_ENABLE_SAVE */
 #include "board.h"
 #include "driver/gpio.h"
 
@@ -62,3 +63,92 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 		*buf++ = xfer(0);
 	deselect();
 }
+
+#if SETTINGS_ENABLE_SAVE
+/* ------------------------------------------------------------------------------------------- writing (fenced)
+ * Standard SPI NOR commands, as the stock app sends them (sub_01E40586 erase: write enable 06, 20 + address, then
+ * status 05 until bit 0 clears; sub_01E404A6 program: 06, 02 + address + data). */
+static int fenced(uint32_t addr, uint32_t len)
+{
+	return len && addr >= EXTFLASH_LOG_LO && addr < EXTFLASH_LOG_HI && len <= EXTFLASH_LOG_HI - addr;
+}
+
+static void command(uint8_t c)
+{
+	select();
+	xfer(c);
+	deselect();
+}
+
+static int wait_idle(void)
+{
+	for (uint32_t i = 0; i < 2000000u; i++) {
+		uint8_t st;
+		select();
+		xfer(0x05);
+		st = xfer(0);
+		deselect();
+		if (!(st & 1u))
+			return 0;
+	}
+	return -1;
+}
+
+static void address(uint8_t c, uint32_t addr)
+{
+	xfer(c);
+	xfer((uint8_t)(addr >> 16));
+	xfer((uint8_t)(addr >> 8));
+	xfer((uint8_t)addr);
+}
+
+int EXTFLASH_LogErase4K(uint32_t addr)
+{
+	if ((addr & 0xFFFu) || !fenced(addr, 0x1000u) || EXTFLASH_ReadId() != EXTFLASH_ID)
+		return -1;
+	command(0x06);
+	select();
+	address(0x20, addr);
+	deselect();
+	return wait_idle();
+}
+
+static int program_page(uint32_t addr, const uint8_t *buf, uint32_t n)
+{
+	uint8_t back[16];
+
+	command(0x06);
+	select();
+	address(0x02, addr);
+	for (uint32_t i = 0; i < n; i++)
+		xfer(buf[i]);
+	deselect();
+	if (wait_idle())
+		return -1;
+	for (uint32_t i = 0; i < n; i += sizeof back) {          /* read back */
+		uint32_t m = n - i < sizeof back ? n - i : sizeof back;
+		EXTFLASH_Read(addr + i, back, m);
+		for (uint32_t j = 0; j < m; j++)
+			if (back[j] != buf[i + j])
+				return -1;
+	}
+	return 0;
+}
+
+int EXTFLASH_LogProgram(uint32_t addr, const uint8_t *buf, uint32_t len)
+{
+	if (!fenced(addr, len) || EXTFLASH_ReadId() != EXTFLASH_ID)
+		return -1;
+	while (len) {
+		uint32_t n = 0x100u - (addr & 0xFFu);
+		if (n > len)
+			n = len;
+		if (program_page(addr, buf, n))
+			return -1;
+		addr += n;
+		buf += n;
+		len -= n;
+	}
+	return 0;
+}
+#endif

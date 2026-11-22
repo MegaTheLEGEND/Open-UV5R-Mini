@@ -851,6 +851,53 @@ static void dw_tick(bool busy)
 	}
 }
 
+#if SETTINGS_ENABLE_SAVE
+/* ------------------------------------------------------------------------------------------- saving
+ * Only with SETTINGS_ENABLE_SAVE (app/settings.h). 3 s after the last key, the state goes back into the stock
+ * layout and both logs are written (an unchanged log is not written). A side in channel mode keeps its stock VFO
+ * record: only the work-mode bit says it is in channel mode (the channel number is not known to us yet). */
+static uint32_t s_save_ms;
+static bool     s_save_due;
+
+static void save_tick(bool busy)
+{
+	if (!s_save_due || busy || (s_save_ms += APP_TICK_MS) < 3000u)
+		return;
+	s_save_due = false;
+	side_save();
+	gStock.raw[SET_SQUELCH] = gVfo.squelch;
+	gStock.raw[SET_ACTIVE_SIDE] = s_active;
+	gStock.raw[SET_WORK_MODE] = (uint8_t)((s_side[0].mr ? 0x01u : 0u) | (s_side[1].mr ? 0x10u : 0u));
+	for (int i = 0; i < 2; i++) {
+		const Vfo_t *v = &s_side[i].vfo;
+		StockVfo_t *sv = &gStock.vfo[i];
+		if (s_side[i].mr)
+			continue;
+		sv->freq = v->freq;
+		sv->rx_tone = v->rx_tone;
+		sv->tx_tone = v->tx_tone;
+		sv->power = v->power == POWER_LOW;
+		sv->narrow = v->narrow;
+		sv->step = v->step;
+		if (v->tx_freq && v->tx_freq != v->freq) {
+			sv->shift = v->tx_freq > v->freq ? 1 : -1;
+			sv->offset = v->tx_freq > v->freq ? v->tx_freq - v->freq : v->freq - v->tx_freq;
+		} else {
+			sv->shift = 0;
+			sv->offset = 0;
+		}
+	}
+	if (!s_xf_ok || SETTINGS_SaveSettings() || (gStock.have_vfo && SETTINGS_SaveVfos()))
+		RADIO_Beep(300, 400);        /* not saved */
+}
+
+static void save_soon(void)
+{
+	s_save_due = true;
+	s_save_ms = 0;
+}
+#endif
+
 void APP_Init(void)
 {
 	BOARD_Init();
@@ -989,6 +1036,11 @@ void APP_Tick(void)
 		light_wake();
 	if (k != KEY_INVALID)
 		dw_end();                          /* keys act on the active side */
+#if SETTINGS_ENABLE_SAVE
+	if (k != KEY_INVALID)
+		save_soon();
+	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
+#endif
 	if (k != KEY_INVALID && !ptt) {
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
