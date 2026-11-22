@@ -760,6 +760,10 @@ static void key_main(KEY_Code_t k)
 		RADIO_Apply();
 	} else if (k == KEY_ACT_LAMP)
 		IO_Lamp(!IO_LampIsOn());
+	else if (k == KEY_ACT_AB || k == KEY_ACT_VM) {
+		menu_change(k == KEY_ACT_AB ? M_AB : M_MEM, 0);
+		s_redraw = true;
+	}
 }
 
 static void key_menu(KEY_Code_t k)
@@ -1015,7 +1019,7 @@ void APP_Init(void)
 	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
 	if (!KEYBOARD_IsPttPressed()) {
 		KEY_Code_t k0 = KEYBOARD_Poll();
-		if (k0 == KEY_DIRECT0 || k0 == KEY_DIRECT1 || k0 == KEY_DIRECT2 || k0 == KEY_DIRECT3)
+		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP)
 			KEYTEST_Run();
 	}
 	EXTFLASH_Init();

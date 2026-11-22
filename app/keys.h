@@ -1,17 +1,19 @@
 /* Open-UV5R-Mini: which scan code does what. The digits are certain (stock key table, RE-NOTES); the function keys
- * are guesses until someone presses each one on a radio running the key test (menu item KEY TEST). Change them here
+ * were checked on a radio with the key test (ROWS readout). Change them here
  * only. */
 #ifndef APP_KEYS_H
 #define APP_KEYS_H
 
 #include "driver/keyboard.h"
 
-#define KEY_ACT_MENU  KEY_FN1      /* 4th column, top row (guess) */
-#define KEY_ACT_UP    KEY_FN2      /* 4th column, 2nd row (guess) */
-#define KEY_ACT_DOWN  KEY_FN3      /* 4th column, 3rd row (guess) */
-#define KEY_ACT_EXIT  KEY_FN4      /* 4th column, bottom row (guess) */
+#define KEY_ACT_MENU  KEY_MENU
+#define KEY_ACT_UP    KEY_UP
+#define KEY_ACT_DOWN  KEY_DOWN
+#define KEY_ACT_EXIT  KEY_EXIT
 #define KEY_ACT_BW    KEY_STAR     /* toggles wide / narrow */
-#define KEY_ACT_LAMP  KEY_HASH     /* flashlight on / off */
+#define KEY_ACT_LAMP  KEY_LAMP     /* flashlight on / off */
+#define KEY_ACT_AB    KEY_AB       /* side A / B */
+#define KEY_ACT_VM    KEY_VM       /* VFO / channel mode */
 
 /* digit value of a key, or -1 */
 static inline int KEY_Digit(KEY_Code_t k)

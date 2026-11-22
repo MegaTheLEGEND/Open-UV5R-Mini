@@ -6,26 +6,31 @@
 #include <stdint.h>
 
 typedef enum {
-	KEY_DIRECT0 = 0,  /* direct to GND on PC2 (unknown key) */
-	KEY_DIRECT3 = 2,  /* direct on PC5 (unknown) */
-	KEY_DIRECT1 = 3,  /* direct on PC3 (unknown) */
-	KEY_DIRECT2 = 4,  /* direct on PC4 (unknown) */
-	KEY_STAR    = 5,  /* inferred */
-	KEY_0       = 6,  /* inferred */
-	KEY_HASH    = 7,  /* inferred */
-	KEY_FN4     = 8,  /* 4th column, PA6 row (unknown) */
+	/* Confirmed on a radio (key test ROWS readout, 2026-11-21). Keys wired to GND: */
+	KEY_DIRECT0 = 0,  /* PC2 to GND: no key found */
+	KEY_VM      = 2,  /* PC5 */
+	KEY_AB      = 3,  /* PC3 */
+	KEY_LAMP    = 4,  /* PC4, flashlight key */
+	/* row PA6 */
+	KEY_MENU    = 5,  /* PC5 */
+	KEY_UP      = 6,  /* PC4 */
+	KEY_DOWN    = 7,  /* PC3 */
+	KEY_EXIT    = 8,  /* PC2 */
+	/* row PA9 */
 	KEY_1       = 9,
 	KEY_2       = 10,
 	KEY_3       = 11,
-	KEY_FN1     = 12, /* 4th column, PA9 row (unknown) */
+	KEY_STAR    = 12,
+	/* row PA8 */
 	KEY_4       = 13,
 	KEY_5       = 14,
 	KEY_6       = 15,
-	KEY_FN2     = 16, /* 4th column, PA8 row (unknown) */
+	KEY_0       = 16,
+	/* row PA7 */
 	KEY_7       = 17,
 	KEY_8       = 18,
 	KEY_9       = 19,
-	KEY_FN3     = 20, /* 4th column, PA7 row (unknown) */
+	KEY_HASH    = 20,
 	KEY_INVALID = 0xFF,
 } KEY_Code_t;
 

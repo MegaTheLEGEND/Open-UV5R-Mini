@@ -579,3 +579,7 @@ Timing: one counter at `0x198C0+5214` (`h[2607]`), decremented on every call of 
 - VFO mode takes its PTT-ID from setting `0x0B` (0 off, 1 BOT, 2 EOT, 3 both); channel mode from channel byte 13
   (`sub_01E3F9D0`, into `0x198C0+5905`).
 
+
+### Keypad (checked on a radio, key test ROWS readout, 2026-11-21)
+
+Wired to GND: V/M on PC5, A/B on PC3, flashlight on PC4 (PC2: no key). Row PA6: Menu PC5, Up PC4, Down PC3, Exit PC2. Row PA7: 7 8 9 # on PC5..PC2. Row PA8: 4 5 6 0. Row PA9: 1 2 3 *. The scan needs a settle wait after switching a row: 1 us was too short, 20 us works.
