@@ -6,9 +6,9 @@ open firmware: a radio you can change in plain C.
 **Early, not ready for everyday use.** The firmware is written from scratch; the stock firmware is used only as a
 reference for how the hardware works. Our own build now runs on a radio as a **receiver**: screen, every key,
 receive audio and a working squelch were checked on one radio (2026-11-21). Transmit is built in but compiled off,
-settings are not saved. Our cable update mode has put stock V0.27 back on one radio (2026-11-22, at 9600 baud), but
-our own build can still only be loaded by the case-open ROM rescue route ([docs/TESTING.md](docs/TESTING.md)).
-Don't try it unless you can do that.
+settings are not saved. On one radio (2026-11-22) our build was installed from stock, and stock put back, with only
+the programming cable (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes). That is one radio: keep the
+case-open ROM rescue route ([docs/TESTING.md](docs/TESTING.md)) at hand, and don't try it unless you can use it.
 
 ## Which radio
 
@@ -41,7 +41,7 @@ the file against its pinned SHA-256 and refuses any other file.
 | Own firmware: screen and keypad (every key), main screen with A and B together and icons | **works on a radio** |
 | Own firmware: dual watch | written; **doesn't work on a radio yet** (bug) |
 | CHIRP and Codeplug Studio programming | to do: CHIRP's existing UV-5R Mini driver should work unchanged |
-| Own firmware: cable update mode (so a radio can always be flashed again) | **works on one radio at 9600** (2026-11-22): put stock back over the cable; 38400 and the official updater still to do |
+| Own firmware: cable update mode (so a radio can always be flashed again) | **works on one radio at 9600** (2026-11-22): ours installed and stock put back over the cable, both ways twice; 38400 and the official updater still to do |
 | Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
 | Own firmware: transmit, VOX, PTT-ID, roger beep | written, compiled off until receive and the PA calibration are proven |
 | Own firmware: saving settings | written, compiled off |

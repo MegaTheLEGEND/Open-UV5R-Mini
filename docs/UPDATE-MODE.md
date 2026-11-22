@@ -197,6 +197,10 @@ What it took on the way:
 | Reset back into our app right after the hand-over | watchdog off before the hand-over, as stock leaves it (`d3dcadf`) |
 | Loader died when told to switch to 38400 | flasher option `--loader-baud 9600` keeps the loader at the rate already working |
 
+**Both ways over the cable (2026-11-22, one radio).** With `--loader-baud 9600` and only the K1 cable, Sean installed
+our build from stock (`build/open-uv5r-mini.ufw`, made with `make ufw BASE_UFW=build/stock-flashable-reference.ufw`
+so it carries the loader) and put stock back from ours, twice each way. Slow (about 10 minutes) but it works.
+
 Still open:
 
 1. **38400 for the loader: a flasher and cable problem, not ours** (radio, 2026-11-22, Prolific K1 cable). Stock
