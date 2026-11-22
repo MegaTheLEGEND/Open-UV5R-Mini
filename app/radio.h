@@ -43,7 +43,8 @@ extern const uint8_t  RADIO_StepCount;
 void         RADIO_Init(void);
 void         RADIO_Apply(void);            /* after any change to gVfo */
 void         RADIO_Tick(void);             /* every 10 ms: squelch */
-bool         RADIO_ToneHeard(void);        /* the receive tone is heard (true with no receive tone) */
+bool         RADIO_ToneHeard(void);
+char         RADIO_DtmfPoll(void);         /* a DTMF character heard, or 0 */        /* the receive tone is heard (true with no receive tone) */
 RadioState_t RADIO_State(void);
 uint16_t     RADIO_Rssi(void);             /* last raw RSSI (dBm = raw / 2 - 160) */
 bool         RADIO_IsAm(void);

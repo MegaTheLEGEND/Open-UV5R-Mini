@@ -34,6 +34,10 @@ static int css_mode;     /* 0 off, 1 CTCSS, 2 DCS N, 3 DCS I */
 void BK4819_SetCtcss(uint16_t t, uint8_t l) { (void)l; css_mode = 1; css_tenths = t; }
 void BK4819_SetDcs(uint32_t w, bool inv, uint8_t l) { (void)l; css_mode = inv ? 3 : 2; css_word = w; }
 void BK4819_CssOff(void) { css_mode = 0; }
+static int dtmf_on, dtmf_code = -1;
+void BK4819_DtmfRxOn(void) { dtmf_on = 1; }
+void BK4819_DtmfRxOff(void) { dtmf_on = 0; }
+int BK4819_DtmfTake(void) { int c = dtmf_code; dtmf_code = -1; return c; }
 bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
@@ -269,6 +273,28 @@ int main(void)
 		a = DW_Tick(true, true, false, 10);
 		CHECK(a == DW_END && !DW_Peeking(), "busy (PTT, key): back at once");
 		CHECK(DW_Tick(false, false, false, 10) == DW_NONE, "off");
+	}
+
+	/* DTMF on receive: only with the squelch open, mapped as the BK4819 codes */
+	{
+		gVfo.squelch = 3;
+		gVfo.rx_tone = 0;
+		at(14552000u);
+		CHECK(dtmf_on, "DTMF decoder on in receive");
+		rssi = 60;
+		ticks(20);
+		dtmf_code = 5;
+		CHECK(RADIO_DtmfPoll() == 0, "no DTMF while shut");
+		rssi = 200;
+		ticks(5);
+		dtmf_code = 14;
+		CHECK(RADIO_DtmfPoll() == '*', "code 14 = *");
+		dtmf_code = 15;
+		CHECK(RADIO_DtmfPoll() == '#' && RADIO_DtmfPoll() == 0, "code 15 = #, then nothing");
+		dtmf_code = 10;
+		CHECK(RADIO_DtmfPoll() == 'A', "code 10 = A");
+		rssi = 60;
+		ticks(30);
 	}
 
 	/* battery: the stock scale and the calibrated thresholds (made up here) */

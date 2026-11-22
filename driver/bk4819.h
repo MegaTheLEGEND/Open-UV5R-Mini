@@ -63,6 +63,9 @@ void     BK4819_Sleep(void);
 void     BK4819_SetCtcss(uint16_t tenths, uint8_t level);
 void     BK4819_SetDcs(uint32_t word, bool inverted, uint8_t level);
 void     BK4819_CssOff(void);
+void     BK4819_DtmfRxOn(void);
+void     BK4819_DtmfRxOff(void);
+int      BK4819_DtmfTake(void);                      /* 0-15 or -1 */
 void     BK4819_CssScanStart(void);
 /* BK4819_TONE_DCS_N: *value = the 23-bit word heard; BK4819_TONE_CTCSS: *value = 0.1 Hz; BK4819_TONE_OFF: nothing */
 BK4819_Tone_t BK4819_CssScanRead(uint32_t *value);

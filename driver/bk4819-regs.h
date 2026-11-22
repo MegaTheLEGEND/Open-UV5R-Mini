@@ -8,6 +8,7 @@ enum BK4819_REGISTER_t {
 	BK4819_REG_07 = 0x07, /* tone/CTCSS frequency control */
 	BK4819_REG_08 = 0x08,
 	BK4819_REG_09 = 0x09, /* AGC gain table (16 entries) */
+	BK4819_REG_0B = 0x0B, /* DTMF / 5-tone code, bits 8-11 */
 	BK4819_REG_0C = 0x0C, /* status (interrupt pending, squelch) */
 	BK4819_REG_10 = 0x10, /* AGC tables 10..14 */
 	BK4819_REG_11 = 0x11,

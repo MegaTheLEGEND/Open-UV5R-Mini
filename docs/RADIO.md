@@ -15,6 +15,7 @@ code was copied from it.
 | Screen and keys | `app/app.c` | frequency, RSSI bar and dBm, squelch, volume, bandwidth, step and CTCSS; 6-digit frequency entry; menu |
 | Stock behaviours | `app/app.c` | from the stock settings: backlight time-out (5–20 s, first key press only lights the screen), transmit time-out (n × 15 s), busy lockout in VFO mode, key beep |
 | A/B and dual watch | `app/app.c`, `app/dualwatch.c` | two sides as stock (each with its own VFO or channel), MENU → A/B switches; with DUAL WATCH on (stock setting), the other side is checked while the active one is quiet and shown in green when it opens; PTT-B transmits on B; the other side shows in small text under the frequency |
+| DTMF | `app/radio.c`, `driver/bk4819.c` | DTMF heard while receiving shows above the key help (`DTMF 123*`), up to 16 characters, cleared after the stock hang time (3 s and up) |
 | Scanning | `app/scan.c` | MENU → SCAN: the VFO over the stock scan range (400–470 MHz by default), or the channels marked for scan; resume by the stock SCAN MODE (TIME 5 s, CARRIER 2 s after the signal goes, SEARCH stops); any key stops it, UP/DOWN turn it round |
 | Battery | `driver/adc.c`, `app/battery.c` | PB3 (ADC channel 6) about once a second, volts bottom right as the stock voltage screen shows them; red and blinking below the second calibrated threshold, as stock blinks its icon |
 | Board I/O | `driver/io.c` | amp PB8, RX LED PB9, TX LED PR0, lamp PB6 (pins from the stock code, unconfirmed) |
@@ -94,12 +95,13 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 11. Set MENU → RX TONE to the tone a second radio sends (e.g. 88.5). The speaker should open only with that tone.
     Then MENU → TONE SCAN and key the second radio: it should beep and show the tone. (A DCS code may show as its
     alias, e.g. D023I as D047N; stock does the same.)
-12. MENU → SCAN. `SCAN` shows top right and the frequency or channel moves; it stops on a signal (green), and any
+12. Send DTMF from a second radio (e.g. `123#`). It should show as `DTMF 123#` at the bottom, then clear.
+13. MENU → SCAN. `SCAN` shows top right and the frequency or channel moves; it stops on a signal (green), and any
     key ends it.
-13. Look under the frequency: the other side (B or A). MENU → A/B swaps them. Key a second radio on the other
+14. Look under the frequency: the other side (B or A). MENU → A/B swaps them. Key a second radio on the other
     side's frequency: it should show in green and play, then go back to the active side.
-14. Turn the power knob off. The radio should switch off.
-15. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
+15. Turn the power knob off. The radio should switch off.
+16. To test the cable route without writing: switch on holding PTT-A + `=`. Run `tools/uart_ping.py --port COM4`.
 
 ## Still to do
 

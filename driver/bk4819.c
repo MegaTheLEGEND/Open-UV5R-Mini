@@ -279,6 +279,31 @@ BK4819_Tone_t BK4819_CssScanRead(uint32_t *value)
 	return BK4819_TONE_OFF;
 }
 
+/* DTMF decoder on receive, as stock sub_01E4D40A: REG_24 = 0x8A7F, REG_3F = 0x0800 (only the "DTMF found"
+ * interrupt). Off as stock sub_01E4111C: REG_24 bit 5 cleared. */
+void BK4819_DtmfRxOn(void)
+{
+	BK4819_WriteRegister(BK4819_REG_24, 0x8A7F);
+	BK4819_WriteRegister(BK4819_REG_3F, 0x0800);
+}
+
+void BK4819_DtmfRxOff(void)
+{
+	BK4819_WriteRegister(BK4819_REG_24, (uint16_t)(BK4819_ReadRegister(BK4819_REG_24) & ~0x20u));
+	BK4819_WriteRegister(BK4819_REG_3F, 0x0000);
+}
+
+/* A DTMF code heard since the last call (0-15: 0-9, A, B, C, D, *, #), or -1. Stock: REG_02 cleared, then the code
+ * in REG_0B bits 8-11 (0x01E53CC0). */
+int BK4819_DtmfTake(void)
+{
+	uint16_t f = BK4819_TakeInterrupts();
+
+	if (!(f & 0x0800u))
+		return -1;
+	return (BK4819_ReadRegister(BK4819_REG_0B) >> 8) & 0xF;
+}
+
 void BK4819_CssOff(void)
 {
 	BK4819_WriteRegister(BK4819_REG_51, 0x0000);

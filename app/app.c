@@ -73,6 +73,10 @@ static void side_save(void);
 static bool     s_tscan;                 /* tone scan running */
 static uint16_t s_tscan_last, s_tscan_ms;
 static uint8_t  s_tscan_same;
+static char     s_dtmf[17];              /* DTMF heard on receive */
+static uint8_t  s_dtmf_len;
+static uint32_t s_dtmf_ms;
+static bool     s_dtmf_dirty;
 static void     draw_tscan(void);
 static void     tscan_start(void);
 static void side_switch(void);
@@ -310,10 +314,44 @@ static void draw_scan(void)
 		ST7735S_FillRect(100, 12, 28, 8, BLACK);
 }
 
+/* DTMF heard: shown above the key help for the stock hang time (setting 0x39: min(n, 7) + 3 s), up to 16 characters
+ * as the stock buffer. */
+static void dtmf_tick(void)
+{
+	char c = RADIO_DtmfPoll();
+	uint8_t hang = gStock.raw[0x39] > 7 ? 7 : gStock.raw[0x39];
+
+	if (c) {
+		if (s_dtmf_len >= 16)
+			s_dtmf_len = 0;
+		s_dtmf[s_dtmf_len++] = c;
+		s_dtmf[s_dtmf_len] = 0;
+		s_dtmf_ms = 0;
+		s_dtmf_dirty = true;
+	} else if (s_dtmf_len && (s_dtmf_ms += APP_TICK_MS) >= (hang + 3u) * 1000u) {
+		s_dtmf_len = 0;
+		s_dtmf[0] = 0;
+		s_dtmf_dirty = true;
+	}
+}
+
+static void draw_dtmf(void)
+{
+	if (!s_dtmf_dirty && !s_redraw)
+		return;
+	s_dtmf_dirty = false;
+	ST7735S_FillRect(0, 110, 128, 9, BLACK);
+	if (s_dtmf_len) {
+		UI_PrintString("DTMF", 0, 110, GREY, BLACK, 1);
+		UI_PrintString(s_dtmf, 28, 110, YELLOW, BLACK, 1);
+	}
+}
+
 static void draw_main(void)
 {
 	if (s_redraw)
 		draw_main_static();
+	draw_dtmf();
 	draw_battery();
 	draw_scan();
 	draw_tscan();
@@ -1011,6 +1049,7 @@ void APP_Tick(void)
 	RADIO_Tick();
 	tot_tick();
 	tscan_tick();
+	dtmf_tick();
 	dw_tick(ptt || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();

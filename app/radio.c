@@ -116,6 +116,7 @@ void RADIO_Apply(void)
 	s_tone_count = s_tone_miss = 0;
 	s_tone_heard = gVfo.rx_tone == 0;
 	BK4819_RxOn();
+	BK4819_DtmfRxOn();
 	squelch_levels();
 	s_state = RADIO_RX;
 	s_open_count = s_close_count = 0;
@@ -219,6 +220,18 @@ void RADIO_Tick(void)
 }
 
 RadioState_t RADIO_State(void) { return s_state; }
+
+/* A DTMF character heard on receive, or 0 (only while the squelch is open, so noise can't make codes). */
+char RADIO_DtmfPoll(void)
+{
+	static const char MAP[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', '*', '#' };
+	int c;
+
+	if (s_state != RADIO_RX_OPEN)
+		return 0;
+	c = BK4819_DtmfTake();
+	return c < 0 ? 0 : MAP[c & 15];
+}
 uint16_t RADIO_Rssi(void) { return s_rssi; }
 
 /* ------------------------------------------------------------------------------------------- transmit
@@ -253,6 +266,7 @@ bool RADIO_StartTx(void)
 	if (s_state == RADIO_TX || !RADIO_TxAllowed())
 		return false;
 	audio(false);
+	BK4819_DtmfRxOff();
 	s_state = RADIO_TX;
 	BK4819_SetFrequency(tx_freq());
 	BK4819_SetFilterBandwidth(gVfo.narrow);
