@@ -8,6 +8,7 @@
 #include "app/calib.h"
 #include "app/channels.h"
 #include "app/dualwatch.h"
+#include "app/dtmfseq.h"
 #include "app/scan.h"
 #include "app/vox.h"
 #include "app/tones.h"
@@ -368,6 +369,12 @@ int main(void)
 		      reg30 == 0xC3FA && amp, "tone 19 = 1750 Hz (stock 175 x 1032444 / 10000), heard locally, mic out");
 		RADIO_TxToneOff();
 		CHECK(!tx_tones_on && !tx_mon && reg30 == 0xC1FE && !RADIO_TxToneOn(), "tone off: back to the mic");
+		RADIO_TxTone(1, true);
+		tx_mon = 0;              /* would be set again if the monitor were switched for the next code */
+		RADIO_TxToneSilence();
+		CHECK(tx_tones_on == 2 && !tx_w1 && !tx_w2, "silence between codes leaves the generator on");
+		CHECK(RADIO_TxTone(2, true) && tx_w1 == 0x1C1C && tx_w2 == 0x35E1 && !tx_mon, "next code: only the pair");
+		RADIO_TxToneOff();
 		tx_log_n = 0;
 		delay_ms = 0;
 		RADIO_Roger();
@@ -437,6 +444,32 @@ int main(void)
 		gVfo.rx_only = false;
 	}
 
+	/* PTT-ID sequence: wait, each code for the on time, silence for the off time, ends at 0xFF or 16 codes */
+	{
+		static const uint8_t up[16] = { 1, 2, 3, 0xFF };
+		static const uint8_t full[16] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+		int seen[64], n = 0, c, t;
+		CHECK(DTMFSEQ_TimeMs(0) == 50 && DTMFSEQ_TimeMs(1) == 100 && DTMFSEQ_TimeMs(5) == 500 &&
+		      DTMFSEQ_TimeMs(9) == 100, "code times 50-500 ms, out of range = 100 ms");
+		CHECK(DTMFSEQ_WaitMs(0) == 100 && DTMFSEQ_WaitMs(3) == 400, "wait 100 ms + 100 ms x setting 0x0C");
+		CHECK(!DTMFSEQ_Start((const uint8_t[16]){ 0xFF }, 0, 100, 100) && !DTMFSEQ_Busy(), "empty code: nothing");
+		CHECK(DTMFSEQ_Start(up, 200, 100, 50) && DTMFSEQ_Busy(), "up code starts");
+		for (t = 10; t <= 2000 && n < 64; t += 10)
+			if ((c = DTMFSEQ_Tick(10)) != DTMFSEQ_NONE)
+				seen[n++] = c, seen[n++] = t;
+		/* code 1 at 200 ms, gap at 300, code 2 at 350, gap 450, code 3 at 500, done at 600 */
+		CHECK(n == 12 && seen[0] == 1 && seen[1] == 200 && seen[2] == DTMFSEQ_GAP && seen[3] == 300 &&
+		      seen[4] == 2 && seen[5] == 350 && seen[8] == 3 && seen[9] == 500 && seen[10] == DTMFSEQ_DONE &&
+		      seen[11] == 600 && !DTMFSEQ_Busy(), "up code timing (%d events)", n / 2);
+		DTMFSEQ_Start(full, 0, 50, 50);
+		for (n = 0, t = 0; t < 400 && DTMFSEQ_Busy(); t++)
+			n += DTMFSEQ_Tick(10) >= 0;
+		CHECK(n == 16 && !DTMFSEQ_Busy(), "16 codes at most (%d)", n);
+		DTMFSEQ_Start(up, 0, 50, 50);
+		DTMFSEQ_Stop();
+		CHECK(!DTMFSEQ_Busy() && DTMFSEQ_Tick(10) == DTMFSEQ_NONE, "stop");
+	}
+
 	/* channel records */
 	{
 		static const uint8_t rec[32] = {
@@ -447,6 +480,10 @@ int main(void)
 		Channel_t ch;
 		CHECK(CHANNEL_Decode(rec, &ch) && ch.rx == 46256250u && ch.tx == 46256250u, "BCD frequencies");
 		CHECK(ch.tx_tone == 885 && ch.rx_tone == 0, "tones %u %u", ch.tx_tone, ch.rx_tone);
+		CHECK(ch.ptt_id == 0, "PTT-ID off");
+		memcpy(r2, rec, 32);
+		r2[13] = 3;
+		CHECK(CHANNEL_Decode(r2, &ch) && ch.ptt_id == 3, "PTT-ID from byte 13");
 		memcpy(r2, rec, 32);
 		r2[8] = 0x6A;            /* index 106 = D023I */
 		r2[10] = 0x01;           /* index 1 = D023N */

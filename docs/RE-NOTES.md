@@ -552,3 +552,20 @@ LCD PB4 and PB5 (PB5 = pin 48, LCD chip select), power PB10 and PB11, PTT-B PA12
 `sub_01E510A2(code)` is called only from the key handler during transmit (`0x01E5457E`): digits give their own code,
 four other keys give 12-15. `sub_01E400D6(n)` is the amp vote: odd n = a source on, even = off (9/10 = tones).
 
+### PTT-ID (stock `sub_01E4DABA`, sent by `0x01E531D8`)
+
+| Where | What |
+| --- | --- |
+| external `0xA000`, 11 bytes (read at boot by `sub_01E46F3E` into RAM `0x198C0+559`) | 0-4 own ID codes (0xFF ends), 5 unknown, 6 PTT-ID (bit 0 up code, bit 1 down code; 0xFF on a radio seen), 7 code time, 8 gap time (both 0-5, 6+ read as 1), 9 separator (0-5 = A-D, *, #; 6+ as 4), 10 group call code (0-6 = none, A-D, *, #; 7+ as 5) |
+| external `0xA020`, 20 x 16 bytes | group call list: 3 codes, 2 x 0xFF, name in GBK (a radio's own: "成员1"...) |
+| external `0xA180` / `0xA190`, 16 bytes each | up code (sent at TX start) and down code (at PTT release), codes 0-15, 0xFF ends |
+| channel byte 12 / 13 | signal code (group call entry) / PTT-ID 0-3; the channel bit and the `0xA000` byte 6 bit are ANDed (`0x01E507B0`, `0x01E508C2`) |
+| setting `0x0C` | wait before the up code: (n x 50 + 50) counts |
+| setting `0x09` | DTMF sidetone: bit 0 keys, bit 1 PTT-ID (0 off, 1 DT, 2 ANI, 3 both) |
+
+Timing: one counter at `0x198C0+5214` (`h[2607]`), decremented on every call of the stock timer routine
+(`0x01E55246`, outside its divide-by-5 10 ms part), taken to be 2 ms: wait 100 ms + 100 ms x n, code and gap
+{5, 10, 20, 30, 40, 50} x 5 counts (table `0x01E6556E`) = 50-500 ms. Each code: the pair for the code time, then
+`(0, 0)` for the gap time; after the last code (16 at most or 0xFF) a 10 ms wait and everything off. The monitor
+(TX mode 4, AF 241, amp source 4) is switched on once at the start when setting `0x09` bit 1 is set.
+

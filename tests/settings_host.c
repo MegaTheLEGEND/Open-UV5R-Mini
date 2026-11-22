@@ -75,6 +75,9 @@ static int dump_checks(const char *path)
 	memcpy(orig, flash, FLASH_SIZE);
 
 	CHECK(SETTINGS_Load() && gStock.have_settings && gStock.have_vfo, "the dump's logs read");
+	CHECK(gStock.ani[7] < 6 && gStock.ani[8] < 6 && gStock.ani[9] < 6 && gStock.ani[10] < 7 &&
+	      (gStock.up_code[0] < 16 || gStock.up_code[0] == 0xFF) && (gStock.down_code[0] < 16 || gStock.down_code[0] == 0xFF),
+	      "dump: the ANI block and up / down codes are in the stock ranges");
 	printf("dump: squelch %u, dual watch %u, active side %c, work mode %02X; A %lu, B %lu (10 Hz)\n",
 	       gStock.raw[SET_SQUELCH], gStock.raw[SET_DUAL_WATCH], 'A' + gStock.raw[SET_ACTIVE_SIDE],
 	       gStock.raw[SET_WORK_MODE], (unsigned long)gStock.vfo[0].freq, (unsigned long)gStock.vfo[1].freq);

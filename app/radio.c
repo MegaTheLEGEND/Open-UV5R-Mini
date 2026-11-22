@@ -302,12 +302,16 @@ static const uint16_t DTMF_HZ[16][2] = {
 };
 /* codes 17-20, stock bytes in 10 Hz at 0x01E654A2 */
 static const uint16_t SINGLE_HZ[4] = { 1000, 1450, 1750, 2100 };
-static bool s_txtone, s_txmon;
+static bool s_txtone, s_txmon, s_txdual;
 
 bool RADIO_TxTone(uint8_t code, bool monitor)
 {
 	if (s_state != RADIO_TX || (code > 15 && (code < 17 || code > 20)))
 		return false;
+	if (s_txtone && s_txdual && code < 16 && s_txmon == monitor) {     /* the next code of a sequence */
+		BK4819_TxTonePair(BK4819_ToneWord(DTMF_HZ[code][0]), BK4819_ToneWord(DTMF_HZ[code][1]));
+		return true;
+	}
 	RADIO_TxToneOff();
 	BK4819_TxTonesOn(code < 16);
 	if (monitor) {
@@ -319,8 +323,15 @@ bool RADIO_TxTone(uint8_t code, bool monitor)
 	else
 		BK4819_TxTonePair((uint16_t)((uint32_t)(SINGLE_HZ[code - 17] / 10u) * 1032444u / 10000u), 0);   /* stock sub_01E40B52 */
 	s_txtone = true;
+	s_txdual = code < 16;
 	s_txmon = monitor;
 	return true;
+}
+
+void RADIO_TxToneSilence(void)
+{
+	if (s_txtone)
+		BK4819_TxTonePair(0, 0);
 }
 
 void RADIO_TxToneOff(void)

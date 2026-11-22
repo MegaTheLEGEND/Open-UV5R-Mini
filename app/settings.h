@@ -44,7 +44,7 @@
 /* Stock setting bytes we use (offsets in the 64-byte block). */
 enum {
 	SET_SQUELCH = 0x00, SET_POWER_SAVE = 0x01, SET_BACKLIGHT = 0x03, SET_DUAL_WATCH = 0x04, SET_TOT = 0x05,
-	SET_BEEP = 0x06, SET_DTMF_MON = 0x09 /* bit 0: hear DTMF sent */, SET_SCAN_MODE = 0x0A, SET_BCL = 0x0F, SET_AUTO_LOCK = 0x10, SET_STE = 0x14, SET_ROGER = 0x17,
+	SET_BEEP = 0x06, SET_DTMF_MON = 0x09 /* sidetone: bit 0 keys, bit 1 PTT-ID */, SET_SCAN_MODE = 0x0A, SET_BCL = 0x0F, SET_AUTO_LOCK = 0x10, SET_STE = 0x14, SET_ROGER = 0x17,
 	SET_ACTIVE_SIDE = 0x18, SET_WORK_MODE = 0x1A, SET_KEY_LOCK = 0x1B,
 };
 
@@ -63,7 +63,16 @@ typedef struct {
 	uint8_t    vfo_raw[64];  /* the current VFO slot as read (bytes we don't model are written back unchanged) */
 	StockVfo_t vfo[2];       /* A, B */
 	bool       have_settings, have_vfo;
+	/* External 0xA000 (stock reads 11 bytes into RAM at boot, sub_01E46F3E): 0-4 own ID codes (0xFF ends), 5 ?,
+	 * 6 PTT-ID (bit 0 up code, bit 1 down code), 7 code time, 8 gap time (app/dtmfseq.h), 9 separator (0-5 = A, B,
+	 * C, D, *, #), 10 group call code (0-6 = none, A-D, *, #). Names as CHIRP's UV-5R Mini driver. */
+	uint8_t    ani[11];
+	uint8_t    up_code[16], down_code[16];   /* external 0xA180 / 0xA190, codes 0-15, 0xFF ends */
 } StockSettings_t;
+
+#define SETTINGS_ANI      0xA000u
+#define SETTINGS_UP_CODE  0xA180u
+#define SETTINGS_DOWN_CODE 0xA190u
 
 extern StockSettings_t gStock;
 

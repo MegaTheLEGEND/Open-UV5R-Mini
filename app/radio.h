@@ -34,6 +34,7 @@ typedef struct {
 	uint8_t      power;       /* POWER_HIGH / POWER_LOW (app/calib.h) */
 	uint32_t     tx_freq;     /* 10 Hz; 0 = same as freq */
 	bool         rx_only;     /* a channel with no TX frequency */
+	uint8_t      ptt_id;      /* channel byte 13: bit 0 send the up code at TX start, bit 1 the down code at the end */
 } Vfo_t;
 
 extern Vfo_t gVfo;
@@ -58,6 +59,7 @@ void         RADIO_Beep(uint16_t hz, uint16_t ms);
  * 0x09 bit 0). Does nothing unless transmitting. */
 bool         RADIO_TxTone(uint8_t code, bool monitor);
 void         RADIO_TxToneOff(void);
+void         RADIO_TxToneSilence(void);        /* between the codes of a sequence (generator left on) */
 bool         RADIO_TxToneOn(void);
 /* Roger beep at the end of transmit (stock sub_01E4DCC2): 1000 Hz then 850 Hz, 40 ms each, mic out. Blocks 80 ms. */
 void         RADIO_Roger(void);

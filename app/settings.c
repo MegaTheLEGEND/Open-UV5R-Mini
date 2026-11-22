@@ -96,6 +96,9 @@ bool SETTINGS_Load(void)
 
 	SETTINGS_Defaults();
 	gStock.have_settings = gStock.have_vfo = false;
+	EXTFLASH_Read(SETTINGS_ANI, gStock.ani, sizeof gStock.ani);
+	EXTFLASH_Read(SETTINGS_UP_CODE, gStock.up_code, sizeof gStock.up_code);
+	EXTFLASH_Read(SETTINGS_DOWN_CODE, gStock.down_code, sizeof gStock.down_code);
 	if (read_current(SETTINGS_SET_HDR, SETTINGS_SET_HDR_LEN, SETTINGS_SET_LOG, SETTINGS_SET_SLOT, SETTINGS_SET_MAX, s)
 	    && SETTINGS_Crc16(s, 0x5E) == (uint16_t)(s[0x5E] | s[0x5F] << 8)) {
 		for (unsigned i = 0; i < sizeof gStock.raw; i++)

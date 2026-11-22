@@ -39,6 +39,7 @@ bool CHANNEL_Decode(const uint8_t rec[CHANNEL_SIZE], Channel_t *ch)
 	ch->rx_tone = tone(rec + 8);
 	ch->tx_tone = tone(rec + 10);
 	ch->low_power = (rec[14] & 3u) != 0;
+	ch->ptt_id = rec[13] & 3u;
 	ch->narrow = (rec[15] & 0x40u) != 0;
 	ch->scan = (rec[15] & 0x04u) != 0;
 	for (i = 0; i < 12 && rec[20 + i] && rec[20 + i] != 0xFF; i++)

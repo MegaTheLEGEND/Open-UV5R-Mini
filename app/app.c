@@ -14,6 +14,7 @@
 #include "app/keytest.h"
 #include "app/radio.h"
 #include "app/dualwatch.h"
+#include "app/dtmfseq.h"
 #include "app/scan.h"
 #include "app/vox.h"
 #include "app/settings.h"
@@ -57,6 +58,47 @@ static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
 static uint16_t s_tail_ms;     /* transmit still on after PTT was let go */
+static bool     s_eot;         /* the down code is being sent after PTT was let go */
+
+/* PTT-ID: the up (bit 0) or down (bit 1) code if the channel and the ANI block both ask for it (stock 0x01E507B0 /
+ * 0x01E508C2: channel byte 13 bit, then the ANI byte 6 bit). Stock does something else when the channel asks and
+ * the ANI byte doesn't (a group call path, not followed here). */
+static bool ptt_id_start(uint8_t bit)
+{
+	const uint8_t *codes = bit == 1 ? gStock.up_code : gStock.down_code;
+
+	if (!(gVfo.ptt_id & bit) || !(gStock.ani[6] & bit))
+		return false;
+	return DTMFSEQ_Start(codes, bit == 1 ? DTMFSEQ_WaitMs(gStock.raw[0x0C]) : 0, DTMFSEQ_TimeMs(gStock.ani[7]),
+	                     DTMFSEQ_TimeMs(gStock.ani[8]));
+}
+
+/* transmit end, the stock order: roger, tail tone, then 400 ms more (sub_01E4DCC2) */
+static void tx_release(void)
+{
+	if (gStock.raw[SET_ROGER])
+		RADIO_Roger();
+	if (gStock.raw[SET_STE])
+		RADIO_TxTail();
+	s_tail_ms = RADIO_TX_TAIL_MS;
+}
+
+static void ptt_id_tick(void)
+{
+	int c = DTMFSEQ_Tick(APP_TICK_MS);
+
+	if (c >= 0)
+		RADIO_TxTone((uint8_t)c, (gStock.raw[SET_DTMF_MON] & 2u) != 0);
+	else if (c == DTMFSEQ_GAP)
+		RADIO_TxToneSilence();
+	else if (c == DTMFSEQ_DONE) {
+		RADIO_TxToneOff();
+		if (s_eot) {
+			s_eot = false;
+			tx_release();
+		}
+	}
+}
 
 /* The two sides, A and B, as stock has them. gVfo, s_mr, s_ch and s_ch_name are the active side's working copy;
  * s_side[] holds both and is brought up to date before the other side is tuned. */
@@ -508,6 +550,7 @@ static void channel_show(int n)
 	gVfo.rx_tone = ch.rx_tone;
 	gVfo.tx_tone = ch.tx_tone;
 	gVfo.power = ch.low_power ? POWER_LOW : POWER_HIGH;
+	gVfo.ptt_id = ch.ptt_id;
 	gVfo.narrow = ch.narrow;
 	RADIO_Apply();
 	s_shown_status = -1;
@@ -1037,8 +1080,10 @@ void APP_Tick(void)
 		dw_end();
 		tscan_stop();
 	}
-	if (ptt && s_tail_ms) {             /* pressed again during the tail: start over */
+	if (ptt && !s_ptt_down && (s_tail_ms || s_eot)) {   /* pressed again during the tail: start over */
 		s_tail_ms = 0;
+		s_eot = false;
+		DTMFSEQ_Stop();
 		RADIO_EndTx();
 	}
 	if (ptt && !s_ptt_down) {
@@ -1047,20 +1092,27 @@ void APP_Tick(void)
 		s_tx_refused = tx_busy_locked() || !RADIO_StartTx();
 		if (s_tx_refused)
 			RADIO_Beep(400, 150);
+		else
+			ptt_id_start(1);
 		s_shown_state = -1;
 	} else if (!ptt && s_ptt_down) {
-		if (RADIO_State() == RADIO_TX) {   /* stock sub_01E4DCC2: roger, tail tone, then 400 ms more */
-			if (gStock.raw[SET_ROGER])
-				RADIO_Roger();
-			if (gStock.raw[SET_STE])
-				RADIO_TxTail();
-			s_tail_ms = RADIO_TX_TAIL_MS;
+		if (RADIO_State() == RADIO_TX) {
+			DTMFSEQ_Stop();                /* an up code still going is cut short */
+			RADIO_TxToneOff();
+			s_eot = ptt_id_start(2);
+			if (!s_eot)
+				tx_release();
 		}
 		s_tx_refused = s_tot_hit = false;
 		s_shown_state = -1;
 	}
 	s_ptt_down = ptt;
 
+	if (RADIO_State() != RADIO_TX) {
+		DTMFSEQ_Stop();
+		s_eot = false;
+	} else
+		ptt_id_tick();
 	if (s_tail_ms && (s_tail_ms = s_tail_ms > APP_TICK_MS ? (uint16_t)(s_tail_ms - APP_TICK_MS) : 0) == 0)
 		RADIO_EndTx();
 	RADIO_Tick();
@@ -1098,7 +1150,9 @@ void APP_Tick(void)
 
 	k = key_event();
 	/* while transmitting, a held digit, * or # sends its DTMF pair (stock 0x01E5457E / 0x01E5072C) */
-	if (RADIO_State() == RADIO_TX) {
+	if (RADIO_State() == RADIO_TX && DTMFSEQ_Busy())
+		k = KEY_INVALID;                   /* keys wait while a PTT-ID is sent */
+	else if (RADIO_State() == RADIO_TX) {
 		int d = KEY_Digit(s_key_held);
 
 		if (s_key_held == KEY_STAR)

@@ -4,6 +4,7 @@
  * uv-5r-mini/channel-record.md describes it; it matches a radio's own flash):
  *   0-3 RX frequency, 4-7 TX frequency: little-endian BCD in 10 Hz units; TX FF FF FF FF = receive only
  *   8-9 RX tone, 10-11 TX tone: u16; 0 or 0xFFFF none; >= 0x258 CTCSS in 0.1 Hz; else a DCS index (app/tones.h)
+ *   12 signal code (group call list entry), 13 PTT-ID: 0 off, 1 at TX start, 2 at the end, 3 both
  *   14 bits 0-1: 0 = High power, else Low
  *   15 bit 6: 1 = narrow; bit 2: scan
  *   20-31 name, ASCII, ends at 0x00 or 0xFF
@@ -22,6 +23,7 @@ typedef struct {
 	uint32_t rx, tx;          /* 10 Hz; tx 0 = receive only */
 	uint16_t rx_tone, tx_tone;    /* app/tones.h encoding; 0 = none */
 	bool     low_power, narrow, scan;
+	uint8_t  ptt_id;          /* 0-3 */
 	char     name[13];
 } Channel_t;
 
