@@ -39,18 +39,21 @@ decoded with their names. If the external flash doesn't answer, MEMORY stays on 
 
 ## Keys
 
-The digits are certain. The function keys are **guesses** (`app/keys.h`) until someone presses each one in KEY TEST
-and notes its code:
+Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 2026-11-21). Codes are in
+`driver/keyboard.h`, actions in `app/keys.h`:
 
-| Key (code) | Guess | Action |
-| --- | --- | --- |
-| 4th column, top (12) | MENU | open the menu; in the menu, edit / confirm; in frequency entry, accept |
-| 4th column, 2nd (16) | UP | step up; menu up |
-| 4th column, 3rd (20) | DOWN | step down; menu down |
-| 4th column, bottom (8) | EXIT | cancel entry; leave the menu |
-| `*` (5) | | wide / narrow |
-| `#` (7) | | lamp |
-| 0–9 | | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz) |
+| Key (code) | Action |
+| --- | --- |
+| MENU (5) | open the menu; in the menu, edit / confirm; in frequency entry, accept |
+| UP (6) / DOWN (7) | step up / down; menu up / down |
+| EXIT (8) | cancel entry; leave the menu |
+| `*` (12) | wide / narrow |
+| A/B (3) | side A / B |
+| V/M (2) | VFO / channel mode |
+| flashlight (4) | lamp on / off |
+| 0–9 | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz) |
+
+Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
 
 ## Transmit
 
@@ -84,11 +87,11 @@ changes the app area, `0x4000`–`0x7C000`. Put it on with `uv5r_flash_ours.ps1`
 
 1. Switch on. You should see the frequency or channel the stock firmware was last on, and a signal bar.
 2. The status line should not say `NOCAL`. If it does, the external flash didn't answer.
-3. Press each key on the 4th column and note what happens.
-4. Open KEY TEST from the menu if the keys are wrong. Write down the code for MENU, UP, DOWN and EXIT.
+3. Press each key and check it does what the Keys table says.
+4. If a key is wrong, hold A/B at power-on to open KEY TEST and note its ROWS readout.
 5. Set squelch 0 (MENU → SQUELCH). You should hear noise from the speaker, and the green LED should light.
 6. Set squelch 3. Key a second radio on 145.520: the speaker should open, then close when it stops.
-7. Press `#`. The lamp should toggle.
+7. Press the flashlight key. The lamp should toggle.
 8. MENU → MEMORY. UP/DOWN should walk your stock channels, with their names.
 9. Press PTT. It should beep and say `NO TX` (transmit is compiled off).
 10. Look at the bottom right: the battery volts. Compare with the stock power-on voltage screen. If it shows

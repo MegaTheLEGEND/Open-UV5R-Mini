@@ -68,7 +68,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 4.1 | LCD driver, rectangles, pixels, text | **done** | `driver/st7735s.c`, `ui/` |
 | 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
-| 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix done (`driver/keyboard.c`); layers todo |
+| 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix and key map done and checked on a radio (`driver/keyboard.c`); layers todo |
 | 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | one VFO: frequency, RSSI bar, squelch, volume, bandwidth, step, CTCSS (`app/app.c`); not tried on a radio |
 | 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): A/B, dual watch, memory, scan, scan mode, tone scan, tone-scan save, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
 | 4.6 | VFO entry, channel store/delete, power-on screen and messages | **partial** | 6-digit frequency entry; no channels yet (need the external-flash driver, 2.8) |
