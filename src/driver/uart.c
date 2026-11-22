@@ -8,8 +8,10 @@
  *     OTCNT, as stock does. The bytes go into a FIFO, so the DMA can never overwrite bytes not yet handed out.
  *   - Backstop: every 20 ms without a flag the same RDC-and-copy runs anyway, so bytes can't sit unseen if the
  *     time-out flag doesn't come (seen on a radio 2026-11-21: 105 bytes waited with no flag).
- *   - The link is half duplex (the host only talks after we've answered), so whatever arrives while we send is our
- *     own echo or line noise and is dropped. Stray FF bytes were seen on a radio.
+ *   - After a send, only our own echo (the bytes we sent, in order) and leading FF noise are dropped; the first other
+ *     byte and everything after it is kept. Dropping everything lost the flasher's rate frame on a radio
+ *     (2026-11-21): the host answers at once, and the TX-done wait can outlast our last byte. Stray FF bytes were
+ *     seen on a radio.
  * Every wait has a time-out.
  *
  * For the PC test (tests/uart_host.py) UART_HOST_TEST swaps the registers for an array and the delay for a hook.
@@ -74,6 +76,7 @@ static uint8_t  s_rx[RXBUF_LEN] __attribute__((aligned(4)));
 static uint8_t  s_tx[0x40] __attribute__((aligned(4)));
 static uint8_t  s_fifo[FIFO_LEN];
 static uint32_t s_head, s_tail;          /* FIFO write and read counts */
+static uint32_t s_tx_n;                          /* bytes in s_tx: the last chunk sent, for the echo check */
 static uint32_t s_otcnt, s_quiet_ms, s_dropped;
 
 static void rx_arm(void)
@@ -85,10 +88,12 @@ static void rx_arm(void)
 	OTCNT = s_otcnt;
 }
 
-/* Latch the DMA count, clear the flags, move the bytes into the FIFO (or drop them) and re-arm. */
-static void rx_collect(int keep)
+/* Latch the DMA count, clear the flags, move the bytes into the FIFO and re-arm. echo: drop our own echo and FF noise
+ * at the start (see above). */
+static void rx_collect(int echo)
 {
-	uint32_t n;
+	uint32_t n, j = 0;
+	int skipping = echo;
 
 	CON0 |= CON_RDC;
 	CON0 |= CON_CLR_OT;
@@ -97,9 +102,16 @@ static void rx_collect(int keep)
 	if (n > RXBUF_LEN)
 		n = RXBUF_LEN;
 	for (uint32_t i = 0; i < n; i++) {
-		if (keep && s_head - s_tail < FIFO_LEN)
-			s_fifo[s_head++ & (FIFO_LEN - 1)] = s_rx[i];
-		else
+		uint8_t b = s_rx[i];
+		if (skipping && j < s_tx_n && b == s_tx[j]) {
+			j++;
+			s_dropped++;
+		} else if (skipping && b == 0xFF)
+			s_dropped++;
+		else if (s_head - s_tail < FIFO_LEN) {
+			skipping = 0;
+			s_fifo[s_head++ & (FIFO_LEN - 1)] = b;
+		} else
 			s_dropped++;
 	}
 	rx_arm();
@@ -110,9 +122,9 @@ static void rx_collect(int keep)
 static void rx_poll(void)
 {
 	if (CON0 & (CON_OT | CON_RXFULL))
-		rx_collect(1);
+		rx_collect(0);
 	else if (++s_quiet_ms >= BACKSTOP_MS)
-		rx_collect(1);
+		rx_collect(0);
 }
 
 void UART_SetBaud(uint32_t baud)
@@ -154,6 +166,7 @@ void UART_Send(const uint8_t *data, uint32_t len)
 			s_tx[i] = data[i];
 		CON0 |= CON_CLR_TX;
 		TXADR = ADDR(s_tx);
+		s_tx_n = n;
 		TXCNT = n;
 		for (uint32_t w = TX_WAIT; !(CON0 & CON_TXDONE) && w; w--)
 			;
@@ -161,7 +174,7 @@ void UART_Send(const uint8_t *data, uint32_t len)
 		data += n;
 		len -= n;
 	}
-	rx_collect(0);                                /* what arrived while we sent is our echo or noise */
+	rx_collect(1);                                /* drop our echo and FF noise, keep the host's bytes */
 }
 
 int UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms)

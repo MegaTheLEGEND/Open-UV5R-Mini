@@ -146,6 +146,19 @@ int main(void)
 	CHECK(read_all(buf, 5, 100) == 5 && buf[4] == 0x02, "echo dropped, answer kept");
 	CHECK(UART_Dropped() >= 7, "echo bytes counted as dropped");
 
+	/* 7. the host answers at once: its frame lands while we are still sending, after our echo; it must be kept */
+	reset();
+	{
+		uint8_t both[7 + 2 + 5];
+		memcpy(both, ping, 7);                      /* our echo */
+		both[7] = 0xFF; both[8] = 0xFF;             /* line noise */
+		{ static const uint8_t r[5] = { 0xAA, 0x55, 0x05, 0x00, 0x01 }; memcpy(both + 9, r, 5); }  /* the host's rate frame starts */
+		queue(both, sizeof both, 1, 0);
+		uart_test_delay_ms(1);
+		UART_Send(ping, 7);
+		CHECK(read_all(buf, 5, 100) == 5 && buf[0] == 0xAA && buf[4] == 0x01, "host frame during our send kept");
+	}
+
 	printf(fails ? "uart_host: %d FAILED\n" : "uart_host: all passed\n", fails);
 	return fails != 0;
 }
