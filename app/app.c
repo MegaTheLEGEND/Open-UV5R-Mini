@@ -952,8 +952,7 @@ static void dw_end(void)
 	DW_Reset();
 	gVfo = s_side[s_active].vfo;
 	RADIO_Apply();
-	s_shown_freq = 0xFFFFFFFFu;
-	s_shown_status = -1;
+	s_shown_freq = 0xFFFFFFFFu;            /* the status line redraws only if something in it changed */
 }
 
 static void dw_tick(bool busy)
