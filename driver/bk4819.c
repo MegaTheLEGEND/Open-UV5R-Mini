@@ -329,6 +329,13 @@ void BK4819_SetPa(uint8_t bias, uint8_t gain)
 	BK4819_WriteRegister(BK4819_REG_36, bias ? (uint16_t)(bias << 8 | gain) : 0x007F);
 }
 
+/* Mic gain: REG_7D low 5 bits, as stock sets it when transmit starts (0x01E504FE: (REG_7D & ~0x1F) | (calibration
+ * 0xF210 & 0x1F)). */
+void BK4819_SetMicGain(uint8_t gain)
+{
+	BK4819_WriteRegister(BK4819_REG_7D, (uint16_t)((BK4819_ReadRegister(BK4819_REG_7D) & ~0x1Fu) | (gain & 0x1Fu)));
+}
+
 void BK4819_TxMute(bool on)
 {
 	BK4819_WriteRegister(BK4819_REG_50, on ? 0xBB20 : 0x3B20);

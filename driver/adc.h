@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-#define ADC_CH_PA1 0u
+#define ADC_CH_PA1 0u          /* the mic level for VOX (stock 0x01E50060) */
 #define ADC_CH_BATTERY 6u     /* PB3 */
 
 void     ADC_Init(void);

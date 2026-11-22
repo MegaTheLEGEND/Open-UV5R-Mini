@@ -72,6 +72,7 @@ BK4819_Tone_t BK4819_CssScanRead(uint32_t *value);
 bool     BK4819_CssHeard(BK4819_Tone_t kind);
 void     BK4819_SetPa(uint8_t bias, uint8_t gain);
 void     BK4819_TxMute(bool on);
+void     BK4819_SetMicGain(uint8_t gain);           /* 0..31 */
 void     BK4819_TxOn(void);
 void     BK4819_Beep(uint16_t hz);
 uint8_t  BK4819_GetNoise(void);

@@ -9,6 +9,7 @@
 #include "app/channels.h"
 #include "app/dualwatch.h"
 #include "app/scan.h"
+#include "app/vox.h"
 #include "app/tones.h"
 #include "board.h"
 #include "driver/bk4819.h"
@@ -42,6 +43,8 @@ bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
 void BK4819_TxMute(bool on) { (void)on; }
+static uint8_t mic_gain = 0xFF;
+void BK4819_SetMicGain(uint8_t g) { mic_gain = g; }
 void BK4819_SetAF(BK4819_AF_t a) { af = a; }
 void BK4819_Beep(uint16_t hz) { (void)hz; }
 void IO_Init(void) {}
@@ -297,6 +300,22 @@ int main(void)
 		ticks(30);
 	}
 
+	/* VOX: the stock thresholds, 8 lower while transmitting, hold (delay + 5) x 100 ms */
+	{
+		int i, stops = 0;
+		VOX_Reset();
+		CHECK(VOX_Tick(41, 2, 6, false, 10) == VOX_NONE, "level 2: 41 is not above 41");
+		CHECK(VOX_Tick(42, 2, 6, false, 10) == VOX_START, "level 2: 42 starts");
+		CHECK(VOX_Tick(34, 2, 6, true, 10) == VOX_NONE, "while TX: 34 holds (41 - 8)");
+		for (i = 0; i < 109; i++)
+			stops += VOX_Tick(0, 2, 6, true, 10) == VOX_STOP;
+		CHECK(!stops, "held 1.09 s after the last sound (delay 6: 1.1 s)");
+		CHECK(VOX_Tick(0, 2, 6, true, 10) == VOX_STOP, "stops at 1.1 s");
+		VOX_Reset();
+		CHECK(VOX_Tick(111, 9, 0, false, 10) == VOX_NONE && VOX_Tick(112, 9, 0, false, 10) == VOX_START,
+		      "level 9: threshold 111");
+	}
+
 	/* battery: the stock scale and the calibrated thresholds (made up here) */
 	{
 		CHECK(BATTERY_Level() == 0xFF, "no battery thresholds: no level");
@@ -336,6 +355,7 @@ int main(void)
 				CHECK(reg30 == 0xC1FE && led_tx && reg36 == (uint16_t)(CALIB_PaBias(T[i].f, POWER_LOW) << 8 | 0xD7) && !amp,
 				      "TX on at %lu: REG_36 %04X", (unsigned long)T[i].f, reg36);
 				CHECK((T[i].f < 20000000u) == !!(reg33 & BK4819_GPIO_TX_VHF), "TX path at %lu", (unsigned long)T[i].f);
+				CHECK(mic_gain == CALIB_MicGain(), "mic gain from calibration at TX: %u", mic_gain);
 				RADIO_EndTx();
 				CHECK(reg30 == 0xBFF1 && !led_tx && reg36 == 0x7F && !(reg33 & 0x18), "back to RX");
 			} else

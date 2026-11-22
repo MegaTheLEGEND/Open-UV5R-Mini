@@ -15,6 +15,7 @@
 #include "app/radio.h"
 #include "app/dualwatch.h"
 #include "app/scan.h"
+#include "app/vox.h"
 #include "app/settings.h"
 #include "app/tones.h"
 #include "app/update.h"
@@ -1050,6 +1051,19 @@ void APP_Tick(void)
 	tot_tick();
 	tscan_tick();
 	dtmf_tick();
+#if RADIO_ENABLE_TX
+	/* VOX (stock setting 0x3A), not while PTT is held, scanning or in a menu */
+	if (gStock.raw[0x3A] && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
+		uint16_t a = ADC_Read(ADC_CH_PA1, 1);
+		VoxAction_t v = VOX_Tick(a == 0xFFFFu ? 0 : (uint8_t)(a >> 2), gStock.raw[0x02], gStock.raw[0x20],
+		                         RADIO_State() == RADIO_TX, APP_TICK_MS);
+		if (v == VOX_START && !tx_busy_locked()) {
+			dw_end();
+			RADIO_StartTx();
+		} else if (v == VOX_STOP)
+			RADIO_EndTx();
+	}
+#endif
 	dw_tick(ptt || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();

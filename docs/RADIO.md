@@ -54,7 +54,8 @@ and notes its code:
 
 ## Transmit
 
-Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `app/radio.h`). With it on:
+Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `app/radio.h`). With it on (and only then), mic gain comes from
+the radio's calibration and VOX works as stock (stock VOX setting; the mic level on PA1). Transmit is guarded:
 
 - only 144–148 and 420–450 MHz, never AM, never airband or 200–300 MHz (no TX path there);
 - the PA bias and gain come from the radio's own calibration (High or Low, by frequency), as the stock app does it;

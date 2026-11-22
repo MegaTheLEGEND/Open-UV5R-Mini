@@ -30,6 +30,7 @@ uint8_t CALIB_PaGain(uint8_t power);
 void    CALIB_Squelch(uint32_t freq_10hz, uint8_t level, uint8_t *open, uint8_t *close);
 uint8_t CALIB_CtcssLevel(void);                     /* 0xF211, sub-audio deviation for CTCSS */
 uint8_t CALIB_DcsLevel(void);                       /* 0xF212, for DCS */
+uint8_t CALIB_MicGain(void);                        /* 0xF210 & 0x1F (5 bits in V0.27) */
 uint8_t CALIB_Byte(uint16_t offset);                /* raw byte at CALIB_ADDR + offset, 0xFF past the end */
 
 #endif

@@ -272,6 +272,7 @@ bool RADIO_StartTx(void)
 	BK4819_SetFilterBandwidth(gVfo.narrow);
 	front_end(band_of(tx_freq()), true);
 	css_set(gVfo.tx_tone);
+	BK4819_SetMicGain(CALIB_MicGain());
 	BK4819_TxMute(false);
 	BK4819_TxOn();
 	BK4819_SetPa(CALIB_PaBias(tx_freq(), gVfo.power), CALIB_PaGain(gVfo.power));

@@ -49,6 +49,12 @@ uint8_t CALIB_CtcssLevel(void)
 	return s_present && s_cal[0x211] < 0x80u ? s_cal[0x211] : 0x4A;
 }
 
+/* Not calibrated: 0x12, the low bits of stock's REG_7D init value 0xE952. */
+uint8_t CALIB_MicGain(void)
+{
+	return s_present && s_cal[0x210] != 0xFFu ? (uint8_t)(s_cal[0x210] & 0x1Fu) : 0x12;
+}
+
 uint8_t CALIB_DcsLevel(void)
 {
 	return s_present && s_cal[0x212] != 0xFFu ? (uint8_t)(s_cal[0x212] & 0x7Fu) : 0x33;
