@@ -249,6 +249,10 @@ Known roles so far: PA4 PTT, PA12 second PTT, PA6–PA9 keypad rows, PC2–PC5 k
 PA10/PC0/PC1 BK4819 SCK/SDATA/SCN, PB4 LCD reset, PB5 LCD CS, PB10 power hold, PB11 power-off sense.
 The rest are in the next section.
 
+**PC0 (BK4819 SDATA) keeps its pull-up**, the only output pin with one. Register reads need it: without it the
+1-bits float, and on a radio (2026-11-21) the RSSI read about 6 (-157 dBm) with a strong signal. The stock read
+(`sub_01E409C4`) also sets the output latch high after switching the pin to input.
+
 ## Peripheral sweep of the stock code (2026-11-21)
 
 Every GPIO and peripheral the stock app touches, from a static scan of `build/app.dis`. Made with three small

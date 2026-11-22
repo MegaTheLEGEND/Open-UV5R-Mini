@@ -31,6 +31,7 @@ uint16_t BK4819_ReadRegister(uint8_t reg)
 	GPIO_ClearBit(PIN_BK4819_SCK);
 	BUS_DELAY();
 	GPIO_SetInput(PIN_BK4819_SDATA);
+	GPIO_SetBit(PIN_BK4819_SDATA);        /* as stock sub_01E409C4: input, then the output latch high */
 	BUS_DELAY();
 	for (uint16_t bit = 0x8000; bit; bit >>= 1) {
 		GPIO_SetBit(PIN_BK4819_SCK);
@@ -74,6 +75,10 @@ void BK4819_Init(void)
 	GPIO_ConfigOutput(PIN_BK4819_SCN, true);
 	GPIO_ConfigOutput(PIN_BK4819_SCK, false);
 	GPIO_ConfigOutput(PIN_BK4819_SDATA, false);
+	/* Stock board init (sub_01E485EC) keeps the pull-up on PC0, the only output pin with one. The BK4819 seems to
+	 * only pull SDATA low when it answers a read: without the pull-up the 1-bits float, and on a radio
+	 * (2026-11-21) the RSSI read as about 6 (-157 dBm) with a strong signal and the squelch only blinked open. */
+	GPIO_SetPullUp(PIN_BK4819_SDATA, true);
 
 	BK4819_WriteRegister(BK4819_REG_00, 0x8000);
 	BK4819_WriteRegister(BK4819_REG_00, 0x0000);

@@ -27,5 +27,16 @@ void GPIO_ConfigInput(uint8_t pin, bool pull_up)
 	p->DIR |= b;
 }
 
+void GPIO_SetPullUp(uint8_t pin, bool on)
+{
+	GPIO_Port_t *p = GPIO_PIN_TO_PORT(pin);
+	uint32_t b = GPIO_PIN_TO_BIT(pin);
+
+	if (on)
+		p->PU |= b;
+	else
+		p->PU &= ~b;
+}
+
 void GPIO_SetInput(uint8_t pin)  { GPIO_PIN_TO_PORT(pin)->DIR |= GPIO_PIN_TO_BIT(pin); }
 void GPIO_SetOutput(uint8_t pin) { GPIO_PIN_TO_PORT(pin)->DIR &= ~GPIO_PIN_TO_BIT(pin); }

@@ -17,6 +17,7 @@ static inline void GPIO_Write(uint8_t pin, bool on) { if (on) GPIO_SetBit(pin); 
 /* Configure a pin the way the stock board init does: digital, no pulls unless asked. */
 void GPIO_ConfigOutput(uint8_t pin, bool initial);
 void GPIO_ConfigInput(uint8_t pin, bool pull_up);
+void GPIO_SetPullUp(uint8_t pin, bool on);
 void GPIO_SetInput(uint8_t pin);  /* direction only, for bidirectional lines */
 void GPIO_SetOutput(uint8_t pin);
 
