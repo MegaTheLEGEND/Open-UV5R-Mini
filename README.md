@@ -37,8 +37,10 @@ the file against its pinned SHA-256 and refuses any other file.
 | Flasher with a built-in emulated radio, for practice | done |
 | Stock code turned into C and checked against the original (reference for porting) | done |
 | Own firmware: receiving (frequency, squelch, RSSI bar, audio) | **works on a radio** |
-| Own firmware: screen and keypad (every key) | **works on a radio**; new main screen with A and B together and icons: PC preview only |
-| Own firmware: cable update mode (so a radio can always be flashed again) | tested on the PC; on a radio pings are answered but the transfer stalls |
+| Own firmware: screen and keypad (every key), main screen with A and B together and icons | **works on a radio** |
+| Own firmware: dual watch | written; **doesn't work on a radio yet** (bug) |
+| CHIRP and Codeplug Studio programming | to do: CHIRP's existing UV-5R Mini driver should work unchanged |
+| Own firmware: cable update mode (so a radio can always be flashed again) | **top priority**; tested on the PC; on a radio pings are answered but the transfer stalls |
 | Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
 | Own firmware: transmit, VOX, PTT-ID, roger beep | written, compiled off until receive and the PA calibration are proven |
 | Own firmware: saving settings | written, compiled off |

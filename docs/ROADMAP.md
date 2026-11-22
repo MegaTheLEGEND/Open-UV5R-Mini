@@ -1,6 +1,17 @@
 # Road map to a working C firmware
 
-What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-20.
+What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-21.
+
+## Now: top priority
+
+1. **Cable update mode working on a radio (1.4, 1.6).** Until it works, every test of our build needs the case-open
+   rescue route. On a radio the update mode answers pings at 9600 baud, then stalls after the rate frame (the UART
+   receive time-out flag never comes); the build at `690b169` went completely silent. Next steps are at the end of
+   [UPDATE-MODE.md](UPDATE-MODE.md). The UART receive was rewritten since (`e9abb6b`, the JieLi way) and not yet
+   tried on a radio.
+2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what
+   it does wrong (doesn't switch, doesn't stop on a signal, or the wrong side opens).
+3. **CHIRP:** work with CHIRP's existing UV-5R Mini driver, unchanged (5.3).
 
 Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
 **unknown** = needs reverse-engineering first.
@@ -59,7 +70,7 @@ A radio running an app without these cannot be flashed again without opening the
 | 3.5 | CTCSS and DCS encode and decode, tone and code scan | **partial** | encode and decode done the stock way (`src/radio/tones.c`, `BK4819_SetCtcss` / `SetDcs` / `CssHeard`): the stock tables (51 CTCSS, 105 DCS), the stock tone encoding, the Golay word checked against the stock routine for all 105 codes, the sub-audio level from the radio's calibration, tone squelch on receive; tone and code scan as stock (chip scan `REG_51 = 0x0300`, nearest CTCSS within 0.9 Hz, DCS word in any rotation, stored by setting `0x2B`); PC-tested only |
 | 3.6 | Bandwidth (wide/narrow), AM/FM demodulation, mic gain, VOX, DTMF | **partial** | wide/narrow and AM/FM (airband AM on AUTO) in `src/radio/radio.c`; DTMF decode on receive as stock (`REG_24 = 0x8A7F`, `REG_3F = 0x0800`, code in `REG_0B` bits 8-11), shown for the stock hang time (setting `0x39`); PC-tested only. Mic gain (`REG_7D` low 5 bits from calibration `0xF210`, at TX start) and VOX (the mic level on PA1, ADC channel 0, against the stock thresholds) built the stock way behind the transmit switch; PC-tested only. DTMF keys while transmitting (a held 0-9, * or # sends its pair; setting `0x09` bit 0 = heard locally) and the single tones 1000/1450/1750/2100 Hz in the driver, the stock way; PC-tested only, behind the transmit switch. PTT-ID as stock: the up code at TX start and the down code at PTT release (channel byte 13, ANI block at external `0xA000`, codes at `0xA180` / `0xA190`), with the stock wait, code and gap times; PC-tested only. In VFO mode the PTT-ID comes from setting `0x0B` (stock `sub_01E3F9D0`). Todo: the group call path, DTMF calls received (ANI match), and which key sends the 1750 Hz burst |
 | 3.7 | TX/RX state machine: PTT A/B, time-out timer, busy lock, roger beep, TX inhibit outside bands | **partial** | Roger beep as stock (setting `0x17`: 1000 Hz then 850 Hz, 40 ms each, at PTT release), then squelch tail elimination (setting `0x14`: 55 Hz, or the DCS turn-off) and 400 ms more transmit, as stock; after that the receive audio stays off for setting `0x15` x 100 ms (repeater tail clear, stock `0x01E4FF94`; what setting `0x16` adds at release, `sub_01E419B6`, isn't followed). PC-tested only. `src/radio/radio.c`: PTT A starts TX only inside 144–148 / 420–450 MHz, low power, never AM; **compiled off** (`RADIO_ENABLE_TX 0`) until receive works on a radio and the PA calibration is understood; PC-tested by `tests/radio_host.py` |
-| 3.8 | Dual watch, scanning (channel, frequency, priority) | **partial** | scanning (`src/radio/scan.c`): VFO over the stock scan range (settings `0x2C`–`0x2F`), channels with the scan flag, the stock resume modes TIME / CARRIER / SEARCH (setting `0x0A`); PC-tested only. Dual watch done (`src/radio/dualwatch.c`, A/B sides in `src/app/app.c`; stock setting `0x04`; our own timing, the stock one not traced), PTT-B transmits on B; PC-tested only. Priority scan todo |
+| 3.8 | Dual watch, scanning (channel, frequency, priority) | **partial** | scanning (`src/radio/scan.c`): VFO over the stock scan range (settings `0x2C`–`0x2F`), channels with the scan flag, the stock resume modes TIME / CARRIER / SEARCH (setting `0x0A`); PC-tested only. **Dual watch: written but doesn't work on a radio (2026-11-21, bug)** (`src/radio/dualwatch.c`, A/B sides in `src/app/app.c`; stock setting `0x04`; our own timing, the stock one not traced); PTT-B transmits on B, PC-tested only. Priority scan todo |
 | 3.9 | FM broadcast radio | **partial** | the AC695N's own FM receiver (`fm_inside`), 87.5–108 MHz, played through the DAC. Mapped (RE-NOTES): front end `0x1F1700`, software demodulation on interrupt 43 with filter tables, DAC `0x1E2F00`. Needs a front-end driver, the DSP and a DAC driver: large, and only checkable on a radio |
 
 ## 4. User interface
@@ -69,8 +80,8 @@ A radio running an app without these cannot be flashed again without opening the
 | 4.1 | LCD driver, rectangles, pixels, text | **done** | `src/driver/st7735s.c`, `src/ui/` |
 | 4.2 | Fonts and icons as stock | **unknown** | may live in the external flash (0x0C0000 area) |
 | 4.3 | Keypad scanning, long press, F-key layer, key lock | **partial** | matrix and key map done and checked on a radio (`src/driver/keyboard.c`); layers todo |
-| 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | `src/ui/screen_main.c`: A and B shown together, each with badge, label, frequency, RX/TX icon, S-meter and setting tags; status bar with icons (volume, squelch, dual watch, scan, lamp, warning, battery). Icons are pixel-art text in `assets/icons/` (docs/LAYOUT.md). Checked on the PC (`tests/ui_preview.py`); not yet on a radio |
-| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): A/B, dual watch, memory, scan, scan mode, tone scan, tone-scan save, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test; not saved yet |
+| 4.4 | Main screen: VFO/channel A and B, frequency, name, S-meter, battery, icons | **partial** | `src/ui/screen_main.c`: A and B shown together, each with badge, label, frequency, RX/TX icon, S-meter and setting tags; status bar with icons (volume, squelch, dual watch, scan, lamp, warning, battery). Icons are pixel-art text in `assets/icons/` (docs/LAYOUT.md). Checked on the PC (`tests/ui_preview.py`) and on a radio (2026-11-21) |
+| 4.5 | Menu system with every stock menu item | **partial** | a first menu (scrolls): A/B, dual watch, memory, scan, scan mode, tone scan, tone-scan save, squelch, volume, step, bandwidth, modulation, RX tone, TX tone, TX power, key test, about (name, version `FW_VERSION` in `src/app/version.h`, git build id, radio kind); not saved yet |
 | 4.6 | VFO entry, channel store/delete, power-on screen and messages | **partial** | 6-digit frequency entry; no channels yet (need the external-flash driver, 2.8) |
 
 ## 5. Data and compatibility
@@ -79,7 +90,7 @@ A radio running an app without these cannot be flashed again without opening the
 | --- | --- | --- | --- |
 | 5.1 | Settings store compatible with stock (JieLi VM format, banks at 0x94000–0xFE000) | **unknown → partial** | VM module located (0x01E42380–0x01E42F00); format to document. The radio settings themselves are in the external flash: VFO log at `0x8010` (0x42-byte slots), settings log at `0x9010` (0x60-byte slots), CRC-16/XMODEM; read by `src/store/settings.c` (current slot from the header bitmap, as stock) and used at start-up. Writing them back the stock way is built (`SETTINGS_ENABLE_SAVE`, **off** by default: then the image has no external-flash write code), fenced to `0x8000`–`0x9FFF` with read-back; PC-tested on a simulated flash and on a dump (a save changes one slot and one header byte). Not tried on a radio |
 | 5.2 | Channel memory format as stock (so existing radios keep their channels) | **partial** | record format known; `src/store/channels.c` reads the stock channels (MENU → MEMORY), checked against one radio's dump on the PC; no writing |
-| 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Codeplug Studio documents it |
+| 5.3 | Programming protocol in normal mode (clone read/write for CHIRP, Codeplug Studio) | **todo** | Goal: CHIRP's existing UV-5R Mini driver works with our firmware **unchanged**, so the same cable, protocol, memory map and identification as stock. Codeplug Studio documents the protocol; CHIRP's driver source is the other reference. Needs channel and settings writing (5.1, 5.2) |
 | 5.4 | Bluetooth / Wireless CPS | **todo** | optional edition with JieLi blobs (docs/BLUETOOTH.md) |
 
 ## 6. Tooling and tests
@@ -99,6 +110,8 @@ firmware: they are never in the repo.
 | 6.8 | Compare NRF and NRFB function by function | **done** | `tools/variant_diff.py` (needs both lifted) |
 
 ## Order of work
+
+"Now: top priority" at the top of this page comes first. After that:
 
 1. Section 1 (safety), then flash the C build once with a recovery path ready.
 2. 2.1–2.4 and 5.1 so the radio boots, keeps time and keeps its settings.
