@@ -3,8 +3,9 @@
 Open-source firmware for the **Baofeng UV-5R Mini**, built only with open tools. The idea is the same as the UV-K5's
 open firmware: a radio you can change in plain C.
 
-**Early, not ready for everyday use.** The firmware is written from scratch; the stock firmware is used only as a
-reference for how the hardware works. Our own build now runs on a radio as a **receiver**: screen, every key,
+**Early, not ready for everyday use.** The firmware is our own code plus third-party code whose licence allows it
+([docs/THIRD-PARTY.md](docs/THIRD-PARTY.md)); the stock firmware is used only as a reference for how the hardware
+works. Our own build now runs on a radio as a **receiver**: screen, every key,
 receive audio and a working squelch were checked on one radio (2026-11-21). Transmit is built in but compiled off,
 settings are not saved. On one radio (2026-11-22) our build was installed from stock, and stock put back, with only
 the programming cable (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes). That is one radio: keep the

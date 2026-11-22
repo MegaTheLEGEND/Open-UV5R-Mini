@@ -18,8 +18,10 @@ Legend: **done** = written and tested (on the PC or emulator); **partial** = som
 
 ## Approach
 
-- **Written from scratch.** The firmware is our own C. The stock firmware is the reference for how the hardware
-  works: pins, timings, register values. The lifter and the emulator make it quick to read.
+- **Our own code, plus licensed third-party code.** The firmware is our own C, plus any third-party code (open or
+  proprietary, e.g. JieLi's SDK) whose licence lets us use and redistribute it ([THIRD-PARTY.md](THIRD-PARTY.md)).
+  The stock firmware has no such licence: it is only the reference for how the hardware works (pins, timings,
+  register values). The lifter and the emulator make it quick to read.
 - **Borrow from the UV-K5's open firmware where it fits.** It drives the same radio chip (BK4819), so most of the
   radio and UI code can be ported, with the chip layer replaced. DualTachyon's firmware and egzumer's fork are
   Apache-2.0 (check each repo's LICENSE): keep their copyright headers and include their licence and NOTICE. This

@@ -4,7 +4,8 @@ Read this before you change anything. It's the context a human contributor build
 
 ## The project in five lines
 
-- Open firmware for the **Baofeng UV-5R Mini**, written from scratch in C and built only with open tools.
+- Open firmware for the **Baofeng UV-5R Mini** in C, built only with open tools: our own code, plus third-party
+  code (open or proprietary) whose licence lets us use and redistribute it ([docs/THIRD-PARTY.md](docs/THIRD-PARTY.md)).
 - MCU: **JieLi AC695N**, a **pi32v2** core (not ARM), with built-in Bluetooth. RF chip: **Beken BK4819**, the same
   chip as the Quansheng UV-K5. LCD: ST7735S, 128×128.
 - The stock firmware is used only as a **reference** for how the hardware works. The repo has tools to read it: an
@@ -20,9 +21,12 @@ Read this before you change anything. It's the context a human contributor build
    unpacked from it, disassembly, lifted C, AI rewrites of lifted C, and patched images. These all live in
    `firmware/` and `build/`, which are git-ignored. Don't force-add them. Addresses, register values, pin maps and
    descriptions of behaviour are facts and are fine in docs and code comments.
-2. **Write new code; don't paste translated stock code.** Read the lifted C to learn what the hardware needs, then
-   write your own implementation. Code borrowed from the UV-K5 open firmware must keep its licence header
-   (Apache-2.0) and credit.
+2. **Third-party code only when its licence allows it.** Open source or proprietary (e.g. a chip vendor's SDK or
+   libraries) is fine if its licence lets us use, modify as needed, and redistribute it in this repo and in built
+   images. Before adding any: read the licence, keep its headers, licence file and NOTICE, and add a row to
+   [docs/THIRD-PARTY.md](docs/THIRD-PARTY.md). No licence, unclear licence, or "internal use only" means no. Stock
+   firmware code is never in this group: Baofeng grants no licence, so read the lifted C to learn what the hardware
+   needs, then write your own implementation; don't paste or translate it.
 3. **Never flash anything to a radio for the user, and don't tell them a build is safe to flash.**
    - The C build has never run on a radio.
    - `tools/mkufw.py` refuses images without the stock update mode; don't work around it.
