@@ -44,7 +44,7 @@
 /* Stock setting bytes we use (offsets in the 64-byte block). */
 enum {
 	SET_SQUELCH = 0x00, SET_POWER_SAVE = 0x01, SET_BACKLIGHT = 0x03, SET_DUAL_WATCH = 0x04, SET_TOT = 0x05,
-	SET_BEEP = 0x06, SET_DTMF_MON = 0x09 /* sidetone: bit 0 keys, bit 1 PTT-ID */, SET_SCAN_MODE = 0x0A, SET_PTT_ID = 0x0B /* VFO mode */, SET_BCL = 0x0F, SET_AUTO_LOCK = 0x10, SET_STE = 0x14, SET_RPT_CLEAR = 0x15, SET_ROGER = 0x17,
+	SET_BEEP = 0x06, SET_DTMF_MON = 0x09 /* sidetone: bit 0 keys, bit 1 PTT-ID */, SET_SCAN_MODE = 0x0A, SET_PTT_ID = 0x0B /* VFO mode */, SET_DISP_A = 0x0D, SET_DISP_B = 0x0E, SET_BCL = 0x0F, SET_AUTO_LOCK = 0x10, SET_STE = 0x14, SET_RPT_CLEAR = 0x15, SET_ROGER = 0x17,
 	SET_ACTIVE_SIDE = 0x18, SET_WORK_MODE = 0x1A, SET_KEY_LOCK = 0x1B,
 };
 

@@ -258,7 +258,25 @@ static void draw_freq(void)
 		if (key != s_shown_freq || s_redraw) {
 			s_shown_freq = key;
 			UI_PrintString(shown_side ? "B" : "A", 0, 30, s_peek ? GREEN : BLUE, BLACK, 1);
-			UI_PrintString(fmt_freq(b, gVfo.freq), 10, 26, s_peek ? GREEN : WHITE, BLACK, 2);
+			/* stock display mode, channel mode only: setting 0x0D (A) / 0x0E (B): 0 name, 1 frequency, 2 channel */
+			uint8_t dm = gStock.raw[shown_side ? SET_DISP_B : SET_DISP_A];
+			if (s_mr && !s_peek && s_ch >= 0 && (dm == 2 || (dm == 0 && s_ch_name[0]))) {
+				unsigned i = 0;
+				if (dm == 2) {
+					b[i++] = 'C'; b[i++] = 'H'; b[i++] = '-';
+					char n[8];
+					const char *d = UI_FormatDec(n, (uint32_t)s_ch + 1, 3);
+					while (*d)
+						b[i++] = *d++;
+				} else
+					for (; i < 8 && s_ch_name[i]; i++)
+						b[i] = s_ch_name[i];
+				while (i < 9)
+					b[i++] = ' ';
+				b[i] = 0;
+				UI_PrintString(b, 10, 26, WHITE, BLACK, 2);
+			} else
+				UI_PrintString(fmt_freq(b, gVfo.freq), 10, 26, s_peek ? GREEN : WHITE, BLACK, 2);
 		}
 		key = gStock.raw[SET_DUAL_WATCH] ? o->vfo.freq ^ (uint32_t)shown_side << 31 : 0;
 		if (key != s_shown_other || s_redraw) {
