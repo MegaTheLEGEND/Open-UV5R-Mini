@@ -175,6 +175,18 @@ static void keytest_tick(void)
 	char buf[8];
 	KEY_Code_t key = KEYBOARD_Poll();
 
+	/* raw keypad: one hex digit per scan step (no row, then rows PA6..PA9), F = no column low */
+	{
+		char raw[6];
+		for (unsigned s = 0; s < 5; s++) {
+			uint8_t c = KEYBOARD_RawColumns(s);
+			raw[s] = (char)(c < 10 ? '0' + c : 'A' + c - 10);
+		}
+		raw[5] = 0;
+		UI_PrintString("ROWS", 4, 46, WHITE, BLACK, 1);
+		UI_PrintString(raw, 34, 46, GREEN, BLACK, 1);
+	}
+
 	static uint8_t last_ptt = 0xFF, last_ptt2 = 0xFF;
 	static uint16_t last_rssi = 0xFFFF;
 

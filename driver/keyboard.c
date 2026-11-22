@@ -74,5 +74,18 @@ done:
 	return key;
 }
 
+/* For the key test: the column bits (PC2..PC5 as 0..3, 1 = high) with scan step n's row low (n 0 = no row). */
+uint8_t KEYBOARD_RawColumns(unsigned step)
+{
+	uint8_t c;
+
+	GPIOA->OUT |= ROW_SET[step % 5];
+	GPIOA->OUT &= ~ROW_CLEAR[step % 5];
+	SYSTEM_DelayUs(KEY_SETTLE_US);
+	c = (uint8_t)((GPIOC->IN & COL_MASK) >> 2);
+	GPIOA->OUT |= ROW_MASK;
+	return c;
+}
+
 bool KEYBOARD_IsPttPressed(void)  { return !GPIO_CheckBit(PIN_PTT); }
 bool KEYBOARD_IsPtt2Pressed(void) { return !GPIO_CheckBit(PIN_PTT2); }

@@ -1012,6 +1012,12 @@ void APP_Init(void)
 	if (UPDATE_Requested())
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
 	BK4819_Init();
+	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
+	if (!KEYBOARD_IsPttPressed()) {
+		KEY_Code_t k0 = KEYBOARD_Poll();
+		if (k0 == KEY_DIRECT0 || k0 == KEY_DIRECT1 || k0 == KEY_DIRECT2 || k0 == KEY_DIRECT3)
+			KEYTEST_Run();
+	}
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	if (s_xf_ok) {

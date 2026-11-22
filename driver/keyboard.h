@@ -31,6 +31,7 @@ typedef enum {
 
 void       KEYBOARD_Init(void);
 KEY_Code_t KEYBOARD_Poll(void);
+uint8_t    KEYBOARD_RawColumns(unsigned step);
 bool       KEYBOARD_IsPttPressed(void);
 bool       KEYBOARD_IsPtt2Pressed(void);
 
