@@ -762,7 +762,10 @@ def gui():
     v_port = tk.StringVar(value=EMU)
     v_cut = tk.BooleanVar(value=False)
     v_cutpct = tk.IntVar(value=40)
-    v_status = tk.StringVar(value='Pick the stock file and a firmware (patch .json or flashable .ufw).')
+    v_status = tk.StringVar(value='Choose what to flash: stock back, or a firmware file.')
+    stock_ref = os.path.join(os.path.dirname(HERE), 'build', 'stock-flashable-reference.ufw')
+    v_what = tk.StringVar(value='stock')
+    v_baud = tk.StringVar(value='19200')            # worked on a radio (2026-11-22); 38400 not yet
 
     frm = ttk.Frame(root, padding=10)
     frm.pack(fill='both', expand=True)
@@ -775,7 +778,21 @@ def gui():
             filedialog.askopenfilename(filetypes=types) or var.get())).grid(row=row, column=2)
 
     picker(0, 'Stock v0.27 .ufw', v_stock, [('UFW', '*.ufw'), ('All', '*.*')])
-    picker(1, 'Firmware', v_fw, [('Patch or UFW', '*.json *.ufw'), ('All', '*.*')])
+    what = ttk.Frame(frm)
+    what.grid(row=1, column=0, columnspan=3, sticky='ew', pady=2)
+    ttk.Label(what, text='Flash').pack(side='left')
+    ttk.Radiobutton(what, text='Stock V0.27 (put the original back)', variable=v_what, value='stock').pack(
+        side='left', padx=6)
+    ttk.Radiobutton(what, text='From file:', variable=v_what, value='file').pack(side='left')
+    ttk.Entry(what, textvariable=v_fw).pack(side='left', fill='x', expand=True, padx=6)
+
+    def browse_fw():
+        f = filedialog.askopenfilename(initialdir=os.path.join(os.path.dirname(HERE), 'build'),
+                                       filetypes=[('Patch or UFW', '*.json *.ufw'), ('All', '*.*')])
+        if f:
+            v_fw.set(f)
+            v_what.set('file')
+    ttk.Button(what, text='Browse...', command=browse_fw).pack(side='left')
 
     ttk.Label(frm, text='Radio').grid(row=2, column=0, sticky='w', pady=2)
     port_box = ttk.Combobox(frm, textvariable=v_port, state='readonly')
@@ -789,11 +806,19 @@ def gui():
         except Exception:  # noqa: BLE001
             pass
         port_box['values'] = ports
+        if v_port.get() == EMU and len(ports) > 1:
+            v_port.set(ports[1])                 # a real port if there is one
     ttk.Button(frm, text='Refresh', command=refresh_ports).grid(row=2, column=2)
     refresh_ports()
 
-    emu = ttk.LabelFrame(frm, text='Emulated radio', padding=6)
-    emu.grid(row=3, column=0, columnspan=3, sticky='ew', pady=6)
+    opts = ttk.Frame(frm)
+    opts.grid(row=3, column=0, columnspan=3, sticky='ew', pady=6)
+    ttk.Label(opts, text='Loader speed').pack(side='left')
+    ttk.Combobox(opts, textvariable=v_baud, values=('9600', '19200', '38400'), width=7, state='readonly').pack(
+        side='left', padx=6)
+    ttk.Label(opts, text='(if it fails part-way, pick a lower one: 9600 is slow but safest)').pack(side='left')
+    emu = ttk.LabelFrame(opts, text='Emulated radio', padding=6)
+    emu.pack(side='right')
     ttk.Checkbutton(emu, text='Cut the power during the write at', variable=v_cut).pack(side='left')
     ttk.Spinbox(emu, from_=1, to=99, width=4, textvariable=v_cutpct).pack(side='left')
     ttk.Label(emu, text='%   ').pack(side='left')
@@ -825,7 +850,15 @@ def gui():
 
     def get_image():
         try:
-            img, name, res = load_firmware(v_stock.get(), v_fw.get())
+            fw = v_fw.get()
+            if v_what.get() == 'stock':
+                if not os.path.exists(stock_ref):
+                    raise ValueError('%s is missing. Make it once with tools/build_matching.py (docs/TESTING.md).'
+                                     % stock_ref)
+                fw = stock_ref
+            elif not fw:
+                raise ValueError('Pick a firmware file, or choose Stock.')
+            img, name, res = load_firmware(v_stock.get(), fw)
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as e:
             messagebox.showerror('Firmware', str(e))
             return None
@@ -867,6 +900,7 @@ def gui():
             return
         img, name = got
         port = v_port.get()
+        globals()['LOADER_BAUD'] = int(v_baud.get())
         if port == EMU:
             radio = emu_radio()
             radio.keys_update = True
