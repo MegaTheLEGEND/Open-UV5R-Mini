@@ -44,6 +44,9 @@ typedef enum { SCREEN_MAIN, SCREEN_MENU } Screen_t;
 
 static Screen_t s_screen;
 static bool     s_redraw = true;         /* whole screen */
+#define LAMP_STROBE_MS 500u          /* strobe half-period: a guess, the stock rate is not read yet */
+static uint8_t  s_lamp_mode;             /* 0 off, 1 on, 2 strobe (stock flashlight key) */
+static uint16_t s_lamp_ms;
 static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
@@ -186,7 +189,7 @@ static void draw_status(void)
 {
 	char b[12];
 	int st = gVfo.squelch | gVfo.volume << 4 | gVfo.narrow << 8 | RADIO_IsAm() << 9 | gVfo.step << 10
-	         | IO_LampIsOn() << 14 | gVfo.power << 15 | (int)(gVfo.tx_tone ^ gVfo.rx_tone << 3) << 16;
+	         | (s_lamp_mode != 0) << 14 | gVfo.power << 15 | (int)(gVfo.tx_tone ^ gVfo.rx_tone << 3) << 16;
 
 	if (st == s_shown_status && !s_redraw)
 		return;
@@ -200,8 +203,8 @@ static void draw_status(void)
 	UI_PrintString("V", 54, 1, WHITE, BLACK, 1);
 	UI_PrintString(UI_FormatDec(b, gVfo.volume, 2), 60, 1, YELLOW, BLACK, 1);
 	UI_PrintString(gVfo.power == POWER_LOW ? "L" : "H", 76, 1, BLUE, BLACK, 1);
-	if (IO_LampIsOn())
-		UI_PrintString("LAMP", 100, 1, YELLOW, BLACK, 1);
+	if (s_lamp_mode)
+		UI_PrintString(s_lamp_mode == 2 ? "STRB" : "LAMP", 100, 1, YELLOW, BLACK, 1);
 	else if (!CALIB_Present())
 		UI_PrintString("NOCAL", 94, 1, RED, BLACK, 1);
 	if (s_mr) {
@@ -758,8 +761,12 @@ static void key_main(KEY_Code_t k)
 	} else if (k == KEY_ACT_BW) {
 		gVfo.narrow = !gVfo.narrow;
 		RADIO_Apply();
-	} else if (k == KEY_ACT_LAMP)
-		IO_Lamp(!IO_LampIsOn());
+	} else if (k == KEY_ACT_LAMP) {
+		/* stock 0x01E537C8: the flashlight key steps off, on, strobe (RAM 0x198C0+2831, mod 3) */
+		s_lamp_mode = (uint8_t)((s_lamp_mode + 1u) % 3u);
+		s_lamp_ms = 0;
+		IO_Lamp(s_lamp_mode != 0);
+	}
 	else if (k == KEY_ACT_AB || k == KEY_ACT_VM) {
 		menu_change(k == KEY_ACT_AB ? M_AB : M_MEM, 0);
 		s_redraw = true;
@@ -1210,6 +1217,10 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 	if (k != KEY_INVALID)
 		save_soon();
+	if (s_lamp_mode == 2 && (s_lamp_ms += APP_TICK_MS) >= LAMP_STROBE_MS) {
+		s_lamp_ms = 0;
+		IO_Lamp(!IO_LampIsOn());
+	}
 	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
 #endif
 	if (k != KEY_INVALID && !ptt) {

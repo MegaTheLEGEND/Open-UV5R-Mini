@@ -50,7 +50,7 @@ Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 
 | `*` (12) | wide / narrow |
 | A/B (3) | side A / B |
 | V/M (2) | VFO / channel mode |
-| flashlight (4) | lamp on / off |
+| flashlight (4) | lamp off, on, strobe (as stock; strobe rate is a guess) |
 | 0–9 | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz) |
 
 Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
