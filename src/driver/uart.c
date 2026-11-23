@@ -247,6 +247,16 @@ uint32_t UART_Reg(uint32_t offset)
 	return REG(offset);
 }
 
+/* 0x1E5124 bit 7 switches UART1's own fixed pins on (one of its pin pairs is PB0/PB1, the LCD and external-flash
+ * clock and data). It is set when our app starts (0x1E5124 = 0x8888). Stock's UART1 set-up (sub_01E48318, called
+ * from the SDK's UART open at 0x01E6A11A) clears it when the UART goes through the IO-map channels, as ours does;
+ * our routing, copied from the two channel routines only, left it set, and with the UART on the screen went white
+ * (radio, 2026-11-22: UART off = screen fine, on = white, whatever the routing). */
+void UART_FixedPinsOff(void)
+{
+	SFR_IOMAP_IN &= ~0x80u;
+}
+
 void UART_Enable(int on, int dma)
 {
 	CON0 = (CON0 & ~(uint32_t)(CON_EN | CON_RXDMA | CON_CLR_TX | CON_CLR_RX | CON_CLR_OT | CON_RDC))

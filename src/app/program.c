@@ -27,8 +27,6 @@
 #include "driver/extflash.h"
 #include "store/settings.h"
 #ifndef PROGRAM_HOST_TEST
-#include "board.h"
-#include "driver/gpio.h"
 #include "driver/system.h"
 #include "driver/st7735s.h"
 #include "ui/helper.h"
@@ -127,14 +125,8 @@ static void find_clash(void)
 	s_diag = "PINS ??";
 }
 
-/* Screen test (2026-11-22): with CHIRP on the screen stayed blank although the flash ID read right, so the LCD's own
- * lines (CS PB5, reset PB4, D/C PR1) or its state are the suspects. Each step re-initialises the LCD and shows a big
- * label for 2 s; Sean notes which labels he sees:
- *   T1 BOOT     before the cable UART set-up (should always show)
- *   T2 UART     after it, all routing on: if this shows, re-initialising the LCD is the whole fix
- *   T3 R0..R3   one routing register left as it was (0 USB_CON, 1 0x1E5100, 2 0x1E5120, 3 0x1E5124)
- *   T4 NONE     no routing at all (the UART itself on, pins as before)
- * The second line says whether the flash ID reads right at that step. */
+#if PROGRAM_SCREEN_TEST
+/* Screen test (features.mk ENABLE_SCREEN_TEST): a big label for 2 s, the LCD re-initialised first. */
 static void lcd_step(const char *label)
 {
 	ST7735S_Init();
@@ -145,94 +137,32 @@ static void lcd_step(const char *label)
 		WATCHDOG();
 	}
 }
+#endif
 
+/* The blank screen (radio, 2026-11-22), found in three test rounds: with the UART on the screen went white, with it
+ * off it was fine, whatever the IO-map routing; UART1's own fixed pins (0x1E5124 bit 7, set at start) were left on.
+ * UART_FixedPinsOff clears it, as stock does. With the screen test on: T1 BOOT, then W1 FIXED with the UART on
+ * (shows only if the fix works). The "CHIRP CABLE" result screen shows only when the pin check found a problem. */
 void PROGRAM_Init(void)
 {
-	static const char *const SKIP[UART_ROUTE_REGS] = { "T3 R0", "T3 R1", "T3 R2", "T3 R3" };
-
 #if PROGRAM_SCREEN_TEST
-	/* Radio, 2026-11-22, first screen test: T1 BOOT showed, then white from T2 on, T4 NONE (no routing) included.
-	 * So the routing is not it; this splits UART_Init itself, and lists every GPIO/IO-map register (0x1E5000-
-	 * 0x1E513C) that UART_Init changed, shown while the UART is off. */
-	static uint32_t before[0x50];
-	volatile uint32_t *io = (volatile uint32_t *)(uintptr_t)0x1E5000u;
-	char b[12];
-	int n = 0;
-
-	/* Round 2 (radio, 2026-11-22): U1 OFF showed, U2 and U3 white: the UART switched on takes a screen pin, routing
-	 * or not. UART_Init changed 0x1E5100, 0x1E5120, 0x1E5124 (ours) and 0x1E5104 2 -> 3, which nothing of ours writes.
-	 * Round 3, UART on throughout: V1 puts 0x1E5104 back, V2 also 0x1E5100, V3 the whole block. Then each screen pin
-	 * is driven high and low and read back with the UART on; the result is shown with the UART off. */
-	static const struct { uint8_t pin; char name[5]; } PINS[] = {
-		{ PIN_LCD_SCK, "PB0" }, { PIN_LCD_MOSI, "PB1" }, { PIN_LCD_RESET, "PB4" }, { PIN_LCD_CS, "PB5" },
-		{ PIN_LCD_BACKLIGHT, "PB7" }, { IO_PORTA(3), "PA3" },
-	};
-	uint8_t follow[sizeof PINS / sizeof PINS[0]];
-	uint32_t after[0x50];
-
-	(void)SKIP;
-	(void)n;
 	lcd_step("T1 BOOT");
-	for (int i = 0; i < 0x50; i++)
-		before[i] = io[i];
-	UART_Init(PROGRAM_BAUD);
-	for (int i = 0; i < 0x50; i++)
-		after[i] = io[i];
-	io[0x41] = before[0x41];
-	lcd_step("V1 5104");
-	io[0x40] = before[0x40];
-	lcd_step("V2 +5100");
-	for (int i = 0x40; i < 0x50; i++)
-		io[i] = before[i];
-	lcd_step("V3 ALL IO");
-	for (int i = 0x40; i < 0x50; i++)  /* routing back on, UART still on */
-		io[i] = after[i];
-	for (unsigned k = 0; k < sizeof PINS / sizeof PINS[0]; k++) {
-		GPIO_Port_t *p = GPIO_PIN_TO_PORT(PINS[k].pin);
-		uint32_t bit = GPIO_PIN_TO_BIT(PINS[k].pin), die = p->DIE;
-		bool hi, lo;
-		p->DIE |= bit;                    /* so IN reads the pad */
-		GPIO_Write(PINS[k].pin, true);
-		SYSTEM_DelayMs(1);
-		hi = GPIO_CheckBit(PINS[k].pin);
-		GPIO_Write(PINS[k].pin, false);
-		SYSTEM_DelayMs(1);
-		lo = GPIO_CheckBit(PINS[k].pin);
-		p->DIE = die;
-		follow[k] = (uint8_t)(hi << 1 | lo);   /* 2 = follows; 3 stuck high, 0 stuck low, 1 backwards */
-	}
-	GPIO_Write(PIN_LCD_CS, true);
-	GPIO_Write(PIN_LCD_BACKLIGHT, true);
-	GPIO_Write(PIN_LCD_RESET, true);
-	GPIO_Write(IO_PORTA(3), true);
-	UART_Enable(0, 0);
-	ST7735S_Init();
-	UI_PrintString("PINS WITH UART ON", 0, 0, COLOR_TEXT, COLOR_BG, 1);
-	for (unsigned k = 0; k < sizeof PINS / sizeof PINS[0]; k++) {
-		static const char *const R[4] = { "STUCK LOW", "BACKWARDS", "FOLLOWS", "STUCK HIGH" };
-		uint8_t y = (uint8_t)(12 + 10 * k);
-		UI_PrintString(PINS[k].name, 0, y, COLOR_WARN, COLOR_BG, 1);
-		UI_PrintString(R[follow[k]], 30, y, follow[k] == 2 ? COLOR_ACCENT : COLOR_TX, COLOR_BG, 1);
-	}
-	UI_PrintString("5104 NOW", 0, 80, COLOR_DIM, COLOR_BG, 1);
-	UI_PrintString(UI_FormatHex(b, io[0x41], 8), 60, 80, COLOR_TEXT, COLOR_BG, 1);
-	for (int i = 0; i < 150; i++) {       /* 15 s: time for a photo */
-		SYSTEM_DelayMs(100);
-		WATCHDOG();
-	}
-	UART_Enable(1, 1);
-#else
-	(void)SKIP;
-	UART_Init(PROGRAM_BAUD);
 #endif
-	ST7735S_Init();                       /* as T2: routing on, LCD re-initialised after it */
+	UART_Init(PROGRAM_BAUD);
+	UART_FixedPinsOff();
+#if PROGRAM_SCREEN_TEST
+	lcd_step("W1 FIXED");
+#endif
+	ST7735S_Init();
 	find_clash();
-	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
-	UI_PrintString("CHIRP CABLE", 31, 52, COLOR_TEXT, COLOR_BG, 1);
-	UI_PrintString(s_diag, 34, 68, s_off ? COLOR_WARN : COLOR_ACCENT, COLOR_BG, 1);
-	for (int i = 0; i < 30; i++) {
-		SYSTEM_DelayMs(100);
-		WATCHDOG();
+	if (s_off || s_diag == s_diag_buf || PROGRAM_SCREEN_TEST) {
+		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+		UI_PrintString("CHIRP CABLE", 31, 52, COLOR_TEXT, COLOR_BG, 1);
+		UI_PrintString(s_diag, 34, 68, s_off ? COLOR_WARN : COLOR_ACCENT, COLOR_BG, 1);
+		for (int i = 0; i < 30; i++) {
+			SYSTEM_DelayMs(100);
+			WATCHDOG();
+		}
 	}
 }
 #else

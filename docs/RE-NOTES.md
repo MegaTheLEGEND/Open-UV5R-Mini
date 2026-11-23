@@ -253,6 +253,17 @@ The rest are in the next section.
 1-bits float, and on a radio (2026-11-21) the RSSI read about 6 (-157 dBm) with a strong signal. The stock read
 (`sub_01E409C4`) also sets the output latch high after switching the pin to input.
 
+## UART fixed pins vs. the IO-map channels (2026-11-22)
+
+`0x1E5124` holds one 4-bit field per UART for its own fixed pins: bits 3:0 UART0 (`sub_01E48246`), 7:4 UART1
+(`sub_01E48318`), 11:8 UART2 (`sub_01E483DC`); the top bit of each field enables them. It reads `0x8888` when our
+app starts, so all are on. The SDK's UART open (switch at `0x01E69F8A`) calls the routine for its UART: with an
+option of 4 or more (the UART goes through the IO-map channels, as the cable UART does) it only clears the field's
+top bit; with 0-3 it sets the top bit, writes the option into `0x1E511C` bits 3:2 and sets up that pin pair (one of
+UART1's is PB0/PB1). Our CHIRP set-up first left bit 7 set: with the UART on, the screen (PB0/PB1 clock and data) went
+white, with it off it was fine, whatever the routing (three test builds on a radio). `UART_FixedPinsOff` clears it.
+`0x1E5104` is read-only: it follows the USB pins (3 = both high, the idle cable line).
+
 ## Peripheral sweep of the stock code (2026-11-21)
 
 Every GPIO and peripheral the stock app touches, from a static scan of `build/app.dis`. Made with three small

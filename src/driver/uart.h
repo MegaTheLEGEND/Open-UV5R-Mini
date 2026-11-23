@@ -25,6 +25,9 @@ int  UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms);
 uint32_t UART_Reg(uint32_t offset);
 /* Switch the UART (and its receive DMA) off or on without touching anything else (the CHIRP screen test). */
 void     UART_Enable(int on, int dma);
+/* Turn off UART1's own fixed pins (0x1E5124 bit 7), as stock does for a UART on the IO-map channels. Without it the
+ * UART, once on, also drives PB0/PB1 and the screen stays white. Called by the CHIRP set-up (app/program.c). */
+void     UART_FixedPinsOff(void);
 /* Bytes dropped as echo or overflow (debug). */
 uint32_t UART_Dropped(void);
 uint32_t UART_Stats(void);     /* collects by time-out/full flag << 16 | by the 1 s backstop */

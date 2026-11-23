@@ -6,10 +6,9 @@
 
 #define PROGRAM_BAUD 115200u
 
-/* On a radio (2026-11-22, first try) starting the cable UART in normal mode blanked the screen and made the external
- * flash read as empty (CHIRP downloaded blank memories). The update mode does the same pin set-up and its screen
- * works, so the cause is not certain. PROGRAM_Init now checks the flash ID after the set-up and, if it is wrong,
- * finds and leaves off the clashing routing bit itself; it shows the result for 3 s at start-up (program.c). */
+/* First radio try (2026-11-22): the screen went white with CHIRP on. Cause: UART1's own fixed pins (0x1E5124 bit 7)
+ * were left on, so the UART also drove PB0/PB1; UART_FixedPinsOff clears it (docs/RE-NOTES.md). Not yet confirmed on
+ * a radio. */
 /* Switched in features.mk (ENABLE_CHIRP, ENABLE_SCREEN_TEST); these defaults are for builds without it. */
 #ifndef PROGRAM_ENABLE
 #define PROGRAM_ENABLE 1

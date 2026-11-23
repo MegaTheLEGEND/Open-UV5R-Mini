@@ -6,8 +6,8 @@
 # normal mode (the update mode, PTT-A + = at power-on, always has it).
 ENABLE_CHIRP        ?= 1
 
-# Start-up screen test for the CHIRP cable set-up: about 16 s of labels (T1 BOOT ... T4 NONE) at every power-on.
-# Only with ENABLE_CHIRP. For finding why the screen goes blank; turn off once that is fixed.
+# Start-up check of the CHIRP cable set-up: T1 BOOT, then W1 FIXED with the cable UART on (shows only if the screen
+# survives it), then the CHIRP CABLE pin-check result; about 7 s. Only with ENABLE_CHIRP. Turn off once confirmed.
 ENABLE_SCREEN_TEST  ?= 1
 
 # Saving channel, VFO and settings changes to the external flash (src/store/settings.c). Off: the image has no
