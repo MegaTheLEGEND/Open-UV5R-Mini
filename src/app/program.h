@@ -10,8 +10,12 @@
  * flash read as empty (CHIRP downloaded blank memories). The update mode does the same pin set-up and its screen
  * works, so the cause is not certain. PROGRAM_Init now checks the flash ID after the set-up and, if it is wrong,
  * finds and leaves off the clashing routing bit itself; it shows the result for 3 s at start-up (program.c). */
+/* Switched in features.mk (ENABLE_CHIRP, ENABLE_SCREEN_TEST); these defaults are for builds without it. */
 #ifndef PROGRAM_ENABLE
 #define PROGRAM_ENABLE 1
+#endif
+#ifndef PROGRAM_SCREEN_TEST
+#define PROGRAM_SCREEN_TEST 0
 #endif
 
 enum { PROGRAM_IDLE, PROGRAM_DONE_READ, PROGRAM_DONE_WRITTEN };

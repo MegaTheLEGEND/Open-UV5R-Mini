@@ -26,4 +26,11 @@ void     EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len);
 int      EXTFLASH_Erase4K(uint32_t addr);
 int      EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len);
 
+/* Why the last erase or program failed (shown on the screen when a save fails), and the status register (bits 2-4
+ * block-protect: set, the chip ignores erases and programs). */
+enum { EXTFLASH_ERR_NONE, EXTFLASH_ERR_FENCE, EXTFLASH_ERR_ID, EXTFLASH_ERR_BUSY, EXTFLASH_ERR_ERASE,
+       EXTFLASH_ERR_VERIFY };
+uint8_t  EXTFLASH_LastError(void);
+uint8_t  EXTFLASH_ReadStatus(void);
+
 #endif

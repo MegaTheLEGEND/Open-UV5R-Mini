@@ -125,9 +125,48 @@ static void find_clash(void)
 	s_diag = "PINS ??";
 }
 
+/* Screen test (2026-11-22): with CHIRP on the screen stayed blank although the flash ID read right, so the LCD's own
+ * lines (CS PB5, reset PB4, D/C PR1) or its state are the suspects. Each step re-initialises the LCD and shows a big
+ * label for 2 s; Sean notes which labels he sees:
+ *   T1 BOOT     before the cable UART set-up (should always show)
+ *   T2 UART     after it, all routing on: if this shows, re-initialising the LCD is the whole fix
+ *   T3 R0..R3   one routing register left as it was (0 USB_CON, 1 0x1E5100, 2 0x1E5120, 3 0x1E5124)
+ *   T4 NONE     no routing at all (the UART itself on, pins as before)
+ * The second line says whether the flash ID reads right at that step. */
+static void lcd_step(const char *label)
+{
+	ST7735S_Init();
+	UI_PrintString(label, 4, 40, COLOR_TEXT, COLOR_BG, 2);
+	UI_PrintString(xf_ok() ? "FLASH OK" : "FLASH BAD", 4, 72, xf_ok() ? COLOR_ACCENT : COLOR_WARN, COLOR_BG, 1);
+	for (int i = 0; i < 20; i++) {
+		SYSTEM_DelayMs(100);
+		WATCHDOG();
+	}
+}
+
 void PROGRAM_Init(void)
 {
+	static const char *const SKIP[UART_ROUTE_REGS] = { "T3 R0", "T3 R1", "T3 R2", "T3 R3" };
+
+#if PROGRAM_SCREEN_TEST
+	lcd_step("T1 BOOT");
 	UART_Init(PROGRAM_BAUD);
+	lcd_step("T2 UART");
+	for (int r = 0; r < UART_ROUTE_REGS; r++) {
+		UART_RouteSkip(r, 0xFFFFFFFFu);
+		lcd_step(SKIP[r]);
+		UART_RouteSkip(r, 0);
+	}
+	for (int r = 0; r < UART_ROUTE_REGS; r++)
+		UART_RouteSkip(r, 0xFFFFFFFFu);
+	lcd_step("T4 NONE");
+	for (int r = 0; r < UART_ROUTE_REGS; r++)
+		UART_RouteSkip(r, 0);
+#else
+	(void)SKIP;
+	UART_Init(PROGRAM_BAUD);
+#endif
+	ST7735S_Init();                       /* as T2: routing on, LCD re-initialised after it */
 	find_clash();
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
 	UI_PrintString("CHIRP CABLE", 31, 52, COLOR_TEXT, COLOR_BG, 1);
@@ -160,10 +199,14 @@ static int flush(void)
 	int r = 0;
 
 	if (s_sec_addr >= 0 && s_sec_dirty) {
+#if SETTINGS_ENABLE_SAVE
 		r = EXTFLASH_Erase4K((uint32_t)s_sec_addr);
 		if (!r)
 			r = EXTFLASH_Program((uint32_t)s_sec_addr, s_sec, SECTOR);
 		s_written = true;
+#else
+		r = -1;                           /* built without saving (features.mk): nothing is written */
+#endif
 	}
 	s_sec_dirty = false;
 	if (r)
@@ -171,6 +214,7 @@ static int flush(void)
 	return r;
 }
 
+#if SETTINGS_ENABLE_SAVE
 static int load_sector(uint32_t addr)
 {
 	uint32_t a = addr & ~(SECTOR - 1u);
@@ -183,6 +227,7 @@ static int load_sector(uint32_t addr)
 	s_sec_addr = (int32_t)a;
 	return 0;
 }
+#endif
 
 static bool in_place(uint32_t a, uint32_t n)
 {
@@ -222,6 +267,10 @@ static void read_block(uint32_t a, uint8_t *d, uint32_t n)
 
 static bool write_block(uint32_t a, const uint8_t *d, uint32_t n)
 {
+#if !SETTINGS_ENABLE_SAVE
+	(void)a; (void)d; (void)n;
+	return false;                         /* built without saving (features.mk): CHIRP's upload stops at once */
+#else
 	if (in_place(a, n)) {
 		for (uint32_t i = 0; i < n; i++) {
 			if (load_sector(a + i))
@@ -246,6 +295,7 @@ static bool write_block(uint32_t a, const uint8_t *d, uint32_t n)
 		return SETTINGS_SaveSettings() == 0;
 	}
 	return false;                         /* outside what CHIRP writes: refused */
+#endif
 }
 
 /* ------------------------------------------------------------------------------------------- replies */

@@ -56,6 +56,16 @@ static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
+static const char *s_note;              /* a message on the bottom line for a few seconds (saving, loading) */
+static uint16_t s_note_color;
+static uint32_t s_note_ms;
+
+static void note(const char *text, uint16_t color)
+{
+	s_note = text;
+	s_note_color = color;
+	s_note_ms = 4000u;
+}
 static uint16_t s_tail_ms;     /* transmit still on after PTT was let go */
 static bool     s_eot;         /* the down code is being sent after PTT was let go */
 
@@ -287,6 +297,9 @@ static void main_view(UiMain_t *v)
 	if (s_tx_refused) {
 		copy_text(v->bottom, "NO TX HERE", sizeof v->bottom);
 		v->bottom_color = COLOR_TX;
+	} else if (s_note_ms && s_note) {
+		copy_text(v->bottom, s_note, sizeof v->bottom);
+		v->bottom_color = s_note_color;
 	} else if (s_tscan) {
 		char *p = v->bottom;
 		const char *q = "TONE SCAN ";
@@ -927,8 +940,23 @@ static void save_now(void)
 			sv->offset = 0;
 		}
 	}
-	if (!s_xf_ok || SETTINGS_SaveSettings() || (gStock.have_vfo && SETTINGS_SaveVfos()))
-		RADIO_Beep(300, 400);        /* not saved */
+	int rs = s_xf_ok ? SETTINGS_SaveSettings() : -1;
+	int rv = s_xf_ok && gStock.have_vfo ? SETTINGS_SaveVfos() : 0;
+	if (rs || rv) {
+		/* "SAVE FAIL S1 V0 E5 ST1C": which log failed, the flash driver's reason (extflash.h), status register */
+		static char m[24];
+		char *p = m, b[4];
+		const char *q = "SAVE FAIL S";
+		while (*q)
+			*p++ = *q++;
+		*p++ = rs ? '1' : '0'; *p++ = ' '; *p++ = 'V'; *p++ = rv ? '1' : '0'; *p++ = ' '; *p++ = 'E';
+		*p++ = (char)('0' + (s_xf_ok ? EXTFLASH_LastError() % 10u : 9u)); *p++ = ' '; *p++ = 'S'; *p++ = 'T';
+		UI_FormatHex(b, EXTFLASH_ReadStatus(), 2);
+		*p++ = b[0]; *p++ = b[1]; *p = 0;
+		note(m, COLOR_TX);
+		RADIO_Beep(300, 400);
+	} else
+		note("SAVED", COLOR_ACCENT);
 }
 
 static void save_tick(bool busy)
@@ -970,6 +998,14 @@ void APP_Init(void)
 	BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	RADIO_Init();
 	start_from_stock();
+	{
+		/* "LOAD S1 V1 X1": settings log, VFO log, our extra bytes (channel numbers, volume) found at start-up */
+		static char m[] = "LOAD S0 V0 X0";
+		m[6] = gStock.have_settings ? '1' : '0';
+		m[9] = gStock.have_vfo ? '1' : '0';
+		m[12] = ext_ok() ? '1' : '0';
+		note(s_xf_ok ? m : "NO EXT FLASH", s_xf_ok ? COLOR_DIM : COLOR_TX);
+	}
 #if PROGRAM_ENABLE
 	if (s_xf_ok)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
@@ -1186,6 +1222,8 @@ void APP_Tick(void)
 		save_soon();
 	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
 #endif
+	if (s_note_ms)
+		s_note_ms = s_note_ms > APP_TICK_MS ? s_note_ms - APP_TICK_MS : 0;
 	if (s_lamp_mode == 2 && (s_lamp_ms += APP_TICK_MS) >= LAMP_STROBE_MS) {
 		s_lamp_ms = 0;
 		IO_Lamp(!IO_LampIsOn());

@@ -68,6 +68,19 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 /* ------------------------------------------------------------------------------------------- writing (fenced)
  * Standard SPI NOR commands, as the stock app sends them (sub_01E40586 erase: write enable 06, 20 + address, then
  * status 05 until bit 0 clears; sub_01E404A6 program: 06, 02 + address + data). */
+static uint8_t s_err;
+
+uint8_t EXTFLASH_LastError(void)
+{
+	return s_err;
+}
+
+static int fail(uint8_t why)
+{
+	s_err = why;
+	return -1;
+}
+
 static int fenced(uint32_t addr, uint32_t len)
 {
 	return len && addr + 1u > EXTFLASH_WRITE_LO && addr < EXTFLASH_WRITE_HI && len <= EXTFLASH_WRITE_HI - addr;
@@ -104,13 +117,34 @@ static void address(uint8_t c, uint32_t addr)
 
 int EXTFLASH_Erase4K(uint32_t addr)
 {
-	if ((addr & 0xFFFu) || !fenced(addr, 0x1000u) || EXTFLASH_ReadId() != EXTFLASH_ID)
-		return -1;
+	uint8_t back[16];
+
+	if ((addr & 0xFFFu) || !fenced(addr, 0x1000u))
+		return fail(EXTFLASH_ERR_FENCE);
+	if (EXTFLASH_ReadId() != EXTFLASH_ID)
+		return fail(EXTFLASH_ERR_ID);
 	command(0x06);
 	select();
 	address(0x20, addr);
 	deselect();
-	return wait_idle();
+	if (wait_idle())
+		return fail(EXTFLASH_ERR_BUSY);
+	EXTFLASH_Read(addr, back, sizeof back);           /* an erase that didn't happen (write-protected chip) */
+	for (unsigned i = 0; i < sizeof back; i++)
+		if (back[i] != 0xFF)
+			return fail(EXTFLASH_ERR_ERASE);
+	return 0;
+}
+
+uint8_t EXTFLASH_ReadStatus(void)
+{
+	uint8_t st;
+
+	select();
+	xfer(0x05);
+	st = xfer(0);
+	deselect();
+	return st;
 }
 
 static int program_page(uint32_t addr, const uint8_t *buf, uint32_t n)
@@ -124,21 +158,23 @@ static int program_page(uint32_t addr, const uint8_t *buf, uint32_t n)
 		xfer(buf[i]);
 	deselect();
 	if (wait_idle())
-		return -1;
+		return fail(EXTFLASH_ERR_BUSY);
 	for (uint32_t i = 0; i < n; i += sizeof back) {          /* read back */
 		uint32_t m = n - i < sizeof back ? n - i : sizeof back;
 		EXTFLASH_Read(addr + i, back, m);
 		for (uint32_t j = 0; j < m; j++)
 			if (back[j] != buf[i + j])
-				return -1;
+				return fail(EXTFLASH_ERR_VERIFY);
 	}
 	return 0;
 }
 
 int EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len)
 {
-	if (!fenced(addr, len) || EXTFLASH_ReadId() != EXTFLASH_ID)
-		return -1;
+	if (!fenced(addr, len))
+		return fail(EXTFLASH_ERR_FENCE);
+	if (EXTFLASH_ReadId() != EXTFLASH_ID)
+		return fail(EXTFLASH_ERR_ID);
 	while (len) {
 		uint32_t n = 0x100u - (addr & 0xFFu);
 		if (n > len)

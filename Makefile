@@ -23,8 +23,10 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/store/calib.c 
        src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c
 ASM := src/start.S src/update/handover.S
 
+include features.mk
+
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
-          -std=c11 -Wall -Wextra -Isrc
+          -std=c11 -Wall -Wextra -Isrc $(FEATURE_FLAGS)
 LDFLAGS := -T src/firmware.ld --gc-sections
 
 OBJ := $(addprefix $(BUILD)/,$(SRC:.c=.o) $(ASM:.S=.o))
@@ -39,7 +41,11 @@ FORCE:
 
 # -MMD -MP: each object also depends on the headers it includes, so changing a switch in a header (such as
 # PROGRAM_ENABLE in app/program.h) rebuilds every file that uses it. Without this a stale app.o was linked.
-$(BUILD)/%.o: %.c
+# A switch changed in features.mk or on the command line: the flags file changes and everything is rebuilt.
+FLAGS_FILE := $(BUILD)/flags.txt
+$(shell mkdir -p $(BUILD); echo '$(FEATURE_FLAGS)' | cmp -s - $(FLAGS_FILE) || echo '$(FEATURE_FLAGS)' > $(FLAGS_FILE))
+
+$(BUILD)/%.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
 
@@ -72,7 +78,7 @@ ufw: $(TARGET).bin
 # Host syntax check with any GCC/Clang (no pi32v2 toolchain needed).
 check:
 	$(PYTHON) tools/mkassets.py --check
-	gcc -fsyntax-only -std=c11 -Wall -Wextra -Isrc $(SRC)
+	gcc -fsyntax-only -std=c11 -Wall -Wextra -Isrc $(FEATURE_FLAGS) $(SRC)
 
 clean:
 	rm -rf $(BUILD)
