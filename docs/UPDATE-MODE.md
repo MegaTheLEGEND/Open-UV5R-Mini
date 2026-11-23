@@ -216,7 +216,9 @@ Still open:
    nothing written. Even at 9600 the first reads are asked for two or three times. Suspect: this radio's rescue wires
    (a USB cable and an ESP32 through 220 Ω, soldered to the same D+/D− lines) load the line. **Confirmed:** with
    the wires unplugged from the ESP32, `--loader-baud 19200` worked (Sean, 2026-11-22). Disconnect the ESP32 for
-   cable updates. The stock hand-over also sets a 24 MHz system clock (`sub_01E43174`, `clk_set("sys")`, `sub_01E69AAC`;
+   cable updates. Then `--loader-baud 115200` reached about 99% and the loader stopped (the chip held its own power:
+   battery out); the resumed update would not switch to 115200 again, only 9600 worked. The flasher now finishes a
+   resumed update at 9600 by itself. 57600 to try next. The stock hand-over also sets a 24 MHz system clock (`sub_01E43174`, `clk_set("sys")`, `sub_01E69AAC`;
    values from `emu/clk_trace.py`); ours doesn't, and trying it changed nothing at 38400.
 2. Many retries: the flag collects only about a third of the replies, the 1 s backstop the rest.
 3. If the loader resets mid-update, stock's app resumes it at power-on (the record at `0xFDF00`); ours doesn't yet,

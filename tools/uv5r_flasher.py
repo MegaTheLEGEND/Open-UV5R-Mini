@@ -609,7 +609,9 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
     while time.monotonic() < end and not pending:
         pending = [x for x in frames(0.1) if x[0] == CMD_BAUD]
     if pending:
-        log('The radio was part-way through an update: continuing it.')
+        log('The radio was part-way through an update: continuing it at %d (a resumed loader would not switch to'
+            ' 115200 on a radio, 2026-11-22).' % APP_BAUD)
+        globals()['LOADER_BAUD'] = APP_BAUD
         phase, touched = 'loader', True
         send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
         link.set_baud(LOADER_BAUD)
