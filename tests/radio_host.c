@@ -280,9 +280,9 @@ int main(void)
 			begins += DW_Tick(true, false, false, 10) == DW_BEGIN;
 		CHECK(!begins, "active side for 290 ms");
 		CHECK(DW_Tick(true, false, false, 10) == DW_BEGIN && DW_Peeking(), "peek at 300 ms");
-		for (i = 0; i < 14; i++)
+		for (i = 0; i < 19; i++)
 			ends += DW_Tick(true, false, false, 10) == DW_END;
-		CHECK(!ends && DW_Tick(true, false, false, 10) == DW_END && !DW_Peeking(), "back after 150 ms");
+		CHECK(!ends && DW_Tick(true, false, false, 10) == DW_END && !DW_Peeking(), "back after 200 ms");
 		for (i = 0; i < 100; i++)
 			begins += DW_Tick(true, false, true, 10) == DW_BEGIN;
 		CHECK(!begins, "never peeks while the active side has a signal");

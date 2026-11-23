@@ -123,7 +123,21 @@ static Side_t   s_side[2];
 static uint8_t  s_active;                /* 0 = A, 1 = B */
 static bool     s_peek;                  /* dual watch: tuned to the other side for a moment */
 static bool     s_peek_held;             /* ... and it opened */
+static uint16_t s_dw_peeks, s_dw_holds;  /* dual watch test counts (shown on the bottom line) */
 static void side_save(void);
+
+static char *put_num(char *p, unsigned n)          /* decimal, no padding; returns the end */
+{
+	char t[6];
+	int i = 0;
+
+	do
+		t[i++] = (char)('0' + n % 10u);
+	while ((n /= 10u) && i < 6);
+	while (i)
+		*p++ = t[--i];
+	return p;
+}
 static bool     s_tscan;                 /* tone scan running */
 static uint16_t s_tscan_last, s_tscan_ms;
 static uint8_t  s_tscan_same;
@@ -319,6 +333,16 @@ static void main_view(UiMain_t *v)
 		v->bottom_color = COLOR_WARN;
 	} else if (s_entry_len)
 		copy_text(v->bottom, "# ENTER  EXIT CLEAR", sizeof v->bottom);
+	else if (gStock.raw[SET_DUAL_WATCH]) {
+		/* dual watch test line: how many times it looked at the other side, and how many times it stayed there
+		 * for a signal (radio, 2026-11-22: dual watch never received; this says whether it switches at all) */
+		char *p = v->bottom;
+		*p++ = 'D'; *p++ = 'W'; *p++ = ' '; *p++ = 'P';
+		p = put_num(p, s_dw_peeks % 10000u);
+		*p++ = ' '; *p++ = 'H';
+		p = put_num(p, s_dw_holds % 10000u);
+		*p = 0;
+	}
 	else if (s_mr)
 		copy_text(v->bottom, "MENU  *BW  #LAMP", sizeof v->bottom);
 	else {
@@ -874,6 +898,7 @@ static void dw_begin(void)
 	RADIO_Apply();
 	s_peek = true;
 	s_peek_held = false;
+	s_dw_peeks++;
 }
 
 static void dw_end(void)
@@ -897,6 +922,7 @@ static void dw_tick(bool busy)
 		break;
 	case DW_HELD:
 		s_peek_held = true;
+		s_dw_holds++;
 		break;
 	default:
 		break;
@@ -1215,11 +1241,7 @@ void APP_Tick(void)
 		} else if (RADIO_TxToneOn())
 			RADIO_TxToneOff();
 	}
-	if (k != KEY_INVALID && !s_light_on) {       /* the first press only lights the screen */
-		light_wake();
-		k = KEY_INVALID;
-	}
-	if (k != KEY_INVALID)
+	if (k != KEY_INVALID)                        /* a press lights the screen and still does its job */
 		light_wake();
 	if (k != KEY_INVALID)
 		dw_end();                          /* keys act on the active side */

@@ -9,12 +9,11 @@ What still has to be written before the C build can replace stock v0.27 on a rad
    (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes); a cut update resumes. Left: 38400 (19200 works once
    the rescue ESP32 is disconnected from the D+/D− wires), fewer retries, and the official Baofeng updater (not tried; its
    `.ufw` has no loader). Details at the end of [UPDATE-MODE.md](UPDATE-MODE.md).
-2. **Bug: dual watch and receive tones on a radio** (3.8, 3.2). Seen 2026-11-22: dual watch never received on the
-   other side, and a signal with a CTCSS/DCS tone was seen but didn't open the squelch (DTMF decoding works). Fix
-   (PC-tested only): dual watch now follows the carrier (squelch or RSSI) instead of the tone-qualified squelch,
-   listens 150 ms per peek and ignores the first 40 ms after the retune. The bottom line shows `TONE OK` or
-   `NO TONE MATCH` while a signal is there and a receive tone is set. Next: Sean's result, and whether tones also
-   failed with dual watch off.
+2. **Bug: dual watch doesn't receive on a radio** (3.8). Seen 2026-11-22: dual watch never received on the other
+   side. Receive tones were fixed by `664f371` (radio, 2026-11-22); dual watch still failed with it. Now (PC-tested
+   only): dual watch follows the chip's own squelch result (no RSSI compare, no tone), listens 200 ms per peek and
+   ignores the first 40 ms after the retune. With dual watch on, the bottom line shows `DW Pn Hn`: how many times it
+   looked at the other side and how many times it stayed for a signal. Next: Sean's reading of those two numbers.
 3. **CHIRP (5.3): written, PC-tested** (2026-11-22): CHIRP's own UV-5R Mini driver, unchanged, downloads and uploads
    against our programming mode (`src/app/program.c`, `python tests/chirp_host.py`). First radio try: screen blank,
    flash read empty after the cable UART set-up (yet the update mode's screen works after the same set-up). Now the

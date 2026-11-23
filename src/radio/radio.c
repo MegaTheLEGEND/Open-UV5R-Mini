@@ -15,7 +15,6 @@ const uint8_t  RADIO_StepCount = sizeof RADIO_Steps / sizeof RADIO_Steps[0];
 
 static RadioState_t s_state;
 static uint16_t s_rssi;
-static uint8_t  s_open_rssi;                   /* the squelch's RSSI open threshold (REG_78 high byte) */
 static uint8_t s_open_count, s_close_count;
 static uint16_t s_beep_ms;
 static uint8_t s_tone_count, s_tone_miss;     /* debounce of the receive tone */
@@ -165,17 +164,18 @@ static void squelch_levels(void)
 		c = (uint8_t)(o - 6u);
 	}
 	BK4819_WriteRegister(BK4819_REG_78, (uint16_t)(o << 8 | c));
-	s_open_rssi = o;
 }
 
-/* A signal is there, tone or not: the chip's squelch says open, or the RSSI (same units as REG_78) is at the open
- * threshold. Dual watch uses it so a carrier keeps it on a side while the tone detector locks, which takes a couple
- * of hundred ms (radio, 2026-11-22: with dual watch on, tones never opened and the other side never received). */
+/* A signal is there, tone or not: the chip's own squelch result (REG_0C bit 1, no tone in it). Dual watch uses it
+ * so a carrier keeps it on a side while the tone detector locks, which takes a couple of hundred ms (radio,
+ * 2026-11-22: with dual watch on, the other side never received). Not the RSSI against the REG_78 threshold: our
+ * software RSSI compare was already wrong on a radio (squelch_levels), so it may have held dual watch on the active
+ * side for ever. With squelch 0 the audio is always open, so only the chip's squelch counts. */
 bool RADIO_Carrier(void)
 {
 	if (s_state == RADIO_TX)
 		return false;
-	return s_state == RADIO_RX_OPEN || BK4819_SquelchOpen() || (s_open_rssi && s_rssi >= s_open_rssi);
+	return BK4819_SquelchOpen() || (gVfo.squelch && s_state == RADIO_RX_OPEN);
 }
 
 void RADIO_Tick(void)

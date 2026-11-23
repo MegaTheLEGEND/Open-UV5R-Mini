@@ -50,6 +50,10 @@ That's the one command you need. It compiles the firmware (`build/fw/firmware.bi
 loader once (`build/stock-flashable-reference.ufw`), and writes **`build/open-uv5r-mini.ufw`**, then checks it. It
 should end with `ALL OK`.
 
+On Windows, `build.bat` in the repo folder does the same in one step (double-click it, or run it from a terminal;
+extra arguments go to make, e.g. `build.bat ENABLE_CHIRP=0`). It expects MSYS2 at `C:\msys64` and the toolchain at
+`E:/toolchains/pi32v2-llvm/bin`; set `MSYS_BIN` or `TOOLCHAIN` first if yours are elsewhere.
+
 Other targets:
 
 | Command | Result |

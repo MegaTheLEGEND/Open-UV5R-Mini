@@ -1,6 +1,6 @@
 /* Open-UV5R-Mini: dual watch timing (stock setting 0x04). app/app.c does the tuning; this decides when.
  *
- * Active side without a signal for 300 ms: listen on the other side for 150 ms. The first 40 ms after the retune are
+ * Active side without a signal for 300 ms: listen on the other side for 200 ms. The first 40 ms after the retune are
  * ignored (the RSSI and the chip's squelch still show the old side). A signal there holds the radio on that side
  * until it has been gone for 1 s; a signal on the active side keeps it there. "Signal" is a carrier
  * (RADIO_Carrier), not the full squelch: the tone detector needs a couple of hundred ms to lock, and swapping sides
@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 #define DW_ACTIVE_MS 300u
-#define DW_PEEK_MS   150u
+#define DW_PEEK_MS   200u
 #define DW_SETTLE_MS 40u
 #define DW_HANG_MS   1000u
 
