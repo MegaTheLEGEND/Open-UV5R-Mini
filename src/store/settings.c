@@ -86,6 +86,8 @@ void SETTINGS_Defaults(void)
 
 	for (unsigned i = 0; i < sizeof gStock.raw; i++)
 		gStock.raw[i] = 0;
+	for (unsigned i = 0; i < SETTINGS_EXT_LEN; i++)
+		gStock.ext[i] = 0;
 	for (unsigned i = 0; i < sizeof D / sizeof D[0]; i++)
 		gStock.raw[D[i][0]] = D[i][1];
 }
@@ -103,6 +105,8 @@ bool SETTINGS_Load(void)
 	    && SETTINGS_Crc16(s, 0x5E) == (uint16_t)(s[0x5E] | s[0x5F] << 8)) {
 		for (unsigned i = 0; i < sizeof gStock.raw; i++)
 			gStock.raw[i] = s[i];
+		for (unsigned i = 0; i < SETTINGS_EXT_LEN; i++)
+			gStock.ext[i] = s[SETTINGS_EXT_OFF + i];
 		gStock.have_settings = true;
 	}
 	if (read_current(SETTINGS_VFO_HDR, SETTINGS_VFO_HDR_LEN, SETTINGS_VFO_LOG, SETTINGS_VFO_SLOT, SETTINGS_VFO_MAX, s)
@@ -186,6 +190,8 @@ int SETTINGS_SaveSettings(void)
 
 	for (unsigned i = 0; i < SETTINGS_SET_SLOT; i++)
 		s[i] = i < sizeof gStock.raw ? gStock.raw[i] : 0;
+	for (unsigned i = 0; i < SETTINGS_EXT_LEN; i++)
+		s[SETTINGS_EXT_OFF + i] = gStock.ext[i];
 	c = SETTINGS_Crc16(s, 0x5E);
 	s[0x5E] = (uint8_t)c;
 	s[0x5F] = (uint8_t)(c >> 8);

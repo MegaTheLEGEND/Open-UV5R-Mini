@@ -728,9 +728,23 @@ static KEY_Code_t key_event(void)
 }
 
 /* ------------------------------------------------------------------------------------------- entry points */
-/* Start where the stock app left off: its squelch and beep setting, the active side's VFO, and channel mode if
- * that side was in it (store/settings.h; read only, nothing is written back). The channel number each side was on
- * isn't known yet, so channel mode starts at the first filled slot. */
+/* Start where we (or the stock app) left off: squelch and the other settings, both sides' VFOs, the active side,
+ * and channel mode for a side that was in it. Our own bytes (gStock.ext, saved with the settings) add what stock's
+ * records have no place for: the channel each side was on, the volume, and each side's modulation. Without them
+ * (a log written by stock), channel mode starts at the first filled channel. */
+enum {
+	EXT_MAGIC = 0,                   /* EXT_MAGIC_VALUE once we have saved; stock leaves it 0 */
+	EXT_VOLUME = 1,                  /* 0-15 */
+	EXT_CH_A = 2,                    /* 2 bytes each, little-endian, 0-998; FFFF none (A at 2, B at 4) */
+	EXT_MOD_A = 6,                   /* Modulation_t (A at 6, B at 7) */
+	EXT_MAGIC_VALUE = 0xA5,
+};
+
+static bool ext_ok(void)
+{
+	return gStock.ext[EXT_MAGIC] == EXT_MAGIC_VALUE;
+}
+
 static void start_side(uint8_t side);
 
 static void start_from_stock(void)
@@ -743,6 +757,8 @@ static void start_from_stock(void)
 		return;
 	if (gStock.raw[SET_SQUELCH] <= 9)
 		gVfo.squelch = gStock.raw[SET_SQUELCH];
+	if (ext_ok() && gStock.ext[EXT_VOLUME] <= 15)
+		gVfo.volume = gStock.ext[EXT_VOLUME];
 	s_side[0].vfo = s_side[1].vfo = gVfo;
 	s_side[0].ch = s_side[1].ch = -1;
 	for (uint8_t side = 0; side < 2; side++) {
@@ -777,9 +793,13 @@ static void start_side(uint8_t side)
 		if (v->shift && v->offset)
 			gVfo.tx_freq = v->shift > 0 ? v->freq + v->offset : v->freq - v->offset;
 	}
+	if (ext_ok() && gStock.ext[EXT_MOD_A + side] <= MOD_AM)
+		gVfo.mod = (Modulation_t)gStock.ext[EXT_MOD_A + side];
 	RADIO_Apply();
 	if ((gStock.raw[SET_WORK_MODE] >> (side ? 4 : 0) & 0xFu) == 1) {
-		int n = CHANNEL_Next(-1, +1);
+		int saved = ext_ok() ? (int)(gStock.ext[EXT_CH_A + 2 * side] | gStock.ext[EXT_CH_A + 2 * side + 1] << 8) : -1;
+		int n = saved >= 0 && saved < (int)CHANNEL_COUNT && CHANNEL_Next(saved - 1, +1) == saved
+		        ? saved : CHANNEL_Next(-1, +1);     /* the saved channel if it is still filled, else the first */
 		if (n >= 0) {
 			s_mr = true;
 			channel_show(n);
@@ -873,12 +893,18 @@ static void dw_tick(bool busy)
 static uint32_t s_save_ms;
 static bool     s_save_due;
 
-static void save_tick(bool busy)
+static void save_now(void)
 {
-	if (!s_save_due || busy || (s_save_ms += APP_TICK_MS) < 3000u)
-		return;
 	s_save_due = false;
 	side_save();
+	gStock.ext[EXT_MAGIC] = EXT_MAGIC_VALUE;
+	gStock.ext[EXT_VOLUME] = gVfo.volume;
+	for (int i = 0; i < 2; i++) {
+		uint16_t ch = s_side[i].ch < 0 ? 0xFFFFu : (uint16_t)s_side[i].ch;
+		gStock.ext[EXT_CH_A + 2 * i] = (uint8_t)ch;
+		gStock.ext[EXT_CH_A + 2 * i + 1] = (uint8_t)(ch >> 8);
+		gStock.ext[EXT_MOD_A + i] = (uint8_t)s_side[i].vfo.mod;
+	}
 	gStock.raw[SET_SQUELCH] = gVfo.squelch;
 	gStock.raw[SET_ACTIVE_SIDE] = s_active;
 	gStock.raw[SET_WORK_MODE] = (uint8_t)((s_side[0].mr ? 0x01u : 0u) | (s_side[1].mr ? 0x10u : 0u));
@@ -903,6 +929,13 @@ static void save_tick(bool busy)
 	}
 	if (!s_xf_ok || SETTINGS_SaveSettings() || (gStock.have_vfo && SETTINGS_SaveVfos()))
 		RADIO_Beep(300, 400);        /* not saved */
+}
+
+static void save_tick(bool busy)
+{
+	if (!s_save_due || busy || (s_save_ms += APP_TICK_MS) < 3000u)
+		return;
+	save_now();
 }
 
 static void save_soon(void)
@@ -1026,6 +1059,12 @@ void APP_Tick(void)
 	if (GPIO_CheckBit(PIN_POWER_SENSE)) {
 		if (++s_off_ticks >= 200 / APP_TICK_MS) {
 			RADIO_EndTx();
+#if SETTINGS_ENABLE_SAVE
+			if (s_save_due) {            /* changed less than 3 s ago: save it now, not lose it */
+				dw_end();
+				save_now();
+			}
+#endif
 			IO_Amp(0xFF, false);
 			BOARD_PowerOff();
 		}
@@ -1035,8 +1074,12 @@ void APP_Tick(void)
 	/* PTT; PTT-B transmits on side B (it becomes the active side) */
 	ptt = ptt_debounced(KEYBOARD_IsPttPressed(), 0);
 	if (ptt_debounced(KEYBOARD_IsPtt2Pressed(), 1)) {
-		if (!s_ptt_down && s_active != 1)
+		if (!s_ptt_down && s_active != 1) {
 			side_switch();
+#if SETTINGS_ENABLE_SAVE
+			save_soon();
+#endif
+		}
 		ptt = true;
 	}
 	if (ptt) {

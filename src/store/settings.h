@@ -40,6 +40,8 @@
 #define SETTINGS_SET_LOG     0x9010u
 #define SETTINGS_SET_SLOT    0x60u
 #define SETTINGS_SET_MAX     40u
+#define SETTINGS_EXT_OFF     0x40u     /* our bytes in the settings slot (StockSettings_t.ext) */
+#define SETTINGS_EXT_LEN     16u
 
 /* Stock setting bytes we use (offsets in the 64-byte block). */
 enum {
@@ -68,6 +70,10 @@ typedef struct {
 	 * C, D, *, #), 10 group call code (0-6 = none, A-D, *, #). Names as CHIRP's UV-5R Mini driver. */
 	uint8_t    ani[11];
 	uint8_t    up_code[16], down_code[16];   /* external 0xA180 / 0xA190, codes 0-15, 0xFF ends */
+	/* Ours: what stock's records have no place for (each side's channel, volume, modulation; layout in app.c). Kept
+	 * in the settings slot at 0x40-0x4F: stock left 0x40-0x5D zero in all 33 slots of one radio's log, and the slot
+	 * CRC (0x5E) covers it. All zero = nothing saved by us. */
+	uint8_t    ext[SETTINGS_EXT_LEN];
 } StockSettings_t;
 
 #define SETTINGS_ANI      0xA000u

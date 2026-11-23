@@ -152,13 +152,22 @@ int main(int argc, char **argv)
 	/* saving on a blank log: slot 1 written, header bit 0 cleared (as stock: slot 0 is the blank current one) */
 	SETTINGS_Defaults();
 	gStock.raw[SET_SQUELCH] = 6;
+	gStock.ext[0] = 0xA5;                /* our bytes (channel numbers etc.) at slot 0x40 */
+	gStock.ext[2] = 0xE6;
+	gStock.ext[3] = 0x03;
+	gStock.ext[15] = 0x5C;
 	set_vfo(0, 14552500u, 885, 0, 0, 0, 4);
 	set_vfo(1, 43562500u, 0, 106, 1, 1, 7);
 	memset(gStock.vfo_raw, 0, sizeof gStock.vfo_raw);
 	CHECK(SETTINGS_SaveSettings() == 0 && SETTINGS_SaveVfos() == 0, "saved");
 	CHECK(flash[0x9000] == 0xFE && flash[0x8000] == 0xFE, "header bit 0 cleared");
+	CHECK(flash[0x9070 + 0x40] == 0xA5 && flash[0x9070 + 0x4F] == 0x5C && flash[0x9070 + 0x50] == 0,
+	      "our bytes at slot 0x40-0x4F, 0x50 on still 0");
+	memset(gStock.ext, 0, sizeof gStock.ext);
 	CHECK(SETTINGS_Load() && gStock.raw[SET_SQUELCH] == 6 && gStock.vfo[0].freq == 14552500u
 	      && gStock.vfo[1].freq == 43562500u && gStock.vfo[1].tx_tone == 106, "saved values read back");
+	CHECK(gStock.ext[0] == 0xA5 && gStock.ext[2] == 0xE6 && gStock.ext[3] == 0x03 && gStock.ext[15] == 0x5C,
+	      "our bytes read back");
 
 	/* the same again: nothing written */
 	programs = 0;

@@ -37,9 +37,13 @@ $(BUILD)/src/app/version.o: CFLAGS += -DFW_BUILD='"$(FW_BUILD)"'
 $(BUILD)/src/app/version.o: FORCE
 FORCE:
 
+# -MMD -MP: each object also depends on the headers it includes, so changing a switch in a header (such as
+# PROGRAM_ENABLE in app/program.h) rebuilds every file that uses it. Without this a stale app.o was linked.
 $(BUILD)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@
+
+-include $(OBJ:.o=.d)
 
 $(BUILD)/%.o: %.S
 	@mkdir -p $(dir $@)
