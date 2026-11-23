@@ -385,6 +385,7 @@ class EmuRadio:
         self.thread = None
         self.baud = APP_BAUD
         self.keys_update = True     # power on holding PTT-A and = (update mode)
+        self.late_every = 7         # loader: every 7th answer is seen late (see _loader_read); 0 = never
 
     # -- the radio's view of the cable
     def plug(self, link):
@@ -412,10 +413,10 @@ class EmuRadio:
 
     def _read(self, off, n):
         """Ask the host for image bytes, retrying a few times."""
+        if self.in_loader:
+            return self._loader_read(off, n)
         for _ in range(3):
             self._send(CMD_DATA, struct.pack('<II', off, n))
-            if self.in_loader:                              # the real loader sends each request twice
-                self._send(CMD_DATA, struct.pack('<II', off, n))
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 r = self._recv(end - time.monotonic())
@@ -424,6 +425,27 @@ class EmuRadio:
                 cmd, d = r
                 if cmd == CMD_DATA and d[:8] == struct.pack('<II', off, n) and len(d) == 8 + n:
                     return d[8:]
+        raise IOError('host stopped answering reads')
+
+    def _loader_read(self, off, n):
+        """As the real loader seems to (byte logs, radio, 2026-11-22): each request is sent twice; the next answer of
+        the right length is taken without checking its address; and now and then (late_every) an answer is seen only
+        after the loader has asked again, so the host's answer to that re-ask comes while the next block is awaited."""
+        req = struct.pack('<II', off, n)
+        for _ in range(3):
+            self._send(CMD_DATA, req)
+            self._send(CMD_DATA, req)
+            r = self._recv(3)
+            while r is not None and not (r[0] == CMD_DATA and len(r[1]) == 8 + n):
+                r = self._recv(3)
+            if r is None:
+                continue
+            self._reads = getattr(self, '_reads', 0) + 1
+            if self.late_every and self._reads % self.late_every == 0:
+                time.sleep(0.3)                             # its time-out ran out first: asked again, ~0.3 s on
+                self._send(CMD_DATA, req)
+                self._send(CMD_DATA, req)
+            return r[1][8:]
         raise IOError('host stopped answering reads')
 
     # -- power on
@@ -691,7 +713,8 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                 return False, ('The radio stopped talking. ' + RECOVER) if touched else 'The radio stopped talking.'
             continue
         last, switched_at, quiet_logged = time.monotonic(), None, False
-        for cmd, d in got:
+        asks = [(i, struct.unpack_from('<II', d)) for i, (c, d) in enumerate(got) if c == CMD_DATA and len(d) >= 8]
+        for i, (cmd, d) in enumerate(got):
             if cmd == CMD_BAUD:
                 if phase == 'app' and reads:
                     log('Hand-over: the radio reset into the loader. Switching to %d.' % LOADER_BAUD)
@@ -716,8 +739,22 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                     tr('note', 'duplicate request 0x%X+%d not answered' % (off, n))
                     continue
                 last_req = ((off, n), now)
+                # Answer only the newest request. The loader re-asks a block after ~0.3 s and, when our first answer
+                # then arrives, asks for the next block at once: both requests come in one burst. Answering both put
+                # the old block's data on the line while it waited for the new one, and it seems to take the next
+                # answer without checking the address: 167 such bursts in one 115200 run, which ended in 0x88.
+                if any(j > i and a != (off, n) for j, a in asks):
+                    tr('note', 'request 0x%X+%d not answered: a newer one came with it' % (off, n))
+                    continue
                 if phase == 'loader' and REPLY_DELAY:
                     time.sleep(REPLY_DELAY)                 # let the loader re-arm its receive first
+                    more = frames(0)
+                    if any(c == CMD_DATA and struct.unpack_from('<II', x)[:2] != (off, n) for c, x in more
+                           if len(x) >= 8):
+                        tr('note', 'request 0x%X+%d not answered: a newer one came during the pause' % (off, n))
+                        pending += more
+                        continue
+                    pending += more
                 send(CMD_DATA, d[:8] + image[off:off + n])
                 if phase == 'loader' and not area_len:      # what the loader checks before it erases
                     log('  loader read 0x%X, %d bytes' % (off, n))

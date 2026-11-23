@@ -224,7 +224,13 @@ Still open:
    back, and the flasher answered both. The loader writes from the top down (0x7B000 to 0x3200, 512 bytes a read),
    so each block got a second 512-byte answer while it already waited for the next one; every block was re-asked
    (~0.36 s a block) and after the last one it gave up with **0x88**. The flasher now answers a request once (a copy
-   within 0.1 s is skipped). Not yet tried on a radio at 115200.
+   within 0.1 s is skipped). That alone still ended in 0x88 (stock to ours, 2026-11-22): the loader re-asks a block
+   after ~0.3 s, then sees our first answer and asks for the next block at once, so both requests arrive in one burst
+   (167 times in one run). Answering both put the old block's data on the line while it waited for the new one, and
+   it takes the next answer without checking its address: wrong data in a block, the area CRC fails, 0x88. The
+   flasher now answers only the newest request. The emulated loader does all three (double requests, late answers,
+   no address check): without the fix its flash ends with a bad CRC, with it the flash equals the image. Not yet
+   tried on a radio.
 2. Many retries: the flag collects only about a third of the replies, the 1 s backstop the rest.
 3. If the loader resets mid-update, stock's app resumes it at power-on (the record at `0xFDF00`); ours doesn't yet,
    so the radio comes back in our app (seen when the 38400 switch failed). Update mode again recovers it.
