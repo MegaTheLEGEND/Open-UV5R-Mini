@@ -6,6 +6,13 @@
 
 #define PROGRAM_BAUD 115200u
 
+/* OFF (2026-11-22): on a radio, starting the cable UART in normal mode blanked the screen and made the external
+ * flash read as empty (CHIRP downloaded blank memories). UART_Init's IO-map bits (route_usb_pins, copied from stock)
+ * likely hand PB0/PB1, which our LCD and flash drivers bit-bang, to a hardware unit. Find which bit, then turn on. */
+#ifndef PROGRAM_ENABLE
+#define PROGRAM_ENABLE 0
+#endif
+
 enum { PROGRAM_IDLE, PROGRAM_DONE_READ, PROGRAM_DONE_WRITTEN };
 
 /* Set up the cable UART at 115200 (call once at start-up). */

@@ -937,8 +937,10 @@ void APP_Init(void)
 	BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	RADIO_Init();
 	start_from_stock();
+#if PROGRAM_ENABLE
 	if (s_xf_ok)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
+#endif
 	BT_Init(0);
 	go(SCREEN_MAIN);
 }
@@ -1010,7 +1012,7 @@ void APP_Tick(void)
 
 	SYSTEM_WatchdogClear();
 
-	if (s_xf_ok && RADIO_State() != RADIO_TX) {
+	if (PROGRAM_ENABLE && s_xf_ok && RADIO_State() != RADIO_TX) {
 		int p = PROGRAM_Poll();          /* a whole CHIRP session runs inside this call */
 		if (p == PROGRAM_DONE_WRITTEN)
 			start_from_stock();          /* new channels and settings */
