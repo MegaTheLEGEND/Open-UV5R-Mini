@@ -76,8 +76,8 @@ python tools/build_matching.py --toolchain <pi32v2-llvm>/bin --isa <pi32v2-isa> 
 python tools/uv5r_flasher.py                                               # flasher, with an emulated radio to practise on
 ```
 
-Building the C firmware needs the open [pi32v2 toolchain](https://github.com/jvitkauskas/pi32v2-isa).
-See [docs/PORTING.md](docs/PORTING.md).
+Building the firmware: **[docs/BUILDING.md](docs/BUILDING.md)** has every step and command, from the tools to a
+file on the radio. In short, after the one-time set-up: `make ufw TOOLCHAIN=<pi32v2-llvm>/bin`.
 
 Using Claude Code or another AI agent? Point it at [AGENTS.md](AGENTS.md): the rules, the context and how to
 contribute.
@@ -90,7 +90,8 @@ contribute.
 | [LAYOUT](docs/LAYOUT.md) | Where code goes, naming, and how icons and other assets are stored |
 | [RADIO](docs/RADIO.md) | The radio app: what it does, the keys, how to test it |
 | [TESTING](docs/TESTING.md) | Flashing a radio safely, and getting back to stock |
-| [PORTING](docs/PORTING.md) | Building the C firmware |
+| [BUILDING](docs/BUILDING.md) | Building the firmware and putting it on a radio: tools, commands, feature switches |
+| [PORTING](docs/PORTING.md) | How the C firmware was brought up on this chip |
 | [MATCHING](docs/MATCHING.md) | The byte-for-byte stock rebuild, and making small mods |
 | [RE-NOTES](docs/RE-NOTES.md) | Hardware findings: pins, chips, memory |
 | [FIRMWARE](docs/FIRMWARE.md) | The `.ufw` file format |

@@ -7,8 +7,8 @@
 #define PROGRAM_BAUD 115200u
 
 /* First radio try (2026-11-22): the screen went white with CHIRP on. Cause: UART1's own fixed pins (0x1E5124 bit 7)
- * were left on, so the UART also drove PB0/PB1; UART_FixedPinsOff clears it (docs/RE-NOTES.md). Not yet confirmed on
- * a radio. */
+ * were left on, so the UART also drove PB0/PB1; UART_FixedPinsOff clears it (docs/RE-NOTES.md). Confirmed on a radio
+ * (Sean, 2026-11-22: the screen works with CHIRP on). */
 /* Switched in features.mk (ENABLE_CHIRP, ENABLE_SCREEN_TEST); these defaults are for builds without it. */
 #ifndef PROGRAM_ENABLE
 #define PROGRAM_ENABLE 1

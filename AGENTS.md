@@ -55,12 +55,12 @@ python tools/lift/lift.py                                                     # 
 # 3. Build our firmware
 make check                                             # host gcc syntax check, no toolchain needed
 make TOOLCHAIN=<path>/pi32v2-llvm/bin                  # firmware.bin
-make ufw TOOLCHAIN=... BASE_UFW=build/stock-flashable-reference.ufw   # the update file, with the stock loader
+make ufw TOOLCHAIN=...                                 # build/open-uv5r-mini.ufw, with the stock loader
 ```
 
 Features are switched in `features.mk` (CHIRP, the start-up screen test, saving, transmit): 1 in, 0 out, as in
 egzumer's UV-K5 firmware. One build without editing it: `make ENABLE_CHIRP=0 TOOLCHAIN=...`. Changing a switch
-rebuilds everything that uses it.
+rebuilds everything that uses it. The full how-to for people: [docs/BUILDING.md](docs/BUILDING.md).
 
 For NRFB: `tools/disasm.py build/stock-nrfb/unpacked/app.bin … -o build/nrfb/app.dis --xrefs build/nrfb/xrefs.txt`,
 then `tools/lift/lift.py --variant nrfb`.

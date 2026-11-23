@@ -62,18 +62,34 @@ $(TARGET).elf: $(OBJ) src/firmware.ld
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
 
-# Our app in the app.bin slot of your stock .ufw (kept outside git). NOT flashable: the stock .ufw has no loader,
-# and this app has no update mode (docs/TESTING.md). For radio testing use: make matching
-#   make ufw BASE_UFW=firmware/stock-nrf-v0.27.ufw
-BASE_UFW ?= firmware/stock-nrf-v0.27.ufw
+# The update file: our app in the app slot of the stock .ufw with the stock loader added (docs/BUILDING.md).
+# The base is made once from the two downloaded files in firmware/ (kept outside git):
+#   the stock file                 firmware/stock-nrf-v0.27.ufw
+#   MM9PDY's to-stock patch        firmware/uv5rmini-fw-to-stock-nrf-v0.27-hw1.7-1.1.0.patch.json (adds the loader)
 PYTHON ?= python
+STOCK_UFW ?= firmware/stock-nrf-v0.27.ufw
+TO_STOCK_PATCH ?= firmware/uv5rmini-fw-to-stock-nrf-v0.27-hw1.7-1.1.0.patch.json
+REF_UFW := build/stock-flashable-reference.ufw
+BASE_UFW ?= $(REF_UFW)
+UFW := build/open-uv5r-mini.ufw
+
 # Icons: assets/icons/*.txt -> src/ui/icons.c / icons.h (generated, committed; docs/LAYOUT.md).
 assets:
 	$(PYTHON) tools/mkassets.py
 
-ufw: $(TARGET).bin
-	$(PYTHON) tools/mkufw.py --base $(BASE_UFW) --app $(TARGET).bin -o build/open-uv5r-mini.ufw
-	$(PYTHON) tools/ufwcheck.py build/open-uv5r-mini.ufw --app $(TARGET).bin
+$(REF_UFW): $(STOCK_UFW) $(TO_STOCK_PATCH)
+	@mkdir -p build
+	$(PYTHON) tools/ufwpatch.py apply $(TO_STOCK_PATCH) $(STOCK_UFW) -o $@
+
+ufw: $(TARGET).bin $(BASE_UFW)
+	$(PYTHON) tools/mkufw.py --base $(BASE_UFW) --app $(TARGET).bin -o $(UFW)
+	$(PYTHON) tools/ufwcheck.py $(UFW) --app $(TARGET).bin
+
+# The whole-flash image for the rescue route (uv5r_flash_ours.ps1): your own backup with our app put in.
+#   make flashimg BACKUP=firmware/backups/internal-....bin TOOLCHAIN=...
+flashimg: ufw
+	@test -n "$(BACKUP)" || { echo 'flashimg needs BACKUP=firmware/backups/internal-....bin'; exit 1; }
+	$(PYTHON) tools/mkflashimg.py --backup $(BACKUP) --ufw $(UFW) -o build/open-uv5r-mini-flash.bin
 
 # Host syntax check with any GCC/Clang (no pi32v2 toolchain needed).
 check:
@@ -88,4 +104,4 @@ ISA ?= ../pi32v2-isa
 matching:
 	$(PYTHON) tools/build_matching.py --toolchain $(TOOLCHAIN) --isa $(ISA)
 
-.PHONY: all assets check clean ufw matching FORCE
+.PHONY: all assets check clean ufw flashimg matching FORCE

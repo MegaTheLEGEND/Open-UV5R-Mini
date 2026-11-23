@@ -8,7 +8,7 @@ ENABLE_CHIRP        ?= 1
 
 # Start-up check of the CHIRP cable set-up: T1 BOOT, then W1 FIXED with the cable UART on (shows only if the screen
 # survives it), then the CHIRP CABLE pin-check result; about 7 s. Only with ENABLE_CHIRP. Turn off once confirmed.
-ENABLE_SCREEN_TEST  ?= 1
+ENABLE_SCREEN_TEST  ?= 0
 
 # Saving channel, VFO and settings changes to the external flash (src/store/settings.c). Off: the image has no
 # external-flash erase or program code at all, and CHIRP uploads are refused.
