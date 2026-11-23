@@ -247,6 +247,12 @@ uint32_t UART_Reg(uint32_t offset)
 	return REG(offset);
 }
 
+void UART_Enable(int on, int dma)
+{
+	CON0 = (CON0 & ~(uint32_t)(CON_EN | CON_RXDMA | CON_CLR_TX | CON_CLR_RX | CON_CLR_OT | CON_RDC))
+	       | (on ? CON_EN : 0u) | (dma ? CON_RXDMA : 0u);
+}
+
 uint32_t UART_Stats(void) { return (s_flagged & 0xFFFFu) << 16 | (s_backstops & 0xFFFFu); }
 
 uint32_t UART_Dropped(void)

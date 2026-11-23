@@ -23,6 +23,8 @@ void UART_Send(const uint8_t *data, uint32_t len);
 int  UART_Receive(uint8_t *buf, int max, uint32_t timeout_ms);
 /* A UART register (offset from 0x1E2100), for the update screen's debug lines. */
 uint32_t UART_Reg(uint32_t offset);
+/* Switch the UART (and its receive DMA) off or on without touching anything else (the CHIRP screen test). */
+void     UART_Enable(int on, int dma);
 /* Bytes dropped as echo or overflow (debug). */
 uint32_t UART_Dropped(void);
 uint32_t UART_Stats(void);     /* collects by time-out/full flag << 16 | by the 1 s backstop */

@@ -149,19 +149,42 @@ void PROGRAM_Init(void)
 	static const char *const SKIP[UART_ROUTE_REGS] = { "T3 R0", "T3 R1", "T3 R2", "T3 R3" };
 
 #if PROGRAM_SCREEN_TEST
+	/* Radio, 2026-11-22, first screen test: T1 BOOT showed, then white from T2 on, T4 NONE (no routing) included.
+	 * So the routing is not it; this splits UART_Init itself, and lists every GPIO/IO-map register (0x1E5000-
+	 * 0x1E513C) that UART_Init changed, shown while the UART is off. */
+	static uint32_t before[0x50];
+	volatile uint32_t *io = (volatile uint32_t *)(uintptr_t)0x1E5000u;
+	char b[12];
+	int n = 0;
+
+	(void)SKIP;
 	lcd_step("T1 BOOT");
+	for (int i = 0; i < 0x50; i++)
+		before[i] = io[i];
 	UART_Init(PROGRAM_BAUD);
-	lcd_step("T2 UART");
-	for (int r = 0; r < UART_ROUTE_REGS; r++) {
-		UART_RouteSkip(r, 0xFFFFFFFFu);
-		lcd_step(SKIP[r]);
-		UART_RouteSkip(r, 0);
+	UART_Enable(0, 0);
+	lcd_step("U1 OFF");
+	UART_Enable(1, 0);
+	lcd_step("U2 NO DMA");
+	UART_Enable(1, 1);
+	lcd_step("U3 ON");
+	UART_Enable(0, 0);
+	ST7735S_Init();
+	UI_PrintString("CHANGED BY UART_INIT", 0, 0, COLOR_TEXT, COLOR_BG, 1);
+	for (int i = 0; i < 0x50 && n < 13; i++)
+		if (io[i] != before[i]) {
+			uint8_t y = (uint8_t)(10 + 9 * n++);
+			UI_PrintString(UI_FormatHex(b, 0x5000u + 4u * (uint32_t)i, 4), 0, y, COLOR_WARN, COLOR_BG, 1);
+			UI_PrintString(UI_FormatHex(b, before[i], 8), 28, y, COLOR_DIM, COLOR_BG, 1);
+			UI_PrintString(UI_FormatHex(b, io[i], 8), 80, y, COLOR_TEXT, COLOR_BG, 1);
+		}
+	if (!n)
+		UI_PrintString("NOTHING", 0, 10, COLOR_ACCENT, COLOR_BG, 1);
+	for (int i = 0; i < 150; i++) {       /* 15 s: time for a photo */
+		SYSTEM_DelayMs(100);
+		WATCHDOG();
 	}
-	for (int r = 0; r < UART_ROUTE_REGS; r++)
-		UART_RouteSkip(r, 0xFFFFFFFFu);
-	lcd_step("T4 NONE");
-	for (int r = 0; r < UART_ROUTE_REGS; r++)
-		UART_RouteSkip(r, 0);
+	UART_Enable(1, 1);
 #else
 	(void)SKIP;
 	UART_Init(PROGRAM_BAUD);
