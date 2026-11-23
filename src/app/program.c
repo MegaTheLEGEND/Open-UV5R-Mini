@@ -64,10 +64,86 @@ static uint8_t  s_sec[SECTOR];
 static int32_t  s_sec_addr = -1;
 static bool     s_sec_dirty, s_failed, s_written;
 
+#ifndef PROGRAM_HOST_TEST
+/* ------------------------------------------------------------------------------------------- pin clash finder
+ * On a radio (2026-11-22) the screen went blank and the external flash read empty once CHIRP's UART was set up in
+ * normal mode, although the update mode does the same set-up and its screen works. The flash shares its clock and
+ * data pins (PB0, PB1) with the LCD, so its ID is our probe: if it is wrong after UART_Init, leave the routing's bits
+ * alone one at a time (then a whole register) until it reads right again, and keep that one off. The result is shown
+ * for 3 s at start-up: "PINS OK", "SKIP Rr Bbb" (register r of UART_RouteBits, bit bb), "SKIP Rr ALL", or "PINS ??"
+ * (nothing helped: the routing is undone and CHIRP stays off). */
+static bool        s_off;
+static const char *s_diag = "PINS OK";
+static char        s_diag_buf[12];
+static uint32_t    s_check_ms;
+
+static bool xf_ok(void)
+{
+	return EXTFLASH_ReadId() == EXTFLASH_ID;
+}
+
+static void diag(int reg, int bit)
+{
+	char *p = s_diag_buf;
+	*p++ = 'S'; *p++ = 'K'; *p++ = 'I'; *p++ = 'P'; *p++ = ' '; *p++ = 'R'; *p++ = (char)('0' + reg); *p++ = ' ';
+	if (bit < 0) {
+		*p++ = 'A'; *p++ = 'L'; *p++ = 'L';
+	} else {
+		*p++ = 'B'; *p++ = (char)('0' + bit / 10); *p++ = (char)('0' + bit % 10);
+	}
+	*p = 0;
+	s_diag = s_diag_buf;
+}
+
+static void find_clash(void)
+{
+	if (xf_ok())
+		return;
+	for (int r = 0; r < UART_ROUTE_REGS; r++)
+		for (int b = 0; b < 32; b++) {
+			uint32_t m = 1u << b;
+			if (!(UART_RouteBits(r) & m))
+				continue;
+			UART_RouteSkip(r, m);
+			if (xf_ok()) {
+				diag(r, b);
+				return;
+			}
+			UART_RouteSkip(r, 0);
+		}
+	for (int r = 0; r < UART_ROUTE_REGS; r++) {
+		UART_RouteSkip(r, 0xFFFFFFFFu);
+		if (xf_ok()) {
+			diag(r, -1);
+			return;
+		}
+		UART_RouteSkip(r, 0);
+	}
+	for (int r = 0; r < UART_ROUTE_REGS; r++)
+		UART_RouteSkip(r, 0xFFFFFFFFu);
+	s_off = true;
+	s_diag = "PINS ??";
+}
+
+void PROGRAM_Init(void)
+{
+	UART_Init(PROGRAM_BAUD);
+	find_clash();
+	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+	UI_PrintString("CHIRP CABLE", 31, 52, COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString(s_diag, 34, 68, s_off ? COLOR_WARN : COLOR_ACCENT, COLOR_BG, 1);
+	for (int i = 0; i < 30; i++) {
+		SYSTEM_DelayMs(100);
+		WATCHDOG();
+	}
+}
+#else
+#define s_off false
 void PROGRAM_Init(void)
 {
 	UART_Init(PROGRAM_BAUD);
 }
+#endif
 
 static void scramble(uint8_t *p, uint32_t n)
 {
@@ -303,7 +379,25 @@ end:
 int PROGRAM_Poll(void)
 {
 	uint8_t b[32];
-	int got = UART_Receive(b, sizeof b, 0);
+	int got;
+
+	if (s_off)
+		return PROGRAM_IDLE;
+#ifndef PROGRAM_HOST_TEST
+	if (++s_check_ms >= 200u) {          /* every 200 polls: has something else broken the flash since start-up? */
+		s_check_ms = 0;
+		if (!xf_ok()) {
+			find_clash();
+			screen(s_diag);              /* "PROGRAMMING" + the result; the caller redraws the main screen */
+			for (int i = 0; i < 30; i++) {
+				SYSTEM_DelayMs(100);
+				WATCHDOG();
+			}
+			return PROGRAM_DONE_READ;
+		}
+	}
+#endif
+	got = UART_Receive(b, sizeof b, 0);
 
 	for (int i = 0; i < got; i++) {
 		for (int j = 0; j < 15; j++)

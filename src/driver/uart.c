@@ -153,13 +153,45 @@ void UART_SetBaud(uint32_t baud)
 /* Put the UART on the USB pins: RX on 61 (D+), TX on 62 (D-). This is what the stock entry sub_01E492C0 does with
  * the GPIO helpers sub_01E001D2..sub_01E003B8 and the IO map sub_01E4856C / sub_01E484B6, as recorded by running it
  * in the emulator (emu/uart_pins.py). Each bit the stock code sets or clears is listed; every other bit is kept. */
-#define RMW(r, set, clr)  ((r) = ((r) & ~(uint32_t)(clr)) | (uint32_t)(set))
+static const uint32_t ROUTE_SET[UART_ROUTE_REGS] = {
+	0x00000000u,                                 /* USB_CON 0x1E1800: 0, the USB controller off; the pins become GPIO */
+	0x00000F58u,                                 /* 0x1E5100: USB-pin direction, pulls, input enable, function */
+	0x0000003Eu,                                 /* 0x1E5120: output channel 0 <- pin 62 */
+	0x00100040u,                                 /* 0x1E5124: UART RX input <- pin 61 */
+};
+static const uint32_t ROUTE_CLR[UART_ROUTE_REGS] = { 0xFFFFFFFFu, 0x000000A7u, 0x00000001u, 0x00E00030u };
+static uint32_t s_orig[UART_ROUTE_REGS], s_skip[UART_ROUTE_REGS];
+static int      s_have_orig;
+
+static volatile uint32_t *route_reg(int i)
+{
+	return i == 0 ? &SFR_USB_CON : i == 1 ? &SFR_IOMAP0 : i == 2 ? &SFR_IOMAP_OUT : &SFR_IOMAP_IN;
+}
+
+/* Every bit the routing changes, except those in s_skip, which keep the value they had before the first UART_Init. */
 static void route_usb_pins(void)
 {
-	SFR_USB_CON = 0;                             /* USB controller off: the pins become GPIO */
-	RMW(SFR_IOMAP0, 0x00000F58u, 0x000000A7u);   /* USB-pin direction, pulls, input enable, function */
-	RMW(SFR_IOMAP_OUT, 0x0000003Eu, 0x00000001u); /* output channel 0 <- pin 62 */
-	RMW(SFR_IOMAP_IN, 0x00100040u, 0x00E00030u); /* UART RX input <- pin 61 */
+	for (int i = 0; i < UART_ROUTE_REGS; i++) {
+		volatile uint32_t *r = route_reg(i);
+		if (!s_have_orig)
+			s_orig[i] = *r;
+		uint32_t mine = (ROUTE_SET[i] | ROUTE_CLR[i]) & ~s_skip[i];
+		*r = (s_orig[i] & ~mine) | (ROUTE_SET[i] & mine);
+	}
+	s_have_orig = 1;
+}
+
+uint32_t UART_RouteBits(int reg)
+{
+	return reg >= 0 && reg < UART_ROUTE_REGS ? ROUTE_SET[reg] | ROUTE_CLR[reg] : 0;
+}
+
+void UART_RouteSkip(int reg, uint32_t mask)
+{
+	if (reg < 0 || reg >= UART_ROUTE_REGS || !s_have_orig)
+		return;
+	s_skip[reg] = mask;
+	route_usb_pins();
 }
 
 void UART_Init(uint32_t baud)

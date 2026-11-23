@@ -12,7 +12,10 @@ What still has to be written before the C build can replace stock v0.27 on a rad
 2. **Bug: dual watch doesn't work on a radio** (3.8). Seen 2026-11-21 with the build at `0698323`: to find out what
    it does wrong (doesn't switch, doesn't stop on a signal, or the wrong side opens).
 3. **CHIRP (5.3): written, PC-tested** (2026-11-22): CHIRP's own UV-5R Mini driver, unchanged, downloads and uploads
-   against our programming mode (`src/app/program.c`, `python tests/chirp_host.py`). Not yet tried on a radio.
+   against our programming mode (`src/app/program.c`, `python tests/chirp_host.py`). First radio try: screen blank,
+   flash read empty after the cable UART set-up (yet the update mode's screen works after the same set-up). Now the
+   radio checks the flash ID after the set-up, leaves off whichever routing bit breaks it, and shows the result for
+   3 s at start-up ("PINS OK" / "SKIP Rr Bbb" / "PINS ??"). Next: Sean's result from one flash.
 
 Legend: **done** = written and tested (on the PC or emulator); **partial** = some of it written; **todo** = not started;
 **unknown** = needs reverse-engineering first.

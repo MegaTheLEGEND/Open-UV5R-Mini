@@ -27,4 +27,11 @@ uint32_t UART_Reg(uint32_t offset);
 uint32_t UART_Dropped(void);
 uint32_t UART_Stats(void);     /* collects by time-out/full flag << 16 | by the 1 s backstop */
 
+/* The pin routing UART_Init does, as 4 registers: 0 USB_CON (0x1E1800), 1 0x1E5100, 2 0x1E5120, 3 0x1E5124.
+ * UART_RouteBits: the bits UART_Init changes in one. UART_RouteSkip: leave those bits as they were before the first
+ * UART_Init (applied at once; 0 = change them all again). For finding a bit that clashes with other pins. */
+#define UART_ROUTE_REGS 4
+uint32_t UART_RouteBits(int reg);
+void     UART_RouteSkip(int reg, uint32_t mask);
+
 #endif
