@@ -111,6 +111,9 @@ REPLY_DELAY = 0.01
 # loader at 38400 took our short frames but never a 527-byte answer sent as one unbroken burst (Prolific cable).
 CHUNK, CHUNK_GAP = 32, 0.0
 MAX_READ = 0x1000
+# A read request the same as the one before, arriving within this many seconds of it, is the loader's duplicate copy
+# and is not answered again. Its copies come within a millisecond; its own re-ask after a lost answer, ~0.3 s later.
+DUP_WINDOW = 0.1
 T_LISTEN, T_PING, T_PING_TOTAL, T_SETTLE, T_IDLE = 2.0, 1.0, 30.0, 0.3, 60.0
 
 
@@ -411,6 +414,8 @@ class EmuRadio:
         """Ask the host for image bytes, retrying a few times."""
         for _ in range(3):
             self._send(CMD_DATA, struct.pack('<II', off, n))
+            if self.in_loader:                              # the real loader sends each request twice
+                self._send(CMD_DATA, struct.pack('<II', off, n))
             end = time.monotonic() + 3
             while time.monotonic() < end:
                 r = self._recv(end - time.monotonic())
@@ -427,6 +432,7 @@ class EmuRadio:
         return area_report(self.flash[FLASH_SOC:AREA_END])
 
     def _power_on(self):
+        self.in_loader = False
         self._parser = FrameParser()
         self.baud = APP_BAUD
         try:
@@ -491,6 +497,7 @@ class EmuRadio:
         self._loader(resumed=False)
 
     def _loader(self, resumed):
+        self.in_loader = True
         self.baud = APP_BAUD
         while self.alive:                                   # hello at 9600 until told the rate
             self._send(CMD_BAUD, struct.pack('<I', APP_BAUD))
@@ -663,6 +670,7 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
     last = time.monotonic()
     switched_at, fallbacks = None, 0
     blocks, asked, quiet_logged = {}, None, False       # loader reads of the app area: offset -> length
+    last_req = None                                     # ((offset, length), time received): duplicate filter
     while True:
         got = pending or frames(0.25)
         pending = []
@@ -700,6 +708,14 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                         send(CMD_BAUD, struct.pack('<I', LOADER_BAUD))
             elif cmd == CMD_DATA and len(d) >= 8:
                 off, n = struct.unpack_from('<II', d)
+                # The loader sends every read request twice, back to back (byte log, radio, 2026-11-22). Answering
+                # both put a second 512-byte answer on the line while it waited for the next block: at 115200 that
+                # cost a re-ask per block and ended in 0x88. A real re-ask comes much later, after its time-out.
+                now = time.monotonic()
+                if last_req and last_req[0] == (off, n) and now - last_req[1] < DUP_WINDOW:
+                    tr('note', 'duplicate request 0x%X+%d not answered' % (off, n))
+                    continue
+                last_req = ((off, n), now)
                 if phase == 'loader' and REPLY_DELAY:
                     time.sleep(REPLY_DELAY)                 # let the loader re-arm its receive first
                 send(CMD_DATA, d[:8] + image[off:off + n])
