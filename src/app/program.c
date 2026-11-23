@@ -27,6 +27,8 @@
 #include "driver/extflash.h"
 #include "store/settings.h"
 #ifndef PROGRAM_HOST_TEST
+#include "board.h"
+#include "driver/gpio.h"
 #include "driver/system.h"
 #include "driver/st7735s.h"
 #include "ui/helper.h"
@@ -157,29 +159,63 @@ void PROGRAM_Init(void)
 	char b[12];
 	int n = 0;
 
+	/* Round 2 (radio, 2026-11-22): U1 OFF showed, U2 and U3 white: the UART switched on takes a screen pin, routing
+	 * or not. UART_Init changed 0x1E5100, 0x1E5120, 0x1E5124 (ours) and 0x1E5104 2 -> 3, which nothing of ours writes.
+	 * Round 3, UART on throughout: V1 puts 0x1E5104 back, V2 also 0x1E5100, V3 the whole block. Then each screen pin
+	 * is driven high and low and read back with the UART on; the result is shown with the UART off. */
+	static const struct { uint8_t pin; char name[5]; } PINS[] = {
+		{ PIN_LCD_SCK, "PB0" }, { PIN_LCD_MOSI, "PB1" }, { PIN_LCD_RESET, "PB4" }, { PIN_LCD_CS, "PB5" },
+		{ PIN_LCD_BACKLIGHT, "PB7" }, { IO_PORTA(3), "PA3" },
+	};
+	uint8_t follow[sizeof PINS / sizeof PINS[0]];
+	uint32_t after[0x50];
+
 	(void)SKIP;
+	(void)n;
 	lcd_step("T1 BOOT");
 	for (int i = 0; i < 0x50; i++)
 		before[i] = io[i];
 	UART_Init(PROGRAM_BAUD);
-	UART_Enable(0, 0);
-	lcd_step("U1 OFF");
-	UART_Enable(1, 0);
-	lcd_step("U2 NO DMA");
-	UART_Enable(1, 1);
-	lcd_step("U3 ON");
+	for (int i = 0; i < 0x50; i++)
+		after[i] = io[i];
+	io[0x41] = before[0x41];
+	lcd_step("V1 5104");
+	io[0x40] = before[0x40];
+	lcd_step("V2 +5100");
+	for (int i = 0x40; i < 0x50; i++)
+		io[i] = before[i];
+	lcd_step("V3 ALL IO");
+	for (int i = 0x40; i < 0x50; i++)  /* routing back on, UART still on */
+		io[i] = after[i];
+	for (unsigned k = 0; k < sizeof PINS / sizeof PINS[0]; k++) {
+		GPIO_Port_t *p = GPIO_PIN_TO_PORT(PINS[k].pin);
+		uint32_t bit = GPIO_PIN_TO_BIT(PINS[k].pin), die = p->DIE;
+		bool hi, lo;
+		p->DIE |= bit;                    /* so IN reads the pad */
+		GPIO_Write(PINS[k].pin, true);
+		SYSTEM_DelayMs(1);
+		hi = GPIO_CheckBit(PINS[k].pin);
+		GPIO_Write(PINS[k].pin, false);
+		SYSTEM_DelayMs(1);
+		lo = GPIO_CheckBit(PINS[k].pin);
+		p->DIE = die;
+		follow[k] = (uint8_t)(hi << 1 | lo);   /* 2 = follows; 3 stuck high, 0 stuck low, 1 backwards */
+	}
+	GPIO_Write(PIN_LCD_CS, true);
+	GPIO_Write(PIN_LCD_BACKLIGHT, true);
+	GPIO_Write(PIN_LCD_RESET, true);
+	GPIO_Write(IO_PORTA(3), true);
 	UART_Enable(0, 0);
 	ST7735S_Init();
-	UI_PrintString("CHANGED BY UART_INIT", 0, 0, COLOR_TEXT, COLOR_BG, 1);
-	for (int i = 0; i < 0x50 && n < 13; i++)
-		if (io[i] != before[i]) {
-			uint8_t y = (uint8_t)(10 + 9 * n++);
-			UI_PrintString(UI_FormatHex(b, 0x5000u + 4u * (uint32_t)i, 4), 0, y, COLOR_WARN, COLOR_BG, 1);
-			UI_PrintString(UI_FormatHex(b, before[i], 8), 28, y, COLOR_DIM, COLOR_BG, 1);
-			UI_PrintString(UI_FormatHex(b, io[i], 8), 80, y, COLOR_TEXT, COLOR_BG, 1);
-		}
-	if (!n)
-		UI_PrintString("NOTHING", 0, 10, COLOR_ACCENT, COLOR_BG, 1);
+	UI_PrintString("PINS WITH UART ON", 0, 0, COLOR_TEXT, COLOR_BG, 1);
+	for (unsigned k = 0; k < sizeof PINS / sizeof PINS[0]; k++) {
+		static const char *const R[4] = { "STUCK LOW", "BACKWARDS", "FOLLOWS", "STUCK HIGH" };
+		uint8_t y = (uint8_t)(12 + 10 * k);
+		UI_PrintString(PINS[k].name, 0, y, COLOR_WARN, COLOR_BG, 1);
+		UI_PrintString(R[follow[k]], 30, y, follow[k] == 2 ? COLOR_ACCENT : COLOR_TX, COLOR_BG, 1);
+	}
+	UI_PrintString("5104 NOW", 0, 80, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(UI_FormatHex(b, io[0x41], 8), 60, 80, COLOR_TEXT, COLOR_BG, 1);
 	for (int i = 0; i < 150; i++) {       /* 15 s: time for a photo */
 		SYSTEM_DelayMs(100);
 		WATCHDOG();
