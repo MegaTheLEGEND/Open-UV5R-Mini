@@ -814,7 +814,7 @@ def gui():
     opts = ttk.Frame(frm)
     opts.grid(row=3, column=0, columnspan=3, sticky='ew', pady=6)
     ttk.Label(opts, text='Loader speed').pack(side='left')
-    ttk.Combobox(opts, textvariable=v_baud, values=('9600', '19200', '38400'), width=7, state='readonly').pack(
+    ttk.Combobox(opts, textvariable=v_baud, values=('9600', '19200', '38400', '57600', '115200'), width=7, state='readonly').pack(
         side='left', padx=6)
     ttk.Label(opts, text='(if it fails part-way, pick a lower one: 9600 is slow but safest)').pack(side='left')
     emu = ttk.LabelFrame(opts, text='Emulated radio', padding=6)
