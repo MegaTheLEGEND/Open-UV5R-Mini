@@ -280,16 +280,19 @@ int main(void)
 			begins += DW_Tick(true, false, false, 10) == DW_BEGIN;
 		CHECK(!begins, "active side for 290 ms");
 		CHECK(DW_Tick(true, false, false, 10) == DW_BEGIN && DW_Peeking(), "peek at 300 ms");
-		for (i = 0; i < 9; i++)
+		for (i = 0; i < 14; i++)
 			ends += DW_Tick(true, false, false, 10) == DW_END;
-		CHECK(!ends && DW_Tick(true, false, false, 10) == DW_END && !DW_Peeking(), "back after 100 ms");
+		CHECK(!ends && DW_Tick(true, false, false, 10) == DW_END && !DW_Peeking(), "back after 150 ms");
 		for (i = 0; i < 100; i++)
 			begins += DW_Tick(true, false, true, 10) == DW_BEGIN;
-		CHECK(!begins, "never peeks while the active side is open");
+		CHECK(!begins, "never peeks while the active side has a signal");
 		for (i = 0; i < 30; i++)
 			DW_Tick(true, false, false, 10);
 		CHECK(DW_Peeking(), "peeking again");
-		CHECK(DW_Tick(true, false, true, 10) == DW_HELD && DW_Held(), "the other side opens: held");
+		for (i = 0; i < 3; i++)
+			a = DW_Tick(true, false, true, 10);
+		CHECK(a == DW_NONE && !DW_Held(), "a signal in the first 40 ms after the retune is ignored (old side)");
+		CHECK(DW_Tick(true, false, true, 10) == DW_HELD && DW_Held(), "the other side has a signal: held");
 		for (i = 0; i < 300; i++)
 			ends += DW_Tick(true, false, true, 10) == DW_END;
 		for (i = 0; i < 99; i++)

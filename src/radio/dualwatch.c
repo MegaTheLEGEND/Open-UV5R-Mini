@@ -27,6 +27,8 @@ DwAction_t DW_Tick(bool enabled, bool busy, bool open, uint16_t tick_ms)
 		}
 		return DW_NONE;
 	}
+	if (open && !s_held && s_ms < DW_SETTLE_MS)
+		open = false;                    /* just retuned: the RSSI and squelch still show the old side */
 	if (open) {
 		bool first = !s_held;
 		s_held = true;

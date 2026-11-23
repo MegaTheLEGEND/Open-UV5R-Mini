@@ -300,6 +300,11 @@ static void main_view(UiMain_t *v)
 	} else if (s_note_ms && s_note) {
 		copy_text(v->bottom, s_note, sizeof v->bottom);
 		v->bottom_color = s_note_color;
+	} else if (gVfo.rx_tone && !s_tscan && RADIO_State() != RADIO_TX && RADIO_Carrier()) {
+		/* a signal on a channel with a receive tone: say whether its tone matches (open) or not (stays muted) */
+		bool ok = RADIO_ToneHeard();
+		copy_text(v->bottom, ok ? "TONE OK" : "NO TONE MATCH", sizeof v->bottom);
+		v->bottom_color = ok ? COLOR_ACCENT : COLOR_WARN;
 	} else if (s_tscan) {
 		char *p = v->bottom;
 		const char *q = "TONE SCAN ";
@@ -883,7 +888,7 @@ static void dw_end(void)
 
 static void dw_tick(bool busy)
 {
-	switch (DW_Tick(gStock.raw[SET_DUAL_WATCH] != 0, busy, RADIO_State() == RADIO_RX_OPEN, APP_TICK_MS)) {
+	switch (DW_Tick(gStock.raw[SET_DUAL_WATCH] != 0, busy, RADIO_Carrier(), APP_TICK_MS)) {
 	case DW_BEGIN:
 		dw_begin();
 		break;
@@ -900,10 +905,10 @@ static void dw_tick(bool busy)
 
 #if SETTINGS_ENABLE_SAVE
 /* ------------------------------------------------------------------------------------------- saving
- * Only with SETTINGS_ENABLE_SAVE (store/settings.h). 3 s after the last key, the state goes back into the stock
- * layout and both logs are written (an unchanged log is not written). A side in channel mode keeps its stock VFO
+ * Only with SETTINGS_ENABLE_SAVE (store/settings.h). As soon as a change is done (the key let go, nothing typed half
+ * way, no PTT or scan), the state goes back into the stock layout and both logs are written; an unchanged log is not
+ * written, so held keys and repeats don't wear the flash (Sean, 2026-11-22: save at once, not 3 s later). A side in channel mode keeps its stock VFO
  * record: only the work-mode bit says it is in channel mode (the channel number is not known to us yet). */
-static uint32_t s_save_ms;
 static bool     s_save_due;
 
 static void save_now(void)
@@ -955,13 +960,15 @@ static void save_now(void)
 		*p++ = b[0]; *p++ = b[1]; *p = 0;
 		note(m, COLOR_TX);
 		RADIO_Beep(300, 400);
-	} else
+	} else {
 		note("SAVED", COLOR_ACCENT);
+		s_note_ms = 1000u;
+	}
 }
 
 static void save_tick(bool busy)
 {
-	if (!s_save_due || busy || (s_save_ms += APP_TICK_MS) < 3000u)
+	if (!s_save_due || busy || s_key_held != KEY_INVALID)
 		return;
 	save_now();
 }
@@ -969,7 +976,6 @@ static void save_tick(bool busy)
 static void save_soon(void)
 {
 	s_save_due = true;
-	s_save_ms = 0;
 }
 #endif
 
@@ -1096,7 +1102,7 @@ void APP_Tick(void)
 		if (++s_off_ticks >= 200 / APP_TICK_MS) {
 			RADIO_EndTx();
 #if SETTINGS_ENABLE_SAVE
-			if (s_save_due) {            /* changed less than 3 s ago: save it now, not lose it */
+			if (s_save_due) {            /* a change not saved yet (key still held): save it now */
 				dw_end();
 				save_now();
 			}
