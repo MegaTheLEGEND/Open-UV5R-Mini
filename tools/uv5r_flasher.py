@@ -560,6 +560,7 @@ RESULT_TEXT = {
     0x83: 'The radio refused the file (not for this firmware).',
     0x86: 'This firmware is already on the radio, or it can\'t be replaced by this image. Nothing was erased.',
     0x87: 'Nothing was written; the radio boots the installed app.',
+    0x88: 'The loader gave up part-way through writing (0x88; seen after it went quiet at 115200, 2026-11-22).',
     0x8A: 'Nothing was written: the image is for another stock version.',
     0x8F: 'The file isn\'t for this radio\'s flash layout; the radio refused it. Nothing installed.',
     0x90: 'The image runs past the area the radio can install. Nothing was erased.',
@@ -572,8 +573,25 @@ class Cancelled(Exception):
     pass
 
 
-def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Event()):
-    """Run one update session. Returns (ok, message)."""
+def open_trace():
+    """A file for every byte in and every frame out, with times, for finding out why an update stalled."""
+    d = os.path.join(os.path.dirname(HERE), 'build', 'flash-logs')
+    try:
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, time.strftime('flash-%Y%m%d-%H%M%S.log'))
+        return open(path, 'w', encoding='ascii'), path
+    except OSError:
+        return None, None
+
+
+def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Event(), trace=None):
+    """Run one update session. Returns (ok, message). trace: an open text file for the byte-level log, or None."""
+    t0 = time.monotonic()
+
+    def tr(what, b=b''):
+        if trace:
+            trace.write('%9.3f %-5s %s\n' % (time.monotonic() - t0, what, b.hex(' ') if isinstance(b, bytes) else b))
+            trace.flush()
     _, f = ufw_files(image)
     f_off, f_len = f['flash.bin'][:2]
     area_lo = f_off + (AREA_START - FLASH_SOC)
@@ -590,13 +608,19 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
             off, n = struct.unpack_from('<II', data)
             if n > MAX_READ or off + n > len(image) or data[8:] != image[off:off + n]:
                 raise ValueError('refusing to send: read 0x%X+0x%X is outside the image' % (off, n))
+            tr('out', 'cmd 2 0x%X+%d @%d' % (off, n, rate))
+        else:
+            tr('out', 'cmd %d %s @%d' % (cmd, bytes(data).hex(' '), rate))
         link.write(frame(cmd, data))
 
     def frames(timeout):
         if cancel.is_set():
             raise Cancelled()
         out = []
-        for cmd, d in parser.feed(link.read(timeout)):
+        raw = link.read(timeout)
+        if raw:
+            tr('in', raw)
+        for cmd, d in parser.feed(raw):
             if cmd is None:
                 log('  (bad frame ignored)')
             else:
@@ -636,12 +660,18 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
         log('Radio in update mode answered. App stage at 9600 (the radio is not changed yet).')
         send(CMD_BAUD, struct.pack('<I', APP_BAUD))
 
-    last, done_max = time.monotonic(), 0.0
+    last = time.monotonic()
     switched_at, fallbacks = None, 0
+    blocks, asked, quiet_logged = {}, None, False       # loader reads of the app area: offset -> length
     while True:
         got = pending or frames(0.25)
         pending = []
         if not got:
+            if phase == 'loader' and area_len and not quiet_logged and time.monotonic() - last > 3:
+                quiet_logged = True
+                log('  the loader went quiet at %d baud: last asked for 0x%X, %d of %d blocks done (log: %s)' % (
+                    rate, asked[0] if asked else 0, len(blocks), -(-area_len // 0x200),
+                    getattr(trace, 'name', 'none')))
             # No hello at the new rate: the loader may not have got the rate frame. It says hello at 9600 again,
             # so listen there and offer the rate once more (as Codeplug Studio's updater does).
             if switched_at and time.monotonic() - switched_at > 1.5 and fallbacks < 5:
@@ -652,7 +682,7 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
             if time.monotonic() - last > T_IDLE or getattr(link, 'radio_off', lambda: False)():
                 return False, ('The radio stopped talking. ' + RECOVER) if touched else 'The radio stopped talking.'
             continue
-        last, switched_at = time.monotonic(), None
+        last, switched_at, quiet_logged = time.monotonic(), None, False
         for cmd, d in got:
             if cmd == CMD_BAUD:
                 if phase == 'app' and reads:
@@ -677,10 +707,13 @@ def flash_radio(link, image, log, progress=lambda p: None, cancel=threading.Even
                     log('  loader read 0x%X, %d bytes' % (off, n))
                 reads += 1
                 if phase == 'loader' and area_len and off >= area_lo:
-                    # The loader doesn't read in order (it reached the end early on a radio, 2026-11-22), so count
-                    # the bytes sent instead of using the offset; a repeated read counts twice, hence the cap.
-                    done_max += n
-                    progress(min(0.99, done_max / area_len))
+                    # Progress = distinct blocks asked for (the loader doesn't read in order; it reached the end early
+                    # on a radio, 2026-11-22). A block asked for again means our answer, or its request, was lost.
+                    if asked == (off, n) or off in blocks:
+                        log('  loader asked again for 0x%X (+%d): an answer was lost' % (off, n))
+                    blocks[off] = n
+                    asked = (off, n)
+                    progress(min(0.99, sum(blocks.values()) / area_len))
             elif cmd == CMD_LENGTH and phase == 'loader' and len(d) >= 4:
                 area_len = struct.unpack('<I', d[:4])[0]
                 log('The radio is erasing its firmware area (0x%X bytes) and writing...' % area_len)
@@ -738,10 +771,15 @@ def cli(a):
     if input('Flash %s to the radio on %s? Type yes: ' % (name, a.port)).strip() != 'yes':
         raise SystemExit('not flashed')
     link = SerialLink(a.port)
+    trace, path = open_trace()
+    if path:
+        print('Byte log: %s' % path)
     try:
-        ok, msg = flash_radio(link, img, log, lambda p: print('\r%3d%%' % (p * 100), end=''))
+        ok, msg = flash_radio(link, img, log, lambda p: print('\r%3d%%' % (p * 100), end=''), trace=trace)
     finally:
         link.close()
+        if trace:
+            trace.close()
     print(msg)
     sys.exit(0 if ok else 1)
 
@@ -928,10 +966,15 @@ def gui():
         bar['value'] = 0
 
         def job():
+            trace, path = open_trace()
+            if path:
+                log('Byte log: %s' % path)
             try:
-                ok, msg = flash_radio(link, img, log, lambda p: ev.put(('progress', p)), state['cancel'])
+                ok, msg = flash_radio(link, img, log, lambda p: ev.put(('progress', p)), state['cancel'], trace)
             finally:
                 link.close()
+                if trace:
+                    trace.close()
             log(msg)
             ev.put(('status', ('Finished: ' if ok else 'Not finished: ') + msg))
             if port == EMU:
