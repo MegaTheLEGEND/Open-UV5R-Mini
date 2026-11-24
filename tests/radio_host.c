@@ -33,6 +33,8 @@ bool BK4819_SquelchOpen(void)
 }
 void BK4819_WriteRegister(uint8_t r, uint16_t v) { if (r == 0x78) reg78 = v; }
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len) { (void)addr; while (len--) *buf++ = 0xFF; }
+int EXTFLASH_Erase4K(uint32_t addr) { (void)addr; return -1; }
+int EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len) { (void)addr; (void)buf; (void)len; return -1; }
 void BK4819_SetFrequency(uint32_t f) { (void)f; }
 void BK4819_SetFilterBandwidth(bool n) { (void)n; }
 void BK4819_SetVolume(uint8_t v) { (void)v; }

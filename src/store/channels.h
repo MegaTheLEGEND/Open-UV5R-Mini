@@ -1,4 +1,4 @@
-/* Open-UV5R-Mini: the stock channel memory, external flash 0x0000, read only.
+/* Open-UV5R-Mini: the stock channel memory, external flash 0x0000 (written only with SETTINGS_ENABLE_SAVE).
  *
  * 999 records of 32 bytes (the clone image's channel record, as Codeplug Studio's docs/reference/radios/baofeng/
  * uv-5r-mini/channel-record.md describes it; it matches a radio's own flash):
@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "store/settings.h"
 
 #define CHANNEL_COUNT 999u
 #define CHANNEL_SIZE  32u
@@ -33,5 +34,12 @@ bool CHANNEL_Decode(const uint8_t rec[CHANNEL_SIZE], Channel_t *ch);
 bool CHANNEL_Load(uint16_t n, Channel_t *ch);
 /* Next / previous occupied slot from n (wrapping), or -1 if none. */
 int  CHANNEL_Next(int n, int dir);
+/* Encode ch into a record; bytes we don't model come from old (if it is a filled record), else 0. */
+void CHANNEL_Encode(uint8_t rec[CHANNEL_SIZE], const Channel_t *ch, const uint8_t old[CHANNEL_SIZE]);
+#if SETTINGS_ENABLE_SAVE
+/* Write slot n (0-based) / make it empty, then read it back. 0 = done, -1 = failed. Only 0x0000-0x7CFF is touched. */
+int  CHANNEL_Save(uint16_t n, const Channel_t *ch);
+int  CHANNEL_Delete(uint16_t n);
+#endif
 
 #endif

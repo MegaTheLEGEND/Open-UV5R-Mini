@@ -14,6 +14,9 @@
 #define KEY_ACT_LAMP  KEY_LAMP     /* flashlight on / off */
 #define KEY_ACT_AB    KEY_AB       /* side A / B */
 #define KEY_ACT_VM    KEY_VM       /* VFO / channel mode */
+#define KEY_ACT_LOCK  ((KEY_Code_t)0xFE)   /* not a key: # held for KEY_LOCK_MS (app.c key_event) */
+#define KEY_LOCK_MS      1000u
+#define KEY_AUTOLOCK_MS  15000u            /* auto lock (stock setting 0x10) after this long with no key; our choice */
 
 /* digit value of a key, or -1 */
 static inline int KEY_Digit(KEY_Code_t k)

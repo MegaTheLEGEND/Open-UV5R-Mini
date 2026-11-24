@@ -23,6 +23,7 @@ extern const Icon_t ICON_STATE_TX;   /* 9x9: antenna with waves: transmitting */
 extern const Icon_t ICON_STATUS_BATTERY;   /* 17x9: battery frame; the level is drawn inside by code */
 extern const Icon_t ICON_STATUS_DUALWATCH;   /* 13x9: "DW" tag */
 extern const Icon_t ICON_STATUS_LAMP;   /* 9x9: light bulb (flashlight on) */
+extern const Icon_t ICON_STATUS_LOCK;   /* 7x9: padlock (keys locked) */
 extern const Icon_t ICON_STATUS_SCAN;   /* 9x9: magnifier (scanning) */
 extern const Icon_t ICON_STATUS_SQUELCH;   /* 13x9: "SQ" tag */
 extern const Icon_t ICON_STATUS_VOLUME;   /* 8x9: speaker (volume level follows as a number) */

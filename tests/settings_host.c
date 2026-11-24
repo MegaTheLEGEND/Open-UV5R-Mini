@@ -7,10 +7,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "store/settings.h"
+#include "store/channels.h"
 
 #define FLASH_SIZE 0x10000u
 static uint8_t flash[FLASH_SIZE];
 static int outside, programs, erases, fail_next;
+static uint32_t lo_ok = 0x8000u;           /* lowest address a write may touch (0 for the channel tests) */
 
 void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 {
@@ -20,7 +22,7 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 
 int EXTFLASH_Erase4K(uint32_t addr)
 {
-	if ((addr & 0xFFFu) || addr < 0x8000u || addr >= 0xA000u) {
+	if ((addr & 0xFFFu) || addr < lo_ok || addr >= 0xA000u) {
 		outside++;
 		return -1;
 	}
@@ -31,7 +33,7 @@ int EXTFLASH_Erase4K(uint32_t addr)
 
 int EXTFLASH_Program(uint32_t addr, const uint8_t *buf, uint32_t len)
 {
-	if (addr < 0x8000u || addr + len > 0xA000u) {
+	if (addr < lo_ok || addr + len > 0xA000u) {
 		outside++;
 		return -1;
 	}
@@ -219,6 +221,35 @@ int main(int argc, char **argv)
 
 	if (argc > 1 && !dump_checks(argv[1]))
 		printf("(dump %s not read)\n", argv[1]);
+
+	/* channels: save into an empty slot (programmed in place), change it (sector erased, neighbours kept), delete */
+	{
+		Channel_t c = { 0 }, r;
+		uint8_t keep[32];
+		lo_ok = 0;
+		memset(flash, 0xFF, 0x8000);
+		c.rx = 14552000u; c.tx = 14612000u; c.rx_tone = 885; c.tx_tone = 106; c.narrow = true; c.scan = true;
+		c.low_power = true; c.ptt_id = 3;
+		memcpy(c.name, "REPEATER", 9);
+		erases = 0;
+		CHECK(CHANNEL_Save(5, &c) == 0 && erases == 0, "empty slot: written without an erase (%d)", erases);
+		CHECK(CHANNEL_Load(5, &r) && r.rx == c.rx && r.tx == c.tx && r.rx_tone == 885 && r.tx_tone == 106 && r.narrow
+		      && r.scan && r.low_power && r.ptt_id == 3 && !strcmp(r.name, "REPEATER"), "channel read back");
+		c.tx = 0;
+		CHECK(CHANNEL_Save(6, &c) == 0 && CHANNEL_Load(6, &r) && r.tx == 0, "receive-only channel");
+		memcpy(keep, flash + 6 * 32, 32);
+		c.rx = 43500000u; c.tx = 43500000u; c.narrow = false; c.scan = false; c.low_power = false;
+		memcpy(c.name, "B", 2);
+		CHECK(CHANNEL_Save(5, &c) == 0 && erases == 1, "changed slot: one erase (%d)", erases);
+		CHECK(CHANNEL_Load(5, &r) && r.rx == 43500000u && !r.narrow && !r.scan && !r.low_power && !strcmp(r.name, "B"),
+		      "changed channel read back");
+		CHECK(!memcmp(keep, flash + 6 * 32, 32), "the neighbour slot kept");
+		CHECK(CHANNEL_Delete(5) == 0 && !CHANNEL_Load(5, &r) && CHANNEL_Next(4, +1) == 6, "deleted");
+		CHECK(CHANNEL_Save(998, &c) == 0 && CHANNEL_Next(997, +1) == 998, "last slot");
+		CHECK(CHANNEL_Save(999, &c) != 0, "slot 999 refused");
+		CHECK(!outside, "nothing outside the window");
+		lo_ok = 0x8000u;
+	}
 
 	printf(fails ? "settings_host: %d FAILED\n" : "settings_host: all passed\n", fails);
 	return fails != 0;

@@ -81,6 +81,8 @@ static void draw_status(const UiMain_t *v, bool full)
 		flag_icon(&ICON_STATUS_LAMP, 80, v->lamp, v->strobe ? COLOR_TX : COLOR_WARN);
 	if (full || v->warning != o->warning)
 		flag_icon(&ICON_STATUS_WARNING, 92, v->warning, COLOR_TX);
+	if (full || v->locked != o->locked)
+		flag_icon(&ICON_STATUS_LOCK, 102, v->locked, COLOR_WARN);
 	if (full || v->battery != o->battery || v->battery_low != o->battery_low || v->battery_hide != o->battery_hide)
 		draw_battery(v);
 }

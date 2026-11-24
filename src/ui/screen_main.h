@@ -35,7 +35,7 @@ typedef struct {
 	uint8_t  active;        /* the side keys act on */
 	char     entry[10];     /* typed digits, shown large on the active side; "" when not typing */
 	uint8_t  volume, squelch;
-	bool     dual_watch, scan, scan_hold, lamp, strobe, warning;
+	bool     dual_watch, scan, scan_hold, lamp, strobe, warning, locked;
 	int8_t   battery;       /* 0..4 bars, -1 unknown */
 	bool     battery_low, battery_hide;
 	char     bottom[22];

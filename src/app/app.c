@@ -50,6 +50,7 @@ static uint8_t  s_menu_sel, s_menu_edit;
 static int      s_menu_top = -1;
 static uint16_t s_off_ticks, s_batt_ticks;
 static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
+static uint32_t s_idle_ms;                /* main screen with no key, for auto lock */
 static bool     s_light_on = true, s_tot_hit;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
@@ -303,6 +304,7 @@ static void main_view(UiMain_t *v)
 	v->lamp = s_lamp_mode != 0;
 	v->strobe = s_lamp_mode == 2;
 	v->warning = !CALIB_Present();
+	v->locked = gStock.raw[SET_KEY_LOCK] != 0;
 	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
 	v->battery_low = BATTERY_Low();
 	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
@@ -345,7 +347,7 @@ static void main_view(UiMain_t *v)
 		*p = 0;
 	}
 	else if (s_mr)
-		copy_text(v->bottom, "MENU  *BW  #LAMP", sizeof v->bottom);
+		copy_text(v->bottom, "MENU *BW  HOLD# LOCK", sizeof v->bottom);
 	else {
 		char *p = v->bottom;
 		const char *q = "STEP ";
@@ -362,18 +364,121 @@ static void draw_main(void)
 }
 
 /* ------------------------------------------------------------------------------------------- menu */
-enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_TSCAN,
-       M_TSCANSAVE, M_POWER, M_KEYTEST, M_ABOUT, M_COUNT };
-static const char *const MENU_NAMES[M_COUNT] = {
+enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_SHIFT,
+       M_OFFSET, M_POWER, M_TSCAN, M_TSCANSAVE, M_CHSAVE, M_CHDEL, M_SCANADD, M_SET0 };
+static const char *const MENU_NAMES[M_SET0] = {
 	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
-	"RX TONE", "TX TONE", "TONE SCAN", "TSCAN SAVE", "TX POWER", "KEY TEST", "ABOUT",
+	"RX TONE", "TX TONE", "SHIFT", "OFFSET", "TX POWER", "TONE SCAN", "TSCAN SAVE", "SAVE CH", "DEL CH", "SCAN ADD",
 };
+
+/* Stock setting bytes with a menu row each. Values as stock and CHIRP's UV-5R Mini driver have them (settings_obj in
+ * chirp/drivers/baofeng_uv17Pro.py): a list of names, or a number shown as add + mul x value with a unit. */
+typedef struct {
+	const char        *name;
+	uint8_t            off, count;
+	const char *const *list;      /* names, or 0 for a number */
+	uint16_t           mul, add;
+	const char        *unit;
+	bool               zero_off;  /* 0 shows OFF */
+} SetItem_t;
+static const char *const L_ONOFF[] = { "OFF", "ON" };
+static const char *const L_BACKLIGHT[] = { "ALWAYS", "5S", "10S", "15S", "20S" };
+static const char *const L_PTTID[] = { "OFF", "BOT", "EOT", "BOTH" };
+static const char *const L_SIDETONE[] = { "OFF", "KEYS", "ID", "BOTH" };
+static const SetItem_t SET_ITEMS[] = {
+	{ "BACKLIGHT",  SET_BACKLIGHT, 5,  L_BACKLIGHT, 0,   0,   0,    false },
+	{ "BEEP",       SET_BEEP,      2,  L_ONOFF,     0,   0,   0,    false },
+	{ "TX TIMEOUT", SET_TOT,       13, 0,           15,  0,   "S",  true },
+	{ "BUSY LOCK",  SET_BCL,       2,  L_ONOFF,     0,   0,   0,    false },
+	{ "ROGER",      SET_ROGER,     2,  L_ONOFF,     0,   0,   0,    false },
+	{ "TAIL ELIM",  SET_STE,       2,  L_ONOFF,     0,   0,   0,    false },
+	{ "RPT TAIL",   SET_RPT_CLEAR, 11, 0,           100, 0,   "MS", false },
+	{ "PTT ID",     SET_PTT_ID,    4,  L_PTTID,     0,   0,   0,    false },
+	{ "SIDETONE",   SET_DTMF_MON,  4,  L_SIDETONE,  0,   0,   0,    false },
+	{ "VOX",        0x3A,          2,  L_ONOFF,     0,   0,   0,    false },
+	{ "VOX LEVEL",  0x02,          9,  0,           1,   1,   "",   false },
+	{ "VOX DELAY",  0x20,          16, 0,           100, 500, "MS", false },
+	{ "DTMF HOLD",  0x39,          8,  0,           1,   3,   "S",  false },
+	{ "AUTO LOCK",  SET_AUTO_LOCK, 2,  L_ONOFF,     0,   0,   0,    false },
+};
+#define SET_COUNT  ((int)(sizeof SET_ITEMS / sizeof SET_ITEMS[0]))
+#define M_KEYTEST  (M_SET0 + SET_COUNT)
+#define M_ABOUT    (M_KEYTEST + 1)
+#define M_COUNT    (M_ABOUT + 1)
 #define MENU_ROWS 8                      /* rows on screen; the list scrolls */
+
+static const char *menu_name(int i)
+{
+	if (i < M_SET0)
+		return MENU_NAMES[i];
+	if (i < M_KEYTEST)
+		return SET_ITEMS[i - M_SET0].name;
+	return i == M_KEYTEST ? "KEY TEST" : "ABOUT";
+}
+
+static const char *set_value(const SetItem_t *it, char *b)
+{
+	uint8_t v = gStock.raw[it->off] < it->count ? gStock.raw[it->off] : 0;
+	char *p;
+
+	if (it->list)
+		return it->list[v];
+	if (it->zero_off && !v)
+		return "OFF";
+	p = put_num(b, (unsigned)(it->add + it->mul * v));
+	copy_text(p, it->unit, 4);
+	return b;
+}
+
+/* Repeater shift: the TX frequency follows the RX one at a fixed offset. s_offset keeps the offset while the shift
+ * is off, so turning it back on finds it again. */
+static uint32_t s_offset;                /* 10 Hz */
+static int      s_ch_pick = -1;          /* SAVE CH: the slot being chosen, 0-based */
+static bool     s_ch_typed;              /* a digit was typed in SAVE CH or OFFSET since the row was opened */
+
+static int vfo_shift(void)
+{
+	if (gVfo.rx_only || !gVfo.tx_freq || gVfo.tx_freq == gVfo.freq)
+		return 0;
+	return gVfo.tx_freq > gVfo.freq ? 1 : -1;
+}
+
+static uint32_t vfo_offset(void)
+{
+	int sh = vfo_shift();
+	return sh > 0 ? gVfo.tx_freq - gVfo.freq : sh < 0 ? gVfo.freq - gVfo.tx_freq : s_offset;
+}
+
+static void shift_set(int dir)
+{
+	if (!s_offset)
+		s_offset = gVfo.freq < 30000000u ? 60000u : 500000u;    /* 600 kHz on 2 m, 5 MHz on 70 cm */
+	gVfo.rx_only = false;
+	if (dir > 0)
+		gVfo.tx_freq = gVfo.freq + s_offset;
+	else if (dir < 0 && gVfo.freq > s_offset)
+		gVfo.tx_freq = gVfo.freq - s_offset;
+	else
+		gVfo.tx_freq = 0;
+}
+
+/* a new RX frequency keeps the shift */
+static void vfo_retune(uint32_t f)
+{
+	int sh = vfo_shift();
+
+	s_offset = vfo_offset();
+	gVfo.freq = f;
+	if (sh)
+		shift_set(sh);
+}
 
 static const char *menu_value(int i, char *b)
 {
 	static const char *const MOD[] = { "AUTO", "FM", "AM" };
 
+	if (i >= M_SET0 && i < M_KEYTEST)
+		return set_value(&SET_ITEMS[i - M_SET0], b);
 	switch (i) {
 	case M_AB:      return s_active ? "B" : "A";
 	case M_DW:      return gStock.raw[SET_DUAL_WATCH] ? "ON" : "OFF";
@@ -395,7 +500,53 @@ static const char *menu_value(int i, char *b)
 	case M_MOD:     return MOD[gVfo.mod];
 	case M_RXTONE:  return TONE_Format(b, gVfo.rx_tone);
 	case M_TXTONE:  return TONE_Format(b, gVfo.tx_tone);
+	case M_SHIFT:   return gVfo.rx_only ? "RX ONLY" : vfo_shift() > 0 ? "+" : vfo_shift() < 0 ? "-" : "OFF";
+	case M_OFFSET: {                     /* MHz.kHz */
+		uint32_t o = vfo_offset();
+		char *p = put_num(b, (unsigned)(o / 100000u));
+		o = (o / 100u) % 1000u;
+		*p++ = '.';
+		*p++ = (char)('0' + o / 100u);
+		*p++ = (char)('0' + o / 10u % 10u);
+		*p++ = (char)('0' + o % 10u);
+		*p = 0;
+		return b;
+	}
 	case M_POWER:   return gVfo.power == POWER_LOW ? "LOW" : "HIGH";
+#if SETTINGS_ENABLE_SAVE
+	case M_CHSAVE: {
+		Channel_t c;
+		int n = s_menu_edit ? s_ch_pick : (s_mr ? s_ch : -1);
+		char *p;
+		if (n < 0)
+			return s_xf_ok ? "PICK" : "NO FLASH";
+		p = put_num(b, (unsigned)n + 1u);
+		if (s_menu_edit)
+			copy_text(p, CHANNEL_Load((uint16_t)n, &c) ? " USED" : " NEW", 6);
+		else
+			*p = 0;
+		return b;
+	}
+	case M_CHDEL: {
+		char *p;
+		if (!s_mr || s_ch < 0)
+			return "-";
+		p = put_num(b, (unsigned)s_ch + 1u);
+		if (s_menu_edit)
+			copy_text(p, " SURE?", 7);
+		else
+			*p = 0;
+		return b;
+	}
+	case M_SCANADD: {
+		Channel_t c;
+		if (!s_mr || s_ch < 0 || !CHANNEL_Load((uint16_t)s_ch, &c))
+			return "-";
+		return c.scan ? "ON" : "OFF";
+	}
+#else
+	case M_CHSAVE: case M_CHDEL: case M_SCANADD: return "NO SAVE";
+#endif
 	case M_ABOUT:   return FW_VERSION;
 	default:        return "";
 	}
@@ -403,8 +554,46 @@ static const char *menu_value(int i, char *b)
 
 static void channel_show(int n);
 
+#if SETTINGS_ENABLE_SAVE
+/* the working VFO as a channel record (the name kept when the slot had one) */
+static int channel_write(int n)
+{
+	Channel_t c, old;
+	bool had = CHANNEL_Load((uint16_t)n, &old);
+
+	for (int i = 0; i < 13; i++)
+		c.name[i] = had ? old.name[i] : 0;
+	c.rx = gVfo.freq;
+	c.tx = gVfo.rx_only ? 0 : gVfo.tx_freq ? gVfo.tx_freq : gVfo.freq;
+	c.rx_tone = gVfo.rx_tone;
+	c.tx_tone = gVfo.tx_tone;
+	c.low_power = gVfo.power == POWER_LOW;
+	c.narrow = gVfo.narrow;
+	c.scan = had ? old.scan : true;
+	c.ptt_id = gVfo.ptt_id;
+	return CHANNEL_Save((uint16_t)n, &c);
+}
+
+static int first_free_channel(void)
+{
+	Channel_t c;
+	for (int n = 0; n < (int)CHANNEL_COUNT; n++)
+		if (!CHANNEL_Load((uint16_t)n, &c))
+			return n;
+	return 0;
+}
+#endif
+
 static void menu_change(int i, int dir)
 {
+	if (i >= M_SET0 && i < M_KEYTEST) {
+		const SetItem_t *it = &SET_ITEMS[i - M_SET0];
+		uint8_t v = gStock.raw[it->off] < it->count ? gStock.raw[it->off] : 0;
+		gStock.raw[it->off] = (uint8_t)((v + it->count + dir) % it->count);
+		if (it->off == 0x3A)
+			VOX_Reset();
+		return;
+	}
 	switch (i) {
 	case M_MEM:
 		s_mr = s_xf_ok && !s_mr;
@@ -435,7 +624,36 @@ static void menu_change(int i, int dir)
 	case M_MOD:   gVfo.mod = (Modulation_t)((gVfo.mod + 3 + dir) % 3); break;
 	case M_RXTONE: gVfo.rx_tone = TONE_Step(gVfo.rx_tone, dir); break;
 	case M_TXTONE: gVfo.tx_tone = TONE_Step(gVfo.tx_tone, dir); break;
+	case M_SHIFT: {                      /* OFF, +, - */
+		int sh = vfo_shift();
+		int next = dir > 0 ? (sh == 0 ? 1 : sh == 1 ? -1 : 0) : (sh == 0 ? -1 : sh == -1 ? 1 : 0);
+		s_offset = vfo_offset();
+		gVfo.rx_only = false;
+		if (next)
+			shift_set(next);
+		else
+			gVfo.tx_freq = 0;
+		break;
+	}
+	case M_OFFSET: {                     /* 100 kHz a step */
+		int sh = vfo_shift();
+		s_offset = vfo_offset();
+		if (dir > 0 && s_offset < 10000000u - 10000u)
+			s_offset += 10000u;
+		else if (dir < 0)
+			s_offset = s_offset > 10000u ? s_offset - 10000u : 0;
+		if (sh)
+			shift_set(sh);
+		break;
+	}
 	case M_POWER: gVfo.power = gVfo.power == POWER_LOW ? POWER_HIGH : POWER_LOW; break;
+#if SETTINGS_ENABLE_SAVE
+	case M_CHSAVE:
+		if (s_ch_pick < 0)
+			s_ch_pick = 0;
+		s_ch_pick = (s_ch_pick + (int)CHANNEL_COUNT + dir) % (int)CHANNEL_COUNT;
+		return;
+#endif
 	default: break;
 	}
 	RADIO_Apply();
@@ -461,7 +679,7 @@ static void draw_menu(void)
 		bool sel = i == s_menu_sel;
 		uint16_t bg = sel ? COLOR_BAR : COLOR_BG;
 		ST7735S_FillRect(0, y - 1, 128, 10, bg);
-		UI_PrintString(MENU_NAMES[i], 2, y, COLOR_TEXT, bg, 1);
+		UI_PrintString(menu_name(i), 2, y, COLOR_TEXT, bg, 1);
 		UI_PrintString(menu_value(i, b), 76, y, sel && s_menu_edit ? COLOR_RX : COLOR_WARN, bg, 1);
 	}
 }
@@ -486,7 +704,7 @@ static void freq_step(int dir)
 		RADIO_Beep(400, 80);
 		return;
 	}
-	gVfo.freq = f;
+	vfo_retune(f);
 	RADIO_Apply();
 }
 
@@ -534,7 +752,7 @@ static void entry_finish(void)
 		s_redraw = true;
 		return;
 	}
-	gVfo.freq = khz * 100u;
+	vfo_retune(khz * 100u);
 	RADIO_Apply();
 	s_redraw = true;
 }
@@ -629,7 +847,7 @@ static void scan_hop(void)
 	f = SCAN_Dir() > 0 ? f + st : f - st;
 	if (f < lo || f > hi || gVfo.freq < lo || gVfo.freq > hi)
 		f = SCAN_Dir() > 0 ? lo : hi;
-	gVfo.freq = f;
+	vfo_retune(f);
 	RADIO_Apply();
 }
 
@@ -713,38 +931,138 @@ static void draw_about(void)
 	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 }
 
+/* MENU on a row: rows that act at once, rows that ask first (SAVE CH, DEL CH), or edit with UP/DOWN. */
+static void menu_enter(void)
+{
+	switch (s_menu_sel) {
+	case M_KEYTEST:
+		KEYTEST_Run();
+		s_redraw = true;
+		return;
+	case M_ABOUT:
+		go(SCREEN_ABOUT);
+		return;
+	case M_SCAN:
+		scan_start(+1);
+		go(SCREEN_MAIN);
+		return;
+	case M_TSCAN:
+		tscan_start();
+		go(SCREEN_MAIN);
+		return;
+#if SETTINGS_ENABLE_SAVE
+	case M_CHSAVE:
+		if (!s_xf_ok) {
+			RADIO_Beep(400, 120);
+			return;
+		}
+		if (!s_menu_edit) {
+			s_ch_pick = s_mr && s_ch >= 0 ? s_ch : first_free_channel();
+			s_ch_typed = false;
+			s_menu_edit = 1;
+			return;
+		}
+		s_menu_edit = 0;
+		if (channel_write(s_ch_pick) == 0) {
+			note("CHANNEL SAVED", COLOR_ACCENT);
+			if (s_mr && s_ch_pick == s_ch)
+				channel_show(s_ch);
+		} else
+			note("CHANNEL SAVE FAILED", COLOR_TX);
+		go(SCREEN_MAIN);
+		return;
+	case M_CHDEL:
+		if (!s_mr || s_ch < 0) {
+			RADIO_Beep(400, 120);
+			return;
+		}
+		if (!s_menu_edit) {
+			s_menu_edit = 1;
+			return;
+		}
+		s_menu_edit = 0;
+		if (CHANNEL_Delete((uint16_t)s_ch) == 0) {
+			int n = CHANNEL_Next(s_ch, +1);
+			note("CHANNEL DELETED", COLOR_WARN);
+			if (n >= 0)
+				channel_show(n);
+			else {                           /* no channel left: back to VFO */
+				s_mr = false;
+				s_ch = -1;
+				gVfo.tx_freq = 0;
+				gVfo.rx_only = false;
+				RADIO_Apply();
+			}
+		} else
+			note("DELETE FAILED", COLOR_TX);
+		go(SCREEN_MAIN);
+		return;
+	case M_SCANADD: {
+		Channel_t c;
+		if (!s_mr || s_ch < 0 || !CHANNEL_Load((uint16_t)s_ch, &c)) {
+			RADIO_Beep(400, 120);
+			return;
+		}
+		c.scan = !c.scan;
+		if (CHANNEL_Save((uint16_t)s_ch, &c))
+			note("SAVE FAILED", COLOR_TX);
+		return;
+	}
+#else
+	case M_CHSAVE: case M_CHDEL: case M_SCANADD:
+		RADIO_Beep(400, 120);
+		return;
+#endif
+	default:
+		s_menu_edit = !s_menu_edit;
+		s_ch_typed = false;
+		return;
+	}
+}
+
 static void key_menu(KEY_Code_t k)
 {
+	int d = KEY_Digit(k);
+
 	if (k == KEY_ACT_EXIT) {
 		if (s_menu_edit)
 			s_menu_edit = 0;
 		else
 			go(SCREEN_MAIN);
 	} else if (k == KEY_ACT_MENU) {
-		if (s_menu_sel == M_KEYTEST)
-			KEYTEST_Run();
-		if (s_menu_sel == M_ABOUT) {
-			go(SCREEN_ABOUT);
+		menu_enter();
+		if (s_screen != SCREEN_MENU)
 			return;
-		}
-		if (s_menu_sel == M_SCAN) {
-			scan_start(+1);
-			go(SCREEN_MAIN);
-			return;
-		}
-		if (s_menu_sel == M_TSCAN) {
-			tscan_start();
-			go(SCREEN_MAIN);
-			return;
-		}
-		s_menu_edit = !s_menu_edit;
 	} else if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
 		int dir = k == KEY_ACT_UP ? -1 : 1;
 		if (s_menu_edit)
 			menu_change(s_menu_sel, -dir);
 		else
 			s_menu_sel = (uint8_t)((s_menu_sel + M_COUNT + dir) % M_COUNT);
+	} else if (d >= 0 && s_menu_edit && s_menu_sel == M_OFFSET) {
+		/* typed in kHz: 6 0 0 = 600 kHz, 5 0 0 0 = 5 MHz */
+		int sh = vfo_shift();
+		uint32_t khz = s_ch_typed ? vfo_offset() / 100u : 0;
+		khz = khz * 10u + (uint32_t)d;
+		if (khz > 99999u)
+			khz = (uint32_t)d;
+		s_offset = khz * 100u;
+		s_ch_typed = true;
+		if (sh)
+			shift_set(sh);
+		RADIO_Apply();
 	}
+#if SETTINGS_ENABLE_SAVE
+	else if (d >= 0 && s_menu_edit && s_menu_sel == M_CHSAVE) {
+		/* typed channel number, 1-999 */
+		int n = s_ch_typed ? s_ch_pick + 1 : 0;
+		n = n * 10 + d;
+		if (n > (int)CHANNEL_COUNT)
+			n = d;
+		s_ch_pick = n ? n - 1 : 0;
+		s_ch_typed = true;
+	}
+#endif
 	draw_menu();
 }
 
@@ -763,10 +1081,16 @@ static KEY_Code_t key_event(void)
 		held = 0;
 		return k;
 	}
+	if (k == KEY_INVALID)
+		return KEY_INVALID;
+	if (held < 0xFFFFu)
+		held++;
 	if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
-		if (++held >= 50 && held % 10 == 0)
+		if (held >= 50 && held % 10 == 0)
 			return k;
 	}
+	if (k == KEY_HASH && held == KEY_LOCK_MS / APP_TICK_MS)
+		return KEY_ACT_LOCK;                 /* # held: lock or unlock the keys */
 	return KEY_INVALID;
 }
 
@@ -1246,6 +1570,31 @@ void APP_Tick(void)
 	}
 	if (k != KEY_INVALID)                        /* a press lights the screen and still does its job */
 		light_wake();
+	/* Key lock (stock setting 0x1B, kept across power-off): # held 1 s locks and unlocks; while locked, only PTT
+	 * works. Auto lock (setting 0x10): locks after KEY_AUTOLOCK_MS on the main screen with no key (our timing). */
+	if (k == KEY_ACT_LOCK) {
+		gStock.raw[SET_KEY_LOCK] = !gStock.raw[SET_KEY_LOCK];
+		note(gStock.raw[SET_KEY_LOCK] ? "KEYS LOCKED" : "KEYS UNLOCKED", COLOR_WARN);
+		RADIO_Beep(gStock.raw[SET_KEY_LOCK] ? 800 : 1200, 60);
+#if SETTINGS_ENABLE_SAVE
+		save_soon();
+#endif
+		s_idle_ms = 0;
+		k = KEY_INVALID;
+	} else if (k != KEY_INVALID && gStock.raw[SET_KEY_LOCK]) {
+		if (k != KEY_HASH)
+			note("LOCKED: HOLD #", COLOR_WARN);
+		k = KEY_INVALID;
+	}
+	if (k != KEY_INVALID || ptt || s_screen != SCREEN_MAIN || s_entry_len)
+		s_idle_ms = 0;
+	else if (gStock.raw[SET_AUTO_LOCK] && !gStock.raw[SET_KEY_LOCK] && (s_idle_ms += APP_TICK_MS) >= KEY_AUTOLOCK_MS) {
+		gStock.raw[SET_KEY_LOCK] = 1;
+		note("KEYS LOCKED", COLOR_WARN);
+#if SETTINGS_ENABLE_SAVE
+		save_soon();
+#endif
+	}
 	if (k != KEY_INVALID)
 		dw_end();                          /* keys act on the active side */
 #if SETTINGS_ENABLE_SAVE
