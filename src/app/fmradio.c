@@ -20,6 +20,9 @@
 #include "platform/jl_sdk/fmrx.h"
 #include "radio/radio.h"
 #include "ui/screen_apps.h"
+#include "driver/system.h"
+#include "ui/helper.h"
+#include "ui/theme.h"
 
 #define FM_SEEK_STEP 100u                /* kHz */
 
@@ -186,14 +189,32 @@ static void last_try(void)
 	put_hex(p, gFmCrumb.exc_rets, 8);
 }
 
+/* slow-motion start: "STEP 71 G1043" on the bottom line, then a short wait (fmrx.h gFmTrace) */
+static void trace(uint32_t step, uint32_t glue)
+{
+	char b[22], *p = b;
+	const char *q = "STEP ";
+
+	while (*q)
+		*p++ = *q++;
+	p = APPS_PutInt(p, (int)step);
+	*p++ = ' '; *p++ = 'G';
+	APPS_PutInt(p, (int)glue);
+	UI_PrintPadded(b, 2, 116, COLOR_WARN, COLOR_BG, 21);
+	SYSTEM_DelayMs(400);
+}
+
 static void start(uint32_t mode)
 {
 	s_mode = mode;
 	s_started = true;
+	gFmTrace = trace;
+	trace(1, 0);
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	UI_FmDraw(&s_f, false);
 	FMRX_SetVolume(s_vol);
 	s_ok = FMRX_Open(s_khz, mode);
+	gFmTrace = 0;
 	diag();
 	if (!s_ok)
 		say("FM DID NOT START", true);

@@ -24,6 +24,13 @@
 
 /* the last call JieLi's code made into this file, for the breadcrumbs (fmrx.h) */
 #define GLUE(id) (gFmCrumb.glue = (id))
+/* the rarer calls are also shown on the screen during a slow-motion start (fmrx.h) */
+static void glue_show(uint32_t id)
+{
+	gFmCrumb.glue = id;
+	if (gFmTrace)
+		gFmTrace(gFmCrumb.step, id);
+}
 
 /* ------------------------------------------------------------------------------------------- memory */
 #define HEAP_SIZE 0x6000u                /* 24 KB: the FM receiver takes about 10.2 KB, the DAC driver a little */
@@ -129,7 +136,7 @@ void __local_irq_enable(void) { local_irq_enable(); }
 void request_irq(uint8_t n, uint8_t priority, void (*h)(void), uint8_t cpu)
 {
 	(void)cpu;
-	GLUE(1000u + n);
+	glue_show(1000u + n);
 	if (n == IRQ_AUDIO) {
 		gFmDacIrqHandler = h;
 		return;
@@ -201,7 +208,7 @@ uint32_t adc_sample(uint32_t ch)
 {
 	uint32_t con = 0x6u | 0xF000u | 1u << 3 | 1u << 6 | (ch & 0xFu) << 8;   /* clock /96, start delay, no irq */
 
-	GLUE(3);
+	glue_show(3);
 	if ((ch & 0xFFFFu) == 0xFu)
 		adc_mux(ch);
 	ADC_CON = con;
@@ -249,10 +256,10 @@ int printf(const char *f, ...) { (void)f; return 0; }
 int puts(const char *s) { (void)s; return 0; }
 int putchar(int c) { return c; }
 void log_print(int level, const char *tag, const char *fmt, ...) { (void)level; (void)tag; (void)fmt; }
-void cpu_assert_debug(void) { GLUE(7); gFmAsserts++; }
+void cpu_assert_debug(void) { glue_show(7); gFmAsserts++; }
 /* JieLi's libraries reset the chip when an allocation fails; we count it and carry on (the FM screen shows it) */
-void p33_soft_reset(void) { GLUE(8); gFmResets++; }
-void cpu_reset(void) { GLUE(9); gFmResets++; }
+void p33_soft_reset(void) { glue_show(8); gFmResets++; }
+void cpu_reset(void) { glue_show(9); gFmResets++; }
 
 /* the FM library asks whether a station scan is running (it then reads cached levels): never, here */
 int get_fm_scan_status(void) { return 0; }

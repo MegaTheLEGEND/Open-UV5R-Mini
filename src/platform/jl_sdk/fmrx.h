@@ -46,6 +46,11 @@ typedef struct {
 	uint32_t mode;
 } FmrxCrumb_t;
 extern volatile FmrxCrumb_t gFmCrumb;
+/* Slow-motion start: when set, called at every breadcrumb step and at the rarer library calls (request_irq, ADC
+ * start, assert, reset request) with the step and the call; the FM app shows them on the screen and waits a little,
+ * so a start that dies leaves its last step on the screen (Sean's second try, 2026-11-24: the RAM breadcrumbs of the
+ * crashed start never arrived). */
+extern void (*gFmTrace)(uint32_t step, uint32_t glue);
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */

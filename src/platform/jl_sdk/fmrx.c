@@ -60,10 +60,14 @@ static volatile FmrxStats_t s_st;
 static uint32_t s_mode;
 volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
 
+void (*gFmTrace)(uint32_t step, uint32_t glue);
+
 static void crumb(uint32_t step)
 {
 	gFmCrumb.step = step;
 	__asm__ volatile("csync");
+	if (gFmTrace)
+		gFmTrace(step, gFmCrumb.glue);
 }
 
 /* an exception while FM runs: note where, then wait for the watchdog to restart the radio */
