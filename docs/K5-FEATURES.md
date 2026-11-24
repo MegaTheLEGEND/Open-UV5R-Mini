@@ -53,7 +53,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 2.6 | Scan display: progress, RSSI, CTCSS/DCS heard | partial | SCAN icon and frequency; the rest todo |
 | 2.7 | Scan resume modes (`SetScn`, `ScnRev`) | have | TIME, CARRIER, SEARCH (stock setting) |
 | 2.8 | Scan state restored at start-up | todo | |
-| 2.9 | EXIT stops a scan and goes back to where it started; MENU keeps the last find | todo | |
+| 2.9 | EXIT stops a scan and goes back to where it started; MENU keeps the last find | have | any key but EXIT and UP/DOWN keeps the find; PC-tested only |
 | 2.10 | CTCSS/DCS scan from the tone menu item | have | MENU → TONE SCAN |
 | 2.11 | Scan-list toggle and assign shortcuts (long `*`, long `5`) | todo | |
 
@@ -69,11 +69,11 @@ this radio (reason given). ROADMAP rows in brackets.
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
 | 4.1 | Display modes: MAIN ONLY, DUAL, FULL, CROSS | partial | we always show both sides |
-| 4.2 | RX activity on the active VFO, last-RX indication, RX and TX timers (`SetTmr`) | partial | RX/TX icons; timers and last RX todo |
+| 4.2 | RX activity on the active VFO, last-RX indication, RX and TX timers (`SetTmr`) | partial | RX/TX icons; "TX 0:42" / "RX 0:05" on the bottom line (PC-tested only); last RX todo |
 | 4.3 | RX LED blink option | todo | |
 | 4.4 | Squelch, step, CTCSS/DCS shown on the VFO screen | have | squelch on the status bar, tones as tags |
 | 4.5 | Channel name + frequency display | have | name large, number and frequency small (2026-11-24) |
-| 4.6 | Channel name editing in the menu | todo | names only from CHIRP today [4.6] |
+| 4.6 | Channel name editing in the menu | have | MENU → CHANNEL → CH NAME; PC-tested only |
 | 4.7 | Better frequency and channel entry | partial | 6 digits, 3-digit channel |
 | 4.8 | Battery percentage or voltage on the status bar | have | MENU → BATTERY: ICON, PERCENT, VOLTS; percent from the radio's calibrated battery thresholds, so it agrees with the bars (a two-cell pack: 6.1 V empty, 8.0 V full) |
 | 4.9 | Mic level bar while transmitting; audio level display | todo | the mic ADC is read for VOX already |
@@ -82,7 +82,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.12 | Power-on message and start-up logo (`PonMsg`) | todo | [4.6]; stock may keep a picture in external flash [4.2] |
 | 4.13 | System info pages: version, battery, flash and RAM use, QR codes | partial | ABOUT page has version and build |
 | 4.14 | Menu index shown while editing | have | NN/MM in the corner |
-| 4.15 | Reordered, renamed menu entries | have | our own order |
+| 4.15 | Reordered, renamed menu entries | have | sections CHANNEL, SCAN, TRANSMIT, SYSTEM, numbered on across them; a typed number jumps to its item |
 | 4.16 | Navigation layout per radio model (`SetNav`) | n/a | one keypad here |
 | 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | partial | # held locks keys; PTT always works |
 | 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); # held locks; no F layer yet [4.3] |
@@ -146,7 +146,7 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 ## Suggested order
 
 1. Things that make it a better daily radio, all small: ~~battery percentage (4.8), monitor key (1.13)~~, F+UP/DOWN
-   squelch (4.19), ~~1750 Hz key (1.14)~~, RX/TX timers (4.2), channel name editing (4.6), EXIT restores (2.9, 4.21).
+   squelch (4.19), ~~1750 Hz key (1.14), RX/TX timers (4.2), channel name editing (4.6), EXIT restores (2.9)~~, 4.21.
 2. Signal: S-meter in S-units (1.2), more power levels (1.1), 6.25 kHz narrow (1.3), priority watch (2.1).
 3. Scanning: fast scan (2.5), scan lists (2.3), exclusions (2.4).
 4. Spectrum analyser (3.1): the most-used extra on the K5.

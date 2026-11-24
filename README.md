@@ -59,9 +59,9 @@ Drawn on a PC by the firmware's own screen code (`python tests/ui_preview.py --s
 | --- | --- | --- |
 | ![Main screen](docs/screenshots/main_idle.png) | ![Receiving](docs/screenshots/main_rx.png) | ![Typing a frequency](docs/screenshots/main_entry.png) |
 
-| Menu | Hidden items (switched on with `=` held) |
-| --- | --- |
-| ![Menu](docs/screenshots/menu.png) | ![Hidden menu items](docs/screenshots/menu_hidden.png) |
+| Menu: sections | A section, numbered on from the last | Editing a channel name | Hidden items (switched on with `=` held) |
+| --- | --- | --- | --- |
+| ![Menu](docs/screenshots/menu.png) | ![Channel section](docs/screenshots/menu_channel.png) | ![Channel name](docs/screenshots/menu_name.png) | ![Hidden menu items](docs/screenshots/menu_hidden.png) |
 
 ## Find your way
 

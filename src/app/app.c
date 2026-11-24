@@ -62,6 +62,7 @@ static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
 static KEY_Code_t s_key_held;           /* the key down now (key_event; defined there) */
+static uint32_t s_trx_ms;                /* how long the radio has been transmitting, or receiving with squelch open */
 static uint8_t  s_batt_show;             /* 0 icon, 1 percent, 2 volts; saved in gStock.ext[EXT_BATT] */
 static const char *s_tx_why;              /* what the bottom line says while PTT is refused */
 static const char *s_note;              /* a message on the bottom line for a few seconds (saving, loading) */
@@ -383,6 +384,19 @@ static void main_view(UiMain_t *v)
 			*p++ = *q++;
 		copy_text(p, s_tscan_last ? TONE_Format(b, s_tscan_last) : "...", 8);
 		v->bottom_color = COLOR_WARN;
+	} else if ((RADIO_State() == RADIO_TX || RADIO_State() == RADIO_RX_OPEN) && s_trx_ms >= 1000u && !s_dtmf_len) {
+		/* how long this transmission or reception has gone on: "TX 0:42" */
+		uint32_t t = s_trx_ms / 1000u;
+		char *p = v->bottom;
+		*p++ = RADIO_State() == RADIO_TX ? 'T' : 'R';
+		*p++ = 'X';
+		*p++ = ' ';
+		p = put_num(p, (unsigned)(t / 60u));
+		*p++ = ':';
+		*p++ = (char)('0' + t % 60u / 10u);
+		*p++ = (char)('0' + t % 10u);
+		*p = 0;
+		v->bottom_color = RADIO_State() == RADIO_TX ? COLOR_TX : COLOR_RX;
 	} else if (s_dtmf_len) {
 		char *p = v->bottom;
 		*p++ = 'D'; *p++ = 'T'; *p++ = 'M'; *p++ = 'F'; *p++ = ' ';
@@ -400,10 +414,11 @@ static void draw_main(void)
 
 /* ------------------------------------------------------------------------------------------- menu */
 enum { M_AB, M_DW, M_MEM, M_SCAN, M_SCANMODE, M_SQL, M_VOL, M_STEP, M_BW, M_MOD, M_RXTONE, M_TXTONE, M_SHIFT,
-       M_OFFSET, M_POWER, M_TSCAN, M_TSCANSAVE, M_CHSAVE, M_CHDEL, M_SCANADD, M_SET0 };
+       M_OFFSET, M_POWER, M_TSCAN, M_TSCANSAVE, M_CHSAVE, M_CHDEL, M_SCANADD, M_CHNAME, M_FREQ, M_SET0 };
 static const char *const MENU_NAMES[M_SET0] = {
 	"A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH", "VOLUME", "STEP", "BANDWIDTH", "MODULATION",
 	"RX TONE", "TX TONE", "SHIFT", "OFFSET", "TX POWER", "TONE SCAN", "TSCAN SAVE", "SAVE CH", "DEL CH", "SCAN ADD",
+	"CH NAME", "FREQUENCY",
 };
 
 /* Stock setting bytes with a menu row each. Values as stock and CHIRP's UV-5R Mini driver have them (settings_obj in
@@ -469,10 +484,62 @@ static const char *const L_BATT[] = { "ICON", "PERCENT", "VOLTS" };
 
 static bool s_menu_hidden;               /* the hidden items are in the list */
 
-static int menu_count(void)
+/* Sections (Sean, 2026-11-24): the first page lists them, with ABOUT at the bottom; items are numbered on from one
+ * section to the next, so a number typed on any page goes straight to its item. CHANNEL holds what a channel keeps
+ * (SAVE CH writes it), and squelch. The hidden items (REGION, TX LOCK) are the last of SYSTEM. */
+#define SI(n) (M_SET0 + (n))             /* SET_ITEMS row n */
+static const uint8_t SEC_CH[] = { M_FREQ, M_CHNAME, M_RXTONE, M_TXTONE, M_SHIFT, M_OFFSET, M_POWER, M_BW, M_MOD,
+                                  M_STEP, M_SQL, M_SCANADD, M_CHSAVE, M_CHDEL };
+static const uint8_t SEC_SCAN[] = { M_AB, M_MEM, M_DW, M_SCAN, M_SCANMODE, M_TSCAN, M_TSCANSAVE };
+static const uint8_t SEC_TX[] = { SI(2), SI(3), SI(4), SI(5), SI(6), SI(7), SI(8), SI(9), SI(10), SI(11), SI(12) };
+static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, SI(13), SI(14), M_EQ_PRESS, M_EQ_DBL, M_EQ_HOLD,
+#if KEYTEST_ENABLE
+                                   M_KEYTEST,
+#endif
+                                   M_REGION, M_TXLOCK };
+#define HIDDEN_N 2                       /* the hidden items at the end of SEC_SYS */
+typedef struct {
+	const char    *name;
+	const uint8_t *items;
+	uint8_t        n;
+} Section_t;
+static const Section_t SECTIONS[] = {
+	{ "CHANNEL",  SEC_CH,   sizeof SEC_CH },
+	{ "SCAN",     SEC_SCAN, sizeof SEC_SCAN },
+	{ "TRANSMIT", SEC_TX,   sizeof SEC_TX },
+	{ "SYSTEM",   SEC_SYS,  sizeof SEC_SYS },
+};
+#define SEC_COUNT ((int)(sizeof SECTIONS / sizeof SECTIONS[0]))
+static int8_t  s_menu_sec = -1;          /* the section open; -1 = the first page */
+static uint8_t s_menu_page_sel;          /* the first page's selected row (SEC_COUNT = ABOUT) */
+static uint8_t s_menu_num, s_menu_num_len;   /* an item number being typed */
+
+static int sec_len(int sec)
 {
-	return s_menu_hidden ? M_COUNT : M_NORMAL;
+	return SECTIONS[sec].n - (sec == SEC_COUNT - 1 && !s_menu_hidden ? HIDDEN_N : 0);
 }
+
+static int sec_first_num(int sec)
+{
+	int n = 1;
+	for (int i = 0; i < sec; i++)
+		n += sec_len(i);
+	return n;
+}
+
+static int menu_total(void)
+{
+	return sec_first_num(SEC_COUNT) - 1;
+}
+
+static int sec_row(int sec, int id)              /* the row of item id in sec, or 0 */
+{
+	for (int r = 0; r < SECTIONS[sec].n; r++)
+		if (SECTIONS[sec].items[r] == id)
+			return r;
+	return 0;
+}
+
 
 static const char *menu_name(int i)
 {
@@ -552,6 +619,14 @@ static void vfo_retune(uint32_t f)
 		shift_set(sh);
 }
 
+/* CH NAME editing: the name padded to 12, the cursor, and the characters UP/DOWN step through */
+static char    s_name_buf[13];
+static int8_t  s_name_cur;
+static const char NAME_CHARS[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-./+#*()";
+/* FREQUENCY typed in the menu: kHz digits so far */
+static uint32_t s_freq_khz;
+static uint8_t  s_freq_n;
+
 static const char *menu_value(int i, char *b)
 {
 	static const char *const MOD[] = { "AUTO", "FM", "AM" };
@@ -627,6 +702,25 @@ static const char *menu_value(int i, char *b)
 	case M_CHSAVE: case M_CHDEL: case M_SCANADD: return "NO SAVE";
 #endif
 	case M_BATT:    return L_BATT[s_batt_show < 3 ? s_batt_show : 0];
+	case M_CHNAME:
+		if (s_menu_edit)
+			return s_name_buf;
+		if (!s_mr || s_ch < 0)
+			return "VFO: NONE";
+		return s_ch_name[0] ? s_ch_name : "NO NAME";
+	case M_FREQ:
+		if (s_menu_edit && s_freq_n) {       /* "145.5__" while typing */
+			uint32_t v = s_freq_khz;
+			for (int k = 0; k < 7; k++)
+				b[k] = k == 3 ? '.' : '_';
+			b[7] = 0;
+			for (int k = s_freq_n - 1; k >= 0; k--) {   /* the digits typed, from the last one back */
+				b[k < 3 ? k : k + 1] = (char)('0' + v % 10u);
+				v /= 10u;
+			}
+			return b;
+		}
+		return UI_FormatFreq(b, gVfo.freq);
 	case M_EQ_PRESS: case M_EQ_DBL: case M_EQ_HOLD:
 		return L_KEYACT[s_eq_act[i - M_EQ_PRESS] < KA_COUNT ? s_eq_act[i - M_EQ_PRESS] : 0];
 	case M_ABOUT:   return FW_VERSION;
@@ -682,6 +776,21 @@ static void menu_change(int i, int dir)
 	case M_BATT:
 		s_batt_show = (uint8_t)((s_batt_show + 3 + dir) % 3);
 		return;
+	case M_CHNAME: {                     /* the character at the cursor, through NAME_CHARS */
+		int n = (int)sizeof NAME_CHARS - 1, c = 0;
+		while (c < n && NAME_CHARS[c] != s_name_buf[s_name_cur])
+			c++;
+		s_name_buf[s_name_cur] = NAME_CHARS[((c < n ? c : 0) + n + dir) % n];
+		return;
+	}
+	case M_FREQ: {                       /* one step, on the step grid */
+		uint32_t st = RADIO_Steps[gVfo.step], f = gVfo.freq - gVfo.freq % st;
+		f = dir > 0 ? f + st : f - st;
+		s_freq_n = 0;
+		if (f >= FREQ_MIN && f <= FREQ_MAX)
+			vfo_retune(f);
+		break;
+	}
 	case M_EQ_PRESS: case M_EQ_DBL: case M_EQ_HOLD: {
 		uint8_t *a = &s_eq_act[i - M_EQ_PRESS];
 		*a = (uint8_t)((*a + KA_COUNT + (dir ? dir : 1)) % KA_COUNT);
@@ -769,26 +878,78 @@ static void menu_change(int i, int dir)
 static void draw_menu(void)
 {
 	UiMenu_t m;
-	char b[12];
+	char b[14];
+	static char rng[SEC_COUNT][8];
+	char *p;
 
-	m.count = (uint8_t)menu_count();
-	m.sel = s_menu_sel;
-	m.top = UI_MenuTop(s_menu_sel);
-	m.hidden_from = M_NORMAL;
 	m.edit = s_menu_edit != 0;
-	for (int r = 0; r < UI_MENU_ROWS; r++)
-		m.name[r] = m.top + r < m.count ? menu_name(m.top + r) : 0;
-	m.value = menu_value(s_menu_sel, b);
+	m.cursor = -1;
+	m.corner_warn = s_menu_num_len != 0;
+	for (int r = 0; r < UI_MENU_ROWS; r++) {
+		m.name[r] = m.right[r] = 0;
+		m.num[r] = 0;
+		m.hidden[r] = false;
+	}
+	if (s_menu_sec < 0) {                /* the first page: the sections with their number ranges, then ABOUT */
+		m.title = "MENU";
+		m.count = (uint8_t)(SEC_COUNT + 1);
+		m.sel = s_menu_page_sel;
+		for (int i = 0; i < SEC_COUNT; i++) {
+			int a = sec_first_num(i);
+			p = put_num(rng[i], (unsigned)a);
+			*p++ = '-';
+			put_num(p, (unsigned)(a + sec_len(i) - 1));
+		}
+		m.top = UI_MenuTop(m.sel);
+		for (int r = 0; r < UI_MENU_ROWS && m.top + r < m.count; r++) {
+			int i = m.top + r;
+			m.name[r] = i < SEC_COUNT ? SECTIONS[i].name : "ABOUT";
+			m.right[r] = i < SEC_COUNT ? rng[i] : 0;
+		}
+		if (m.sel < SEC_COUNT) {             /* "14 ITEMS" */
+			copy_text(put_num(b, (unsigned)sec_len(m.sel)), " ITEMS", 7);
+			m.value = b;
+		} else
+			m.value = FW_VERSION;
+	} else {
+		const Section_t *sec = &SECTIONS[s_menu_sec];
+		int first = sec_first_num(s_menu_sec);
+		m.title = sec->name;
+		m.count = (uint8_t)sec_len(s_menu_sec);
+		m.sel = (uint8_t)sec_row(s_menu_sec, s_menu_sel);
+		m.top = UI_MenuTop(m.sel);
+		for (int r = 0; r < UI_MENU_ROWS && m.top + r < m.count; r++) {
+			int id = sec->items[m.top + r];
+			m.name[r] = menu_name(id);
+			m.num[r] = (uint8_t)(first + m.top + r);
+			m.hidden[r] = id == M_REGION || id == M_TXLOCK;
+		}
+		m.value = menu_value(s_menu_sel, b);
+		if (s_menu_sel == M_CHNAME && s_menu_edit)
+			m.cursor = s_name_cur;
+		m.corner_warn |= s_menu_sel == M_REGION || s_menu_sel == M_TXLOCK;
+	}
+	p = m.corner;
+	if (s_menu_num_len) {                /* the number being typed */
+		p = put_num(p, s_menu_num);
+		*p++ = '_';
+		*p = 0;
+	} else if (s_menu_sec >= 0) {        /* NN/MM */
+		const char *q = UI_FormatDec(b, (uint32_t)(sec_first_num(s_menu_sec) + m.sel), 2);
+		*p++ = q[0]; *p++ = q[1]; *p++ = '/';
+		q = UI_FormatDec(b, (uint32_t)menu_total(), 2);
+		*p++ = q[0]; *p++ = q[1]; *p = 0;
+	} else
+		*p = 0;
 	UI_MenuDraw(&m, s_redraw);
 }
-
 /* ------------------------------------------------------------------------------------------- keys */
 static void go(Screen_t s)
 {
-	if (s == SCREEN_MAIN && s_menu_hidden) {
+	if (s == SCREEN_MAIN) {
 		s_menu_hidden = false;           /* the hidden items go with the menu */
-		if (s_menu_sel >= M_NORMAL)
-			s_menu_sel = 0;
+		s_menu_sec = -1;                 /* the menu opens at its first page */
+		s_menu_num_len = 0;
 	}
 	s_screen = s;
 	s_redraw = true;
@@ -954,9 +1115,17 @@ static void scan_hop(void)
 	RADIO_Apply();
 }
 
+static uint32_t s_scan_from;             /* where the scan started: frequency, and channel (-1 in VFO mode) */
+static int      s_scan_from_ch = -1;
+
 static void scan_start(int dir)
 {
 	uint8_t m = gStock.raw[SET_SCAN_MODE];
+
+	if (!SCAN_Active()) {
+		s_scan_from = gVfo.freq;
+		s_scan_from_ch = s_mr ? s_ch : -1;
+	}
 
 	SCAN_Start(dir, (ScanResume_t)(m <= 2 ? m : 1), APP_TICK_MS);
 	s_entry_len = 0;
@@ -973,8 +1142,18 @@ static void key_main(KEY_Code_t k)
 	if (SCAN_Active()) {                 /* any key ends the scan; UP/DOWN turn it round */
 		if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
 			scan_start(k == KEY_ACT_UP ? +1 : -1);
-		else
+		else {
 			SCAN_Stop();
+			if (k == KEY_ACT_EXIT) {         /* EXIT: back where the scan started; any other key keeps the find */
+				if (s_mr && s_scan_from_ch >= 0)
+					channel_show(s_scan_from_ch);
+				else if (!s_mr) {
+					vfo_retune(s_scan_from);
+					RADIO_Apply();
+				}
+				note("SCAN CANCELLED", COLOR_DIM);
+			}
+		}
 		return;
 	}
 
@@ -1001,6 +1180,7 @@ static void key_main(KEY_Code_t k)
 		freq_step(-1);
 	else if (k == KEY_ACT_MENU) {
 		s_menu_edit = 0;
+		s_menu_sec = -1;
 		go(SCREEN_MENU);
 	} else if (k == KEY_ACT_BW) {
 		gVfo.narrow = !gVfo.narrow;
@@ -1046,6 +1226,60 @@ static void menu_enter(void)
 #endif
 	case M_ABOUT:
 		go(SCREEN_ABOUT);
+		return;
+	case M_CHNAME:
+#if SETTINGS_ENABLE_SAVE
+		if (!s_mr || s_ch < 0 || !s_xf_ok) {
+			RADIO_Beep(400, 120);
+			return;
+		}
+		if (!s_menu_edit) {                  /* start: the name padded to 12 with spaces, cursor on the first */
+			int k = 0;
+			for (; k < 12 && s_ch_name[k]; k++)
+				s_name_buf[k] = s_ch_name[k];
+			for (; k < 12; k++)
+				s_name_buf[k] = ' ';
+			s_name_buf[12] = 0;
+			s_name_cur = 0;
+			s_menu_edit = 1;
+			return;
+		}
+		s_menu_edit = 0;                     /* MENU again: save it (trailing spaces dropped) */
+		{
+			Channel_t c;
+			int k = 12;
+			while (k > 0 && s_name_buf[k - 1] == ' ')
+				k--;
+			if (!CHANNEL_Load((uint16_t)s_ch, &c)) {
+				note("SAVE FAILED", COLOR_TX);
+				return;
+			}
+			for (int j = 0; j < 13; j++)
+				c.name[j] = j < k ? s_name_buf[j] : 0;
+			if (CHANNEL_Save((uint16_t)s_ch, &c) == 0) {
+				note("NAME SAVED", COLOR_ACCENT);
+				channel_show(s_ch);
+			} else
+				note("SAVE FAILED", COLOR_TX);
+		}
+#else
+		RADIO_Beep(400, 120);
+#endif
+		return;
+	case M_FREQ:
+		if (s_menu_edit && s_freq_n) {       /* digits typed but not all 6: the rest are 0, as on the main screen */
+			uint32_t khz = s_freq_khz;
+			for (int k = s_freq_n; k < 6; k++)
+				khz *= 10u;
+			s_freq_n = 0;
+			if (khz * 100u >= FREQ_MIN && khz * 100u <= FREQ_MAX) {
+				vfo_retune(khz * 100u);
+				RADIO_Apply();
+			} else
+				RADIO_Beep(400, 120);
+		}
+		s_freq_n = 0;
+		s_menu_edit = !s_menu_edit;
 		return;
 	case M_SCAN:
 		scan_start(+1);
@@ -1125,15 +1359,76 @@ static void menu_enter(void)
 	}
 }
 
+static void menu_open(int sec, int id)
+{
+	s_menu_sec = (int8_t)sec;
+	s_menu_sel = (uint8_t)id;
+	s_menu_edit = 0;
+	s_redraw = true;
+}
+
+/* item number n (1-based, across the sections) */
+static void menu_jump(int n)
+{
+	for (int sec = 0; sec < SEC_COUNT; sec++) {
+		int first = sec_first_num(sec);
+		if (n >= first && n < first + sec_len(sec)) {
+			menu_open(sec, SECTIONS[sec].items[n - first]);
+			return;
+		}
+	}
+	RADIO_Beep(400, 120);
+}
+
 static void key_menu(KEY_Code_t k)
 {
 	int d = KEY_Digit(k);
 
-	if (k == KEY_ACT_EXIT) {
-		if (s_menu_edit)
-			s_menu_edit = 0;
-		else
+	/* An item number typed on any page (not while a value is edited): two digits, or one and MENU */
+	if (s_menu_num_len && d < 0) {
+		s_menu_num_len = 0;
+		if (k == KEY_ACT_MENU)
+			menu_jump(s_menu_num);
+		draw_menu();
+		if (k == KEY_ACT_MENU || k == KEY_ACT_EXIT)
+			return;
+	}
+	if (d >= 0 && !s_menu_edit) {
+		s_menu_num = (uint8_t)(s_menu_num_len ? s_menu_num * 10 + d : d);
+		s_menu_num_len++;
+		if (s_menu_num_len >= 2 || s_menu_num * 10 > menu_total()) {
+			s_menu_num_len = 0;
+			menu_jump(s_menu_num);
+		}
+		draw_menu();
+		return;
+	}
+
+	if (s_menu_sec < 0) {                /* the first page */
+		if (k == KEY_ACT_EXIT)
 			go(SCREEN_MAIN);
+		else if (k == KEY_ACT_MENU) {
+			if (s_menu_page_sel >= SEC_COUNT)
+				go(SCREEN_ABOUT);
+			else
+				menu_open(s_menu_page_sel, SECTIONS[s_menu_page_sel].items[0]);
+		} else if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
+			s_menu_page_sel = (uint8_t)((s_menu_page_sel + SEC_COUNT + 1 + (k == KEY_ACT_UP ? -1 : 1))
+			                            % (SEC_COUNT + 1));
+		if (s_screen == SCREEN_MENU)
+			draw_menu();
+		return;
+	}
+
+	if (k == KEY_ACT_EXIT) {
+		if (s_menu_edit) {
+			s_menu_edit = 0;                 /* a name or typed frequency being edited is dropped */
+			s_freq_n = 0;
+		} else {
+			s_menu_page_sel = (uint8_t)s_menu_sec;
+			s_menu_sec = -1;
+			s_redraw = true;
+		}
 	} else if (k == KEY_ACT_MENU) {
 		menu_enter();
 		if (s_screen != SCREEN_MENU)
@@ -1142,8 +1437,30 @@ static void key_menu(KEY_Code_t k)
 		int dir = k == KEY_ACT_UP ? -1 : 1;
 		if (s_menu_edit)
 			menu_change(s_menu_sel, -dir);
+		else {
+			int n = sec_len(s_menu_sec);
+			int r = (sec_row(s_menu_sec, s_menu_sel) + n + dir) % n;
+			s_menu_sel = SECTIONS[s_menu_sec].items[r];
+		}
+	} else if (s_menu_edit && s_menu_sel == M_CHNAME && (k == KEY_STAR || k == KEY_HASH || d >= 0)) {
+		/* * and # move the cursor; a digit is typed in and the cursor moves on */
+		if (d >= 0)
+			s_name_buf[s_name_cur] = (char)('0' + d);
+		if (k == KEY_STAR)
+			s_name_cur = (int8_t)(s_name_cur ? s_name_cur - 1 : 11);
 		else
-			s_menu_sel = (uint8_t)((s_menu_sel + menu_count() + dir) % menu_count());
+			s_name_cur = (int8_t)((s_name_cur + 1) % 12);
+	} else if (d >= 0 && s_menu_edit && s_menu_sel == M_FREQ) {
+		/* MHz then kHz, 6 digits as on the main screen; the 6th tunes */
+		s_freq_khz = s_freq_n ? s_freq_khz * 10u + (uint32_t)d : (uint32_t)d;
+		if (++s_freq_n == 6) {
+			s_freq_n = 0;
+			if (s_freq_khz * 100u >= FREQ_MIN && s_freq_khz * 100u <= FREQ_MAX) {
+				vfo_retune(s_freq_khz * 100u);
+				RADIO_Apply();
+			} else
+				RADIO_Beep(400, 120);
+		}
 	} else if (d >= 0 && s_menu_edit && s_menu_sel == M_OFFSET) {
 		/* typed in kHz: 6 0 0 = 600 kHz, 5 0 0 0 = 5 MHz */
 		int sh = vfo_shift();
@@ -1170,7 +1487,6 @@ static void key_menu(KEY_Code_t k)
 #endif
 	draw_menu();
 }
-
 /* press events, with repeat for UP/DOWN after 0.5 s */
 static KEY_Code_t s_key_held = KEY_INVALID;
 static bool       s_wait_release;
@@ -1503,7 +1819,8 @@ void APP_Init(void)
 	go(SCREEN_MAIN);
 	if (hidden_menu) {
 		s_menu_hidden = true;
-		s_menu_sel = M_NORMAL;               /* item M_NORMAL + 1, the first hidden one */
+		s_menu_sec = SEC_COUNT - 1;          /* SYSTEM, at the first hidden item */
+		s_menu_sel = M_REGION;
 		s_menu_edit = 0;
 		s_wait_release = true;               /* the = still held is not a press */
 		go(SCREEN_MENU);
@@ -1762,6 +2079,15 @@ void APP_Tick(void)
 		s_tx_swapped = false;
 	}
 	RADIO_Tick();
+	{
+		static RadioState_t last;
+		RadioState_t st = RADIO_State();
+		if (st != last)
+			s_trx_ms = 0;
+		else if (st != RADIO_RX && s_trx_ms < 0xFFFF0000u)
+			s_trx_ms += APP_TICK_MS;
+		last = st;
+	}
 	tot_tick();
 	tscan_tick();
 	dtmf_tick();

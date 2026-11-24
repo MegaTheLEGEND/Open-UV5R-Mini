@@ -6,6 +6,14 @@
 
 static int s_top = -1;                 /* the first row drawn last time; -1 = rows need clearing */
 
+static unsigned text_len(const char *s)
+{
+	unsigned n = 0;
+	while (s && s[n])
+		n++;
+	return n;
+}
+
 uint8_t UI_MenuTop(uint8_t sel)
 {
 	return sel < UI_MENU_ROWS ? 0 : (uint8_t)(sel - UI_MENU_ROWS + 1);
@@ -18,44 +26,46 @@ void UI_MenuDraw(const UiMenu_t *m, bool full)
 	if (full) {
 		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
 		ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
-		UI_PrintString("MENU", 2, 2, COLOR_TEXT, COLOR_BAR, 1);
+		UI_PrintString(m->title ? m->title : "MENU", 2, 2, COLOR_TEXT, COLOR_BAR, 1);
 		ST7735S_FillRect(0, 98, 128, 1, COLOR_DIM);
 		s_top = -1;
 	}
-	/* NN/MM, top right */
-	{
-		char c[8], *p = c;
-		const char *q = UI_FormatDec(n, (uint32_t)m->sel + 1u, 2);
-		*p++ = q[0]; *p++ = q[1]; *p++ = '/';
-		q = UI_FormatDec(n, m->count, 2);
-		*p++ = q[0]; *p++ = q[1]; *p = 0;
-		UI_PrintString(c, 96, 2, m->sel >= m->hidden_from ? COLOR_WARN : COLOR_DIM, COLOR_BAR, 1);
-	}
+	ST7735S_FillRect(80, 0, 48, 11, COLOR_BAR);
+	UI_PrintString(m->corner, (uint8_t)(126 - 6 * text_len(m->corner)), 2, m->corner_warn ? COLOR_WARN : COLOR_DIM,
+	               COLOR_BAR, 1);
 	if (m->top != s_top) {
 		s_top = m->top;
 		ST7735S_FillRect(0, 12, 128, 12 * UI_MENU_ROWS + 2, COLOR_BG);
 	}
 	for (int r = 0; r < UI_MENU_ROWS && m->top + r < m->count; r++) {
-		int i = m->top + r;
 		uint8_t y = (uint8_t)(15 + 12 * r);
-		bool sel = i == m->sel;
+		bool sel = m->top + r == m->sel;
 		uint16_t bg = sel ? COLOR_ACCENT : COLOR_BG;
 		ST7735S_FillRect(0, (uint8_t)(y - 2), 128, 11, bg);
-		UI_PrintString(UI_FormatDec(n, (uint32_t)i + 1u, 2), 3, y,
-		               sel ? COLOR_TEXT : i >= m->hidden_from ? COLOR_WARN : COLOR_DIM, bg, 1);
-		UI_PrintString(m->name[r] ? m->name[r] : "", 22, y, COLOR_TEXT, bg, 1);
+		if (m->num[r])
+			UI_PrintString(UI_FormatDec(n, m->num[r], 2), 3, y,
+			               sel ? COLOR_TEXT : m->hidden[r] ? COLOR_WARN : COLOR_DIM, bg, 1);
+		UI_PrintString(m->name[r] ? m->name[r] : "", m->num[r] ? 22 : 6, y, COLOR_TEXT, bg, 1);   /* no number: from the left */
+		if (m->right[r])
+			UI_PrintString(m->right[r], (uint8_t)(125 - 6 * text_len(m->right[r])), y, sel ? COLOR_TEXT : COLOR_DIM,
+			               bg, 1);
 	}
-	/* the selected item's value, large if it fits */
+	/* the selected row's value, large if it fits */
 	{
 		const char *v = m->value ? m->value : "";
-		unsigned len = 0;
+		unsigned len = text_len(v);
 		uint16_t fg = m->edit ? COLOR_RX : COLOR_WARN;
-		while (v[len])
-			len++;
 		ST7735S_FillRect(0, 100, 128, 28, COLOR_BG);
-		if (len <= 10)
-			UI_PrintString(v, (uint8_t)((128 - 12 * len) / 2), 107, fg, COLOR_BG, 2);
-		else
-			UI_PrintString(v, (uint8_t)(len < 21 ? (128 - 6 * len) / 2 : 0), 110, fg, COLOR_BG, 1);
+		if (len <= 10) {
+			uint8_t x = (uint8_t)((128 - 12 * len) / 2);
+			UI_PrintString(v, x, 107, fg, COLOR_BG, 2);
+			if (m->cursor >= 0)
+				ST7735S_FillRect((uint8_t)(x + 12 * m->cursor), 123, 10, 2, COLOR_TEXT);
+		} else {
+			uint8_t x = (uint8_t)(len < 21 ? (128 - 6 * len) / 2 : 0);
+			UI_PrintString(v, x, 110, fg, COLOR_BG, 1);
+			if (m->cursor >= 0)
+				ST7735S_FillRect((uint8_t)(x + 6 * m->cursor), 119, 5, 1, COLOR_TEXT);
+		}
 	}
 }

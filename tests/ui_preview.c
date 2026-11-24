@@ -129,33 +129,79 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
-	/* the menu (src/ui/screen_menu.c): a normal item, then the hidden items after a start with = held, one being
-	 * changed. Names as the app has them around those places. */
+	/* the menu (src/ui/screen_menu.c): the first page (sections with their number ranges, ABOUT last), a section,
+	 * a channel name being edited, and SYSTEM with the hidden items after a start with = held. Names and numbers
+	 * as the app has them (ENABLE_KEYTEST on). */
 	{
-		static const char *const NAMES[] = { "A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH",
-		                                     "VOLUME", "STEP" };
-		static const char *const HIDDEN[] = { "DTMF HOLD", "AUTO LOCK", "MENU EXIT", "KEY TEST", "ABOUT", "REGION",
-		                                      "TX LOCK" };
+		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "SYSTEM", "ABOUT" };
+		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-42", 0 };
+		static const char *const CH[] = { "SHIFT", "OFFSET", "TX POWER", "BANDWIDTH", "MODULATION", "STEP",
+		                                  "SQUELCH" };
+		static const char *const SYS[] = { "AUTO LOCK", "MENU EXIT", "= PRESS", "= DOUBLE", "= HOLD", "KEY TEST",
+		                                   "REGION", "TX LOCK" };
 		UiMenu_t m;
 		memset(&m, 0, sizeof m);
-		m.count = 37;
-		m.hidden_from = 37;
-		m.sel = 5;
-		m.top = UI_MenuTop(m.sel);
-		for (int r = 0; r < UI_MENU_ROWS; r++)
-			m.name[r] = NAMES[m.top + r];
-		m.value = "3";
+		m.title = "MENU";
+		m.count = 5;
+		m.sel = 0;
+		m.cursor = -1;
+		for (int r = 0; r < 5; r++) {
+			m.name[r] = PAGE[r];
+			m.right[r] = PAGE_R[r];
+		}
+		m.value = "14 ITEMS";
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu.ppm", dir);
 		dump(path);
 
-		m.count = 39;
-		m.hidden_from = 37;
-		m.sel = 38;
+		memset(&m, 0, sizeof m);
+		m.title = "CHANNEL";
+		m.count = 14;
+		m.sel = 10;                                 /* SQUELCH, item 11 */
 		m.top = UI_MenuTop(m.sel);
-		for (int r = 0; r < UI_MENU_ROWS; r++)      /* items 33-39 */
-			m.name[r] = HIDDEN[r];
-		m.value = "HAM+GMRS";
+		m.cursor = -1;
+		for (int r = 0; r < UI_MENU_ROWS; r++) {
+			m.name[r] = CH[r];
+			m.num[r] = (uint8_t)(m.top + r + 1);
+		}
+		strcpy(m.corner, "11/42");
+		m.value = "3";
+		UI_MenuDraw(&m, true);
+		snprintf(path, sizeof path, "%s/menu_channel.ppm", dir);
+		dump(path);
+
+		m.sel = 1;                                  /* CH NAME, item 2, being edited */
+		m.top = 0;
+		{
+			static const char *const TOP[] = { "FREQUENCY", "CH NAME", "RX TONE", "TX TONE", "SHIFT", "OFFSET",
+			                                   "TX POWER" };
+			for (int r = 0; r < UI_MENU_ROWS; r++) {
+				m.name[r] = TOP[r];
+				m.num[r] = (uint8_t)(r + 1);
+			}
+		}
+		strcpy(m.corner, "02/42");
+		m.value = "CITY RPTR   ";
+		m.edit = true;
+		m.cursor = 5;
+		UI_MenuDraw(&m, true);
+		snprintf(path, sizeof path, "%s/menu_name.ppm", dir);
+		dump(path);
+
+		memset(&m, 0, sizeof m);
+		m.title = "SYSTEM";
+		m.count = 12;
+		m.sel = 10;                                 /* REGION, item 43 */
+		m.top = UI_MenuTop(m.sel);
+		m.cursor = -1;
+		for (int r = 0; r < UI_MENU_ROWS; r++) {
+			m.name[r] = SYS[m.top + r - 4];
+			m.num[r] = (uint8_t)(33 + m.top + r);
+			m.hidden[r] = m.top + r >= 10;
+		}
+		strcpy(m.corner, "43/44");
+		m.corner_warn = true;
+		m.value = "US";
 		m.edit = true;
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu_hidden.ppm", dir);
