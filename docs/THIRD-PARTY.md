@@ -17,4 +17,14 @@ Never in this group: Baofeng's stock firmware or anything derived from it (no li
 | *(none yet)* | | | | |
 
 Candidates, licence still to check: UV-K5 open firmware (DualTachyon, egzumer; Apache-2.0 per their repos), FreeRTOS
-(MIT), JieLi's public AC69xx SDKs and libraries (Bluetooth, audio; licence to read before use).
+(MIT).
+
+**JieLi fw-AC63_BT_SDK** (checked 2026-11-23, not added yet): <https://github.com/Jieli-Tech/fw-AC63_BT_SDK>. The
+repository's only licence is Apache-2.0 (`LICENSE`, copyright line not filled in); its README says the sources "must
+be combined with lib.a" and sets no other terms for the binaries. It has the AC695N's chip family (BR23) in
+`cpu/br23/`: register headers, drivers (`spi.c`, …) and closed libraries in `cpu/br23/liba/` (`btctrler.a` Bluetooth
+controller, `btstack.a` host, `system.a` OS, `cpu.a`, `media.a`, …). So those may be used, changed where their source
+is given, and redistributed under Apache-2.0 (keep `LICENSE`, state changes). What we use so far: register facts
+only (SPI1, IO map, FM register names; RE-NOTES), no code. The Bluetooth edition ([BLUETOOTH.md](BLUETOOTH.md)) would
+link the libraries; a row goes in the table when they are added. Note: the libraries are closed binaries, so an image
+that contains them is not fully open source, and Bluetooth products may need qualification where they are sold.

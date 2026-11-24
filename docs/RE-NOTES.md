@@ -418,8 +418,29 @@ that depend on read-backs (calibration results) are not real; the order and fixe
 | Seek | RAM `0x02003950` | tunes (`sub_01E3CF56`), then reads ADC_CON ten times: bits 24–31 and 16–23 (signed levels), bits 5–15; keeps the best of each; used for station search |
 | Samples | interrupt 43, RAM `0x02003D8A` | clears HF_CON1 bit 6 (pending), then for each 2 KB half of the buffer runs `0x02003DF2` (~600 instructions; helpers `0x02004DC0`, `0x02004FC4`, app `0x01E34818`–`0x01E34ACC`) and hands the result on through `0x01E57190`: demodulation and filtering in software, output to the audio DAC |
 
-Still unread: the DSP itself (`0x02003DF2`), what `0x01E57190` does with the audio, the DAC set-up and how the DAC's
-output reaches the speaker alongside the BK4819 (the LM2904 mixer, RE-NOTES "Audio").
+**The DSP (`0x02003DF2`, read 2026-11-23).** The FM block itself turns RF into the demodulated baseband (the MPX
+signal: mono audio, 19 kHz pilot, 38 kHz stereo difference); software only filters and decodes stereo. Per half
+buffer (2 KB = 512 32-bit samples), with its state block (`r1`, 6040 bytes) holding coefficients and filter memories:
+
+1. gain (`+116`), then a first-order DC-removal filter (Q23 coefficients `+108`, `+112`; output = (x − DC) / 2);
+2. ÷2 with a 16-tap FIR (coefficient table in the RAM code at RAM `0x4214`): 512 → 256;
+3. ÷2 with a 16-tap FIR (`0x422A`): 256 → 128; on these, two level trackers (`+184`/`+188`, `+192`/`+196`; signal
+   and noise, for the mute and the stereo switch) and a chain of Q23 biquads (`+48`–`+104`) that pick out the 19 kHz
+   pilot; when stereo is on (`+136`, `+148`) the pilot is squared/multiplied into a 38 kHz reference and the L−R
+   product is made (`+120`–`+160`), giving two streams (L+R, L−R);
+4. ÷2 with a 16-tap FIR (`0x4268`) on each stream: 128 → 64;
+5. ÷2 with a 48-tap FIR (`0x4286`): 64 → 32, then de-emphasis (first-order, Q22, `+168`/`+172`), shifts (`+176`,
+   `+180`) and 16-bit saturation; out come 32 interleaved L/R frames (mono: L = R).
+
+So 16 input samples make one audio frame. The coefficient tables are data in the stock RAM code (not ours to copy):
+our own version needs its own filters for the same rates (sample rate still to measure: the ADC_CON set-up decides
+it). Then `0x01E57190` writes each 128-byte block (32 frames) into JieLi's audio stream (`0x020035E2`) and kicks the
+decoder (`0x02001FE6`): the DAC side is JieLi's audio framework. JieLi's public SDK has that framework for this chip
+(`include_lib/media/.../br23/asm/dac.h`: `audio_dac_init`, `audio_dac_set_sample_rate`, channel gains; DAC
+registers `JL_AUDIO->DAC_CON`, `DAC_ADR`, `DAC_LEN`, `DAC_SWP`, `DAC_SWN` in `cpu/br23/audio_demo/audio_dac_io_demo.c`).
+
+Still unread: the FM block's sample rate, how the DAC's output reaches the speaker alongside the BK4819 (the LM2904
+mixer, RE-NOTES "Audio"), and what stock does with the BK4819 and the amp while FM plays.
 
 ### Clocks, timer tick, watchdog
 

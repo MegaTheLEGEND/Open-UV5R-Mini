@@ -9,6 +9,15 @@ Bluetooth radio. JieLi only ships its Bluetooth controller and stack as closed, 
 | **Open** (default) | no | no | `make` in this repo, bare metal (`src/main.c`, `src/bt/bt_none.c`) |
 | **Bluetooth edition** | yes (SPP serial port) | yes, JieLi's libraries from **your own** SDK copy | the radio app built as a task inside JieLi's AC695N SDK |
 
+**Update 2026-11-23: where the SDK comes from.** JieLi publishes an SDK for this chip family under Apache-2.0:
+[fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK) has `cpu/br23/` (BR23 = the AC695N's family) with
+the closed libraries the Bluetooth edition needs (`cpu/br23/liba/btctrler.a`, `btstack.a`, `system.a`, `cpu.a`,
+`media.a`) and a BR23 board for its `spp_and_le` app (SPP and BLE data). The licence check is in
+[THIRD-PARTY.md](THIRD-PARTY.md). So "your own SDK copy" below can be that public repository, cloned next to this
+one. The same SDK has the AC695N's audio DAC driver (`media.a`, `asm/dac.h`), which the FM broadcast receiver needs
+too (RE-NOTES, "FM receiver, traced"): the SDK edition is the natural home for both Bluetooth and FM. Its build
+needs JieLi's compiler or the pi32v2-llvm drop-in (below); neither has built `cpu/br23` here yet.
+
 This repository never contains JieLi code or libraries. The Bluetooth edition is built locally from an SDK
 copy you supply, and the resulting firmware must not be redistributed unless JieLi's terms allow it.
 
