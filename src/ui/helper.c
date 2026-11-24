@@ -22,7 +22,7 @@ static void draw_char(char c, uint8_t x, uint8_t y, uint16_t fg, uint16_t bg, ui
 			ST7735S_PushPixel(on ? fg : bg);
 		}
 	}
-	GPIO_SetBit(PIN_LCD_CS);
+	ST7735S_End();
 }
 
 uint8_t UI_PrintString(const char *str, uint8_t x, uint8_t y, uint16_t fg, uint16_t bg, uint8_t scale)
@@ -44,7 +44,7 @@ void UI_DrawIcon(const Icon_t *icon, uint8_t x, uint8_t y, uint16_t fg, uint16_t
 	for (uint8_t row = 0; row < icon->h; row++)
 		for (uint8_t col = 0; col < icon->w; col++)
 			ST7735S_PushPixel((icon->bits[row * stride + col / 8u] >> (7u - col % 8u)) & 1u ? fg : bg);
-	GPIO_SetBit(PIN_LCD_CS);
+	ST7735S_End();
 }
 
 uint8_t UI_PrintPadded(const char *str, uint8_t x, uint8_t y, uint16_t fg, uint16_t bg, uint8_t width)

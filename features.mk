@@ -17,5 +17,9 @@ ENABLE_SAVE         ?= 1
 # Transmitting. Off: PTT never keys the transmitter. On: only in the bands allowed by default (AGENTS.md rule 5).
 ENABLE_TX           ?= 1
 
+# The LCD and external flash through SPI1's hardware and DMA, as stock (src/driver/spi1.c). It checks itself at
+# power-on (the flash ID read through it) and falls back to bit-banging. Off: always bit-banged, as before.
+ENABLE_LCD_SPI      ?= 1
+
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
-                 -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX)
+                 -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI)

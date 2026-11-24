@@ -15,5 +15,7 @@ void ST7735S_SetBacklight(bool on);
 void ST7735S_FillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t color);
 void ST7735S_SetWindow(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
 void ST7735S_PushPixel(uint16_t color);
+void ST7735S_End(void);            /* after the pixels of a window: send what is left, CS high */
+bool ST7735S_HardwareSpi(void);    /* SPI1 with DMA is in use (else bit-banged) */
 
 #endif

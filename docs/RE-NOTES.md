@@ -96,6 +96,18 @@ Pins: **CS = PB5** (GPIO 21), **RESET = PB4** (GPIO 20), **backlight = PB7** (ac
 **SCK = PB0, MOSI = PB1** (SPI1 at 0x1E1D00, port A; the stock's SPI base table at 0x01E64A90 is
 SPI0/1/2 = 0x1E1C00/0x1E1D00/0x1E1E00, and the BR23 SDK's pin table gives SPI1 port A = PB0/PB1/PB2).
 
+**SPI1 registers and DMA** (2026-11-23). Stock: BAUD (+4) = SPI clock / Hz − 1 (`sub_01E3E3B8`, 20 MHz; in the
+emulator BAUD = 2); a DMA send clears CON bit 12, writes ADR (+0xC) then CNT (+0x10), `csync`, then waits for CON
+bit 15 and clears it with bit 14 (`sub_01E3E430`, `sub_01E3E3DC`); the flash read sets CON bit 12 (receive). Stock's
+own CON set-up (enable and mode bits) is not in code the emulator runs. JieLi's public SDK (fw-AC63_BT_SDK,
+Apache-2.0; read for facts only) agrees and fills the gaps: `include_lib/driver/cpu/br23/asm/br23.h` has SPI1 =
+CON, BAUD, BUF (+8), ADR, CNT and the IO map at **0x1E5118** (CON0..CON5, so the UART pin register 0x1E5124 is its
+CON3); `cpu/br23/spi.c` has the CON bits (0 enable, 1 slave, 2 CS pin, 3 full duplex, 4 sample edge, 5 update edge,
+6 clock idle high, 7 CS idle high, 10-11 width, 12 receive, 13 interrupt, 14 clear pending, 15 pending), its
+`spi_open` mode (bits 3, 4, 5, 7 set, clock idle low) and the SPI1 port select, IO map CON1 (0x1E511C) bit 4: 0 =
+port A (PB0 clock, PB1 out, PB2 in). Our driver: `src/driver/spi1.c`, self-tested at power-on by reading the
+flash's JEDEC ID through it.
+
 Visible area is 128×128. With MADCTL 0xA8 (MY | MV | BGR) the panel's columns are offset by 32
 (CASET 32..159).
 
@@ -377,6 +389,15 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
   code (`0x0200382C`, `0x02003950`), and the sound goes out through the audio DAC (`0x1E2F00`). So the demodulation is
   partly in software on the MCU: an FM mode needs a front-end driver, the DSP and a DAC driver, none of which exists in
   our code yet, and none of which can be checked on the PC (the emulator has no FM block).
+  More (2026-11-23): JieLi's public SDK header (fw-AC63_BT_SDK `include_lib/driver/cpu/br23/asm/br23.h`) names the
+  block's registers: `JL_FM` at 0x1F1700 = CON, BASE, ADC_CON, ADC_CON1, HF_CON0, HF_CON1 (+0x14), HF_CRAM, HF_CRAM2,
+  HF_DRAM, LF_CON, LF_RES, FMRX_CON4, FMRX_CON5, then the FM transmitter's TX_* registers. So the tuning code writes
+  ADC_CON (+8), and the interrupt handler's first act (`0x1F1714 |= 0x40`) clears HF_CON1's pending flag. The RAM
+  code (flash `0x01E6AAAC` → `0x02000000`, 53,492 bytes) can be disassembled with `tools/disasm.py --base
+  0x02000000`: the handler at `0x02003D8A` calls a ~600-instruction routine (`0x02003DF2`) on each block, with
+  helpers at `0x02004DC0`, `0x02004FC4` and in the app (`0x01E34818`–`0x01E34ACC`, `0x01E57190`). The public SDK has
+  no FM receiver code (`fm_inside` is a library only in JieLi's sound-box SDKs, licence unknown), so the DSP has to
+  be understood from the stock code and written fresh.
 
 ### Clocks, timer tick, watchdog
 

@@ -3,9 +3,7 @@
 #include "store/settings.h"        /* SETTINGS_ENABLE_SAVE */
 #include "board.h"
 #include "driver/gpio.h"
-
-#define PIN_XF_CS   IO_PORTA(3)
-#define PIN_XF_MISO IO_PORTB(2)
+#include "driver/spi1.h"
 
 void EXTFLASH_Init(void)
 {
@@ -18,6 +16,11 @@ static uint8_t xfer(uint8_t out)
 {
 	uint8_t in = 0;
 
+	if (SPI1_Ok()) {                   /* SPI1's hardware, as stock (driver/spi1.h) */
+		SPI1_Put(out);
+		return 0xFF;
+	}
+
 	for (int i = 7; i >= 0; i--) {
 		GPIO_Write(PIN_LCD_MOSI, (out >> i) & 1u);
 		GPIO_SetBit(PIN_LCD_SCK);
@@ -27,8 +30,15 @@ static uint8_t xfer(uint8_t out)
 	return in;
 }
 
+/* a byte read: in receive mode on SPI1 (as stock reads the flash), else clocked in with 0 out */
+static uint8_t rx(void)
+{
+	return SPI1_Ok() ? SPI1_Get() : xfer(0);
+}
+
 static void select(void)
 {
+	SPI1_Wait();                       /* an LCD transfer still going */
 	GPIO_SetBit(PIN_LCD_CS);           /* the LCD must not listen */
 	GPIO_ClearBit(PIN_LCD_SCK);
 	GPIO_ClearBit(PIN_XF_CS);
@@ -45,9 +55,9 @@ uint32_t EXTFLASH_ReadId(void)
 
 	select();
 	xfer(0x9F);
-	id = (uint32_t)xfer(0) << 16;
-	id |= (uint32_t)xfer(0) << 8;
-	id |= xfer(0);
+	id = (uint32_t)rx() << 16;
+	id |= (uint32_t)rx() << 8;
+	id |= rx();
 	deselect();
 	return id;
 }
@@ -60,7 +70,7 @@ void EXTFLASH_Read(uint32_t addr, uint8_t *buf, uint32_t len)
 	xfer((uint8_t)(addr >> 8));
 	xfer((uint8_t)addr);
 	while (len--)
-		*buf++ = xfer(0);
+		*buf++ = rx();
 	deselect();
 }
 
@@ -99,7 +109,7 @@ static int wait_idle(void)
 		uint8_t st;
 		select();
 		xfer(0x05);
-		st = xfer(0);
+		st = rx();
 		deselect();
 		if (!(st & 1u))
 			return 0;
@@ -142,7 +152,7 @@ uint8_t EXTFLASH_ReadStatus(void)
 
 	select();
 	xfer(0x05);
-	st = xfer(0);
+	st = rx();
 	deselect();
 	return st;
 }

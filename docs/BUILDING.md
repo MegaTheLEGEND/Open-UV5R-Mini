@@ -74,6 +74,7 @@ everything that uses a changed switch is rebuilt.
 | `ENABLE_CHIRP` | 1 | programming with CHIRP over the cable (UV-5R Mini driver, 115200) |
 | `ENABLE_SAVE` | 1 | saving channel, VFO and settings changes; off: no flash-writing code at all |
 | `ENABLE_TX` | 1 | transmitting, only in the bands allowed by default |
+| `ENABLE_LCD_SPI` | 1 | screen and external flash through SPI1 hardware with DMA (checks itself at power-on, else bit-banged); 0 = always bit-banged |
 | `ENABLE_SCREEN_TEST` | 0 | start-up check of the CHIRP cable set-up (labels on the screen) |
 
 For one build without editing the file, put the switch on the command line:

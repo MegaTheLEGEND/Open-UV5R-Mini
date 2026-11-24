@@ -17,6 +17,10 @@
 #define PIN_LCD_MOSI     IO_PORTB(1)    /* SPI1 port A data out (confirmed) */
 #define LCD_DC_PR_BIT    1              /* D/C is PR1 in the power domain */
 
+/* External SPI flash, on the same SPI1 lines as the LCD (MISO = SPI1 port A data in) */
+#define PIN_XF_CS        IO_PORTA(3)
+#define PIN_XF_MISO      IO_PORTB(2)
+
 /* Keypad: rows driven low one at a time, columns read with pull-ups */
 #define PIN_KEY_ROW0     IO_PORTA(6)
 #define PIN_KEY_ROW1     IO_PORTA(7)

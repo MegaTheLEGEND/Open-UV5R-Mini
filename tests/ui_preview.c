@@ -30,6 +30,14 @@ void ST7735S_PushPixel(uint16_t c)
 	wpos++;
 }
 
+void ST7735S_End(void)
+{
+	if (wpos != (unsigned)ww * wh) {
+		bad++;
+		printf("window %u,%u %ux%u ended after %u pixels\n", wx, wy, ww, wh, wpos);
+	}
+}
+
 void ST7735S_FillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t c)
 {
 	ST7735S_SetWindow(x, y, w, h);
