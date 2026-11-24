@@ -332,17 +332,26 @@ class SpiFlash:
         self.mem = bytearray(image) if image else bytearray(b'\xFF' * 0x100000)
         self.cmd = []
         self.addr = None
+        self.id = None
         self.reads = Counter()
 
+    JEDEC_ID = b'\xC4\x60\x15'    # Giantec GT25Q16A, as read from a radio (RE-NOTES)
+
     def select(self):
-        self.cmd, self.addr = [], None
+        self.cmd, self.addr, self.id = [], None, None
 
     def tx(self, b):
         self.cmd.append(b)
+        if len(self.cmd) == 1 and b == 0x9F:
+            self.id = bytearray(self.JEDEC_ID)
         if len(self.cmd) == 4 and self.cmd[0] in (0x03, 0x0B):
             self.addr = self.cmd[1] << 16 | self.cmd[2] << 8 | self.cmd[3]
 
     def rx(self, n):
+        if self.id is not None:
+            out = bytes(self.id[:n]).ljust(n, b'\xFF')
+            del self.id[:n]
+            return out
         if self.addr is None:
             return bytes(b'\xFF' * n)
         a = self.addr % len(self.mem)
@@ -401,6 +410,26 @@ def add_spi1(periph, bus, lcd, ext):
     periph.write_hooks[B] = con_w
     periph.write_hooks[B + 8] = buf_w
     periph.write_hooks[B + 16] = cnt_w
+
+
+def add_p33_pr(periph, lcd):
+    """Our own P33 access (src/bsp/ac695n.h): CON 0x1E3E08 (bit 0 select, bit 8 second bank, bit 4 send a byte), DAT
+    0x1E3E0C. A write of PR_OUT (0x8099: bytes 0x00, 0x99, value with bit 8 set) sets the LCD's D/C from bit 1. The
+    stock app's own P33 routines are followed by the observer on 0x01E5714E instead."""
+    CON, DAT = 0x1E3E08, 0x1E3E0C
+    seq = []
+
+    def con_w(a, v):
+        old = periph.regs.get(a, 0)
+        if v & 0x10:
+            seq.append(periph.regs.get(DAT, 0) & 0xFF)
+            if len(seq) == 3 and seq[0] & 0xE3 == 0 and seq[1] == 0x99 and old & 0x100:
+                lcd.dc = (seq[2] >> 1) & 1
+            v &= ~0x12                      # the byte is done at once
+        if not v & 1:
+            seq.clear()
+        periph.regs[a] = v
+    periph.write_hooks[CON] = con_w
 
 
 def load_core(isa):
@@ -511,6 +540,7 @@ class Machine:
         self.bus = bus = Bus(decrypt_area(open(app_path, 'rb').read()), periph, nor)
         self.ext = SpiFlash(open(extflash, 'rb').read() if extflash else None)
         add_spi1(periph, bus, lcd, self.ext)
+        add_p33_pr(periph, lcd)
         self.cpu = cpu = make_core(self.sim)
         # PC observers: app functions whose arguments the board model needs (they still run normally)
         self.observe = {
@@ -563,6 +593,7 @@ def main():
     ap.add_argument('--extflash', help='dump of the external SPI flash, if you have one')
     ap.add_argument('--watch', help='LO-HI: print writes to these SFR addresses (hex)')
     ap.add_argument('--trace', type=int, default=0, help='print the last N pcs on a stop')
+    ap.add_argument('--no-stuck', action='store_true', help='do not stop on a tight loop (busy-wait delays)')
     a = ap.parse_args()
 
     m = Machine(a.isa, a.app, a.extflash)
@@ -595,7 +626,7 @@ def main():
                         rom.call(cpu)
                     else:
                         cpu.step()
-                if len(window) < 12 and min(window) == last_window_min:
+                if not a.no_stuck and len(window) < 12 and min(window) == last_window_min:
                     raise RuntimeError('stuck in a loop at %s' % ' '.join('%x' % p for p in sorted(window)))
                 last_window_min = min(window)
     except Exception as e:  # noqa: BLE001

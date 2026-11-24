@@ -17,7 +17,13 @@ python emu/uv5r_emu.py --isa E:/pi32v2-isa --steps 8000000
 It needs `build/stock/unpacked/app.bin` (made by `tools/build_matching.py`) and a pi32v2-isa checkout. It prints
 how far it got, the peripheral registers touched, the ROM calls, the external-flash pages read, and writes the
 emulated LCD to `build/emu-screen.png`. Options: `--watch LO-HI` prints writes to SFR addresses with the PC,
-`--trace N` prints the last N PCs, `--extflash FILE` loads a dump of the external flash.
+`--trace N` prints the last N PCs, `--extflash FILE` loads a dump of the external flash, `--no-stuck` keeps going
+through busy-wait delays (our build's `SYSTEM_DelayUs`), and `--app build/fw/firmware.bin` runs our own build.
+
+Our build in the emulator (2026-11-23): the LCD's D/C follows our own P33 writes (PR_OUT, 0x8099) as well as the
+stock routine, and the flash answers its JEDEC ID (`9F` → `C4 60 15`). With that, our SPI1 driver passes its
+self-test and draws the update-mode screen by DMA. The key inputs read as pressed, so our build always takes the
+PTT-A + `=` branch into the update mode there.
 
 ## Where it is (2026-11-19, paused)
 
