@@ -1498,6 +1498,7 @@ static void tot_tick(void)
 #define PTT_STABLE_MS 40u
 #define PTT_ARM_MS    1000u        /* both PTTs released this long after power-on before either works */
 static bool     s_ptt_armed;
+static bool     s_tx_swapped;      /* the side a PTT transmits on was swapped in; swapped back when TX ends */
 static uint16_t s_ptt_arm_ms;
 static bool ptt_debounced(bool raw, unsigned i)
 {
@@ -1546,7 +1547,7 @@ void APP_Tick(void)
 	} else
 		s_off_ticks = 0;
 
-	/* PTT; PTT-B transmits on side B (it becomes the active side). Neither counts until both have read released for
+	/* PTT; PTT-A transmits on side A and PTT-B on side B (see below). Neither counts until both have read released for
 	 * PTT_ARM_MS since power-on: on a radio (2026-11-24) the radio switched to B and keyed 1-3 short blips at every
 	 * start-up, so PTT-B (PA12) reads low for a while as the board powers up. A PTT held at power-on is ignored
 	 * until it is let go. */
@@ -1559,16 +1560,7 @@ void APP_Tick(void)
 			s_ptt_armed = true;
 		ptt_a = ptt_b = false;
 	}
-	ptt = ptt_a;
-	if (ptt_b) {
-		if (!s_ptt_down && s_active != 1) {
-			side_switch();
-#if SETTINGS_ENABLE_SAVE
-			save_soon();
-#endif
-		}
-		ptt = true;
-	}
+	ptt = ptt_a || ptt_b;
 	if (ptt) {
 		dw_end();
 		tscan_stop();
@@ -1580,6 +1572,14 @@ void APP_Tick(void)
 		RADIO_EndTx();
 	}
 	if (ptt && !s_ptt_down) {
+		/* each PTT transmits on its own side (A wins if both), without changing the selection: the other side is
+		 * swapped in for the transmission and swapped back when it ends (s_tx_swapped). Only A/B changes the
+		 * selected side (Sean, 2026-11-24: PTT-B used to make B the selected side, and PTT-A sent on B then). */
+		uint8_t want = ptt_a ? 0u : 1u;
+		if (s_active != want) {
+			side_switch();
+			s_tx_swapped = !s_tx_swapped;
+		}
 		light_wake();
 		s_tot_hit = false;
 		s_tx_why = tx_busy_locked() ? "NO TX: BUSY" : RADIO_TxRefusal();
@@ -1609,6 +1609,10 @@ void APP_Tick(void)
 		RADIO_EndTx();
 		/* stock 0x01E4FF94: setting 0x15 x 100 ms with the receive audio held off */
 		RADIO_MuteRx((uint16_t)((gStock.raw[SET_RPT_CLEAR] < 30 ? gStock.raw[SET_RPT_CLEAR] : 30) * 100u));
+	}
+	if (s_tx_swapped && !ptt && !s_tail_ms && !s_eot && RADIO_State() != RADIO_TX) {
+		side_switch();                     /* the transmission on the other side is over: back to the selected one */
+		s_tx_swapped = false;
 	}
 	RADIO_Tick();
 	tot_tick();
@@ -1700,7 +1704,7 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 	if (k != KEY_INVALID)
 		save_soon();
-	save_tick(ptt || s_peek || s_tscan || SCAN_Active() || s_entry_len);
+	save_tick(ptt || s_tx_swapped || s_peek || s_tscan || SCAN_Active() || s_entry_len);
 #endif
 	if (s_note_ms)
 		s_note_ms = s_note_ms > APP_TICK_MS ? s_note_ms - APP_TICK_MS : 0;
@@ -1708,7 +1712,7 @@ void APP_Tick(void)
 		s_lamp_ms = 0;
 		IO_Lamp(!IO_LampIsOn());
 	}
-	if (k != KEY_INVALID && !ptt) {
+	if (k != KEY_INVALID && !ptt && !s_tx_swapped) {
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)
