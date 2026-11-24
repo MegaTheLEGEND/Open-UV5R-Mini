@@ -51,6 +51,7 @@ static int      s_menu_top = -1;
 static uint16_t s_off_ticks, s_batt_ticks;
 static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
 static uint32_t s_idle_ms;                /* main screen with no key, for auto lock */
+static uint32_t s_menu_ms;                /* menu with no key, for the menu time-out */
 static bool     s_light_on = true, s_tot_hit;
 static bool     s_mr;                    /* channel mode */
 static int      s_ch = -1;               /* channel slot shown, 0-based */
@@ -385,6 +386,8 @@ static const char *const L_ONOFF[] = { "OFF", "ON" };
 static const char *const L_BACKLIGHT[] = { "ALWAYS", "5S", "10S", "15S", "20S" };
 static const char *const L_PTTID[] = { "OFF", "BOT", "EOT", "BOTH" };
 static const char *const L_SIDETONE[] = { "OFF", "KEYS", "ID", "BOTH" };
+static const char *const L_MENU_EXIT[] = { "5S", "10S", "15S", "20S", "25S", "30S", "35S", "40S", "45S", "50S",
+                                           "60S" };
 static const SetItem_t SET_ITEMS[] = {
 	{ "BACKLIGHT",  SET_BACKLIGHT, 5,  L_BACKLIGHT, 0,   0,   0,    false },
 	{ "BEEP",       SET_BEEP,      2,  L_ONOFF,     0,   0,   0,    false },
@@ -400,6 +403,7 @@ static const SetItem_t SET_ITEMS[] = {
 	{ "VOX DELAY",  0x20,          16, 0,           100, 500, "MS", false },
 	{ "DTMF HOLD",  0x39,          8,  0,           1,   3,   "S",  false },
 	{ "AUTO LOCK",  SET_AUTO_LOCK, 2,  L_ONOFF,     0,   0,   0,    false },
+	{ "MENU EXIT",  0x21,          11, L_MENU_EXIT, 0,   0,   0,    false },
 };
 #define SET_COUNT  ((int)(sizeof SET_ITEMS / sizeof SET_ITEMS[0]))
 #define M_KEYTEST  (M_SET0 + SET_COUNT)
@@ -1594,6 +1598,13 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 		save_soon();
 #endif
+	}
+	/* menu time-out (stock setting 0x21: 5-50 s in 5 s steps, then 60 s), not while a value is being edited */
+	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_menu_edit)
+		s_menu_ms = 0;
+	else if ((s_menu_ms += APP_TICK_MS) >= (gStock.raw[0x21] < 10 ? 5000u * (gStock.raw[0x21] + 1u) : 60000u)) {
+		s_menu_ms = 0;
+		go(SCREEN_MAIN);
 	}
 	if (k != KEY_INVALID)
 		dw_end();                          /* keys act on the active side */

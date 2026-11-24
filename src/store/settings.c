@@ -81,7 +81,7 @@ void SETTINGS_Defaults(void)
 	static const uint8_t D[][2] = {
 		{ SET_SQUELCH, 3 }, { SET_POWER_SAVE, 1 }, { SET_BACKLIGHT, 3 }, { SET_DUAL_WATCH, 1 }, { SET_TOT, 8 },
 		{ SET_BEEP, 1 }, { SET_SCAN_MODE, 1 }, { SET_BCL, 0 }, { SET_AUTO_LOCK, 0 }, { SET_ROGER, 0 },
-		{ SET_ACTIVE_SIDE, 1 }, { SET_WORK_MODE, 0x11 }, { SET_KEY_LOCK, 0 },
+		{ SET_ACTIVE_SIDE, 1 }, { SET_WORK_MODE, 0x11 }, { SET_KEY_LOCK, 0 }, { 0x21, 1 },  /* menu exit 10 s */
 	};
 
 	for (unsigned i = 0; i < sizeof gStock.raw; i++)

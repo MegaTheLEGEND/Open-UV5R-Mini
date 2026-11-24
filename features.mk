@@ -15,7 +15,7 @@ ENABLE_SCREEN_TEST  ?= 0
 ENABLE_SAVE         ?= 1
 
 # Transmitting. Off: PTT never keys the transmitter. On: only in the bands allowed by default (AGENTS.md rule 5).
-ENABLE_TX           ?= 0
+ENABLE_TX           ?= 1
 
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
                  -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX)

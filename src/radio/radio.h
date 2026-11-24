@@ -10,8 +10,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Transmit is built in but off until someone has tried receive on a radio. Even when on, it only works inside the
- * amateur bands in radio.c, and only with the radio's own PA calibration (store/calib.h). */
+/* Transmit: switched by ENABLE_TX in features.mk (on since 2026-11-23, receive works on a radio). Even when on, it
+ * only works inside the amateur bands in radio.c, and only with the radio's own PA calibration (store/calib.h). */
 #ifndef RADIO_ENABLE_TX
 #define RADIO_ENABLE_TX 0
 #endif
