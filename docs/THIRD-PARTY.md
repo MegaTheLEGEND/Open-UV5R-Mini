@@ -26,5 +26,7 @@ be combined with lib.a" and sets no other terms for the binaries. It has the AC6
 controller, `btstack.a` host, `system.a` OS, `cpu.a`, `media.a`, …). So those may be used, changed where their source
 is given, and redistributed under Apache-2.0 (keep `LICENSE`, state changes). What we use so far: register facts
 only (SPI1, IO map, FM register names; RE-NOTES), no code. The Bluetooth edition ([BLUETOOTH.md](BLUETOOTH.md)) would
-link the libraries; a row goes in the table when they are added. Note: the libraries are closed binaries, so an image
+link the libraries; a row goes in the table when they are added. `tools/sdk/` (2026-11-24) builds the SDK from a
+clone outside this repo and changes that clone with a few `sed` edits (Apache-2.0 allows changes; they are listed
+in `tools/sdk/README.md`); no SDK file is copied here. `tools/sdk/libc/` is our own code. Note: the libraries are closed binaries, so an image
 that contains them is not fully open source, and Bluetooth products may need qualification where they are sold.

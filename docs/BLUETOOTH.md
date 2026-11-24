@@ -15,8 +15,13 @@ the closed libraries the Bluetooth edition needs (`cpu/br23/liba/btctrler.a`, `b
 `media.a`) and a BR23 board for its `spp_and_le` app (SPP and BLE data). The licence check is in
 [THIRD-PARTY.md](THIRD-PARTY.md). So "your own SDK copy" below can be that public repository, cloned next to this
 one. The same SDK has the AC695N's audio DAC driver (`media.a`, `asm/dac.h`), which the FM broadcast receiver needs
-too (RE-NOTES, "FM receiver, traced"): the SDK edition is the natural home for both Bluetooth and FM. Its build
-needs JieLi's compiler or the pi32v2-llvm drop-in (below); neither has built `cpu/br23` here yet.
+too (RE-NOTES, "FM receiver, traced"): the SDK edition is the natural home for both Bluetooth and FM.
+
+**Update 2026-11-24: the SDK builds with open tools.** Its `ac635n_spp_and_le` app (BR23 board) compiles and links
+with pi32v2-llvm through the drop-in, using `tools/sdk/build_sdk.sh`, our own small C library and five small fixes
+([tools/sdk/README.md](../tools/sdk/README.md)). The result is an `sdk.elf` and a 141 KB `app.bin`. Not yet: a
+firmware package (the SDK's packaging step needs JieLi-only tools), a check that link-time optimisation kept
+everything the Bluetooth libraries need, and any run on a chip.
 
 This repository never contains JieLi code or libraries. The Bluetooth edition is built locally from an SDK
 copy you supply, and the resulting firmware must not be redistributed unless JieLi's terms allow it.
@@ -36,8 +41,8 @@ You need:
 1. An AC695N (BR23) SDK tree, for example a copy of JieLi's `AC695N_soundbox` SDK.
 2. The open pi32v2 LLVM toolchain and the **drop-in** from
    [jvitkauskas/pi32v2-isa](https://github.com/jvitkauskas/pi32v2-isa) (`docs/DROPIN.md`), which runs the SDK's
-   own Makefiles with clang and ld.lld instead of JieLi's compiler. It has been shown on the AC79 SDK; the
-   BR23 SDK is untested.
+   own Makefiles with clang and ld.lld instead of JieLi's compiler. Shown on the AC79 SDK by its author; the BR23
+   SDK links with it plus `tools/sdk/` (2026-11-24, above).
 
 Steps:
 
@@ -60,6 +65,7 @@ Steps:
 | OS task glue (`src/platform/jl_sdk/radio_task.c`) | written against the SDK's `os_api.h`; not compiled yet |
 | Key-test app | shows the Bluetooth state and echoes received bytes back (loopback test) |
 | Wireless CPS protocol | unknown; needs the stock firmware's CPS handler reverse-engineered or a capture from the stock app |
+| BR23 SDK build with open tools | `tools/sdk/build_sdk.sh`: `ac635n_spp_and_le` links (`sdk.elf`, `app.bin`); no `.ufw`, not run (2026-11-24) |
 | SDK integration script | not written; steps above are manual |
 
 ## A smaller option: BLE only (idea, not started)
