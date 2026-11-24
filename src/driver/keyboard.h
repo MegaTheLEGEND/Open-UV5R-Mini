@@ -7,7 +7,8 @@
 
 typedef enum {
 	/* Confirmed on a radio (key test ROWS readout, 2026-11-21). Keys wired to GND: */
-	KEY_DIRECT0 = 0,  /* PC2 to GND: no key found */
+	KEY_EQUALS  = 0,  /* PC2 to GND: the = key (stock checks it at power-on for the update mode, 0x01E492C0) */
+	KEY_DIRECT0 = KEY_EQUALS,
 	KEY_VM      = 2,  /* PC5 */
 	KEY_AB      = 3,  /* PC3 */
 	KEY_LAMP    = 4,  /* PC4, flashlight key */

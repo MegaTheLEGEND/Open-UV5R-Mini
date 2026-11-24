@@ -55,6 +55,8 @@ const char  *RADIO_TxRefusal(void);        /* why transmit is refused here (for 
 bool         RADIO_StartTx(void);          /* false if refused */
 void         RADIO_EndTx(void);
 void         RADIO_Beep(uint16_t hz, uint16_t ms);
+void         RADIO_Monitor(bool on);        /* squelch held open while on */
+bool         RADIO_MonitorOn(void);
 
 /* Tones sent while transmitting (stock sub_01E510A2): code 0-15 = DTMF 0-9, A, B, C, D, *, #; 17-20 = one tone of
  * 1000, 1450, 1750 or 2100 Hz. Until RADIO_TxToneOff. monitor: heard locally with the mic left out (stock setting

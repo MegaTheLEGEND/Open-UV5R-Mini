@@ -61,6 +61,8 @@ static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
+static KEY_Code_t s_key_held;           /* the key down now (key_event; defined there) */
+static uint8_t  s_batt_show;             /* 0 icon, 1 percent, 2 volts; saved in gStock.ext[EXT_BATT] */
 static const char *s_tx_why;              /* what the bottom line says while PTT is refused */
 static const char *s_note;              /* a message on the bottom line for a few seconds (saving, loading) */
 static uint16_t s_note_color;
@@ -339,6 +341,21 @@ static void main_view(UiMain_t *v)
 	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
 	v->battery_low = BATTERY_Low();
 	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
+	v->battery_text[0] = 0;
+	if (s_batt_show && BATTERY_Raw()) {            /* "84%" or "4.1V" (K5 feature 4.8) */
+		char *p = v->battery_text;
+		if (s_batt_show == 1) {
+			p = put_num(p, BATTERY_Percent());
+			*p++ = '%';
+		} else {
+			uint16_t mv = (uint16_t)(BATTERY_Millivolts() + 50u);
+			*p++ = (char)('0' + mv / 1000u % 10u);
+			*p++ = '.';
+			*p++ = (char)('0' + mv / 100u % 10u);
+			*p++ = 'V';
+		}
+		*p = 0;
+	}
 
 	/* bottom line, most important first */
 	v->bottom_color = COLOR_DIM;
@@ -348,6 +365,12 @@ static void main_view(UiMain_t *v)
 	} else if (s_note_ms && s_note) {
 		copy_text(v->bottom, s_note, sizeof v->bottom);
 		v->bottom_color = s_note_color;
+	} else if (RADIO_State() == RADIO_TX && RADIO_TxToneOn() && s_key_held == KEY_EQUALS) {
+		copy_text(v->bottom, "1750 HZ", sizeof v->bottom);
+		v->bottom_color = COLOR_WARN;
+	} else if (RADIO_MonitorOn() && RADIO_State() != RADIO_TX) {
+		copy_text(v->bottom, "MONITOR", sizeof v->bottom);
+		v->bottom_color = COLOR_RX;
 	} else if (gVfo.rx_tone && !s_tscan && RADIO_State() != RADIO_TX && RADIO_Carrier()) {
 		/* a signal on a channel with a receive tone: say whether its tone matches (open) or not (stays muted) */
 		bool ok = RADIO_ToneHeard();
@@ -419,12 +442,24 @@ static const SetItem_t SET_ITEMS[] = {
 #define SET_COUNT  ((int)(sizeof SET_ITEMS / sizeof SET_ITEMS[0]))
 #define M_SETEND   (M_SET0 + SET_COUNT)  /* first item after the setting bytes */
 /* Items are numbered by position (draw_menu), so one left out of the build leaves no gap in the numbers. */
+#define M_BATT     M_SETEND             /* battery on the status bar: icon, percent or volts (our own byte) */
+#define M_EQ_PRESS (M_BATT + 1)         /* what the = key does: one press, two presses, held (our own bytes) */
+#define M_EQ_DBL   (M_BATT + 2)
+#define M_EQ_HOLD  (M_BATT + 3)
 #if KEYTEST_ENABLE
-#define M_KEYTEST  M_SETEND
+#define M_KEYTEST  (M_EQ_HOLD + 1)
 #define M_ABOUT    (M_KEYTEST + 1)
 #else
-#define M_ABOUT    M_SETEND             /* no KEY TEST in this build (features.mk ENABLE_KEYTEST) */
+#define M_ABOUT    (M_EQ_HOLD + 1)      /* no KEY TEST in this build (features.mk ENABLE_KEYTEST) */
 #endif
+
+/* = key actions (K5 features 1.13 monitor, 4.18 assignable keys). MONITOR held: open while = is held; MONITOR on a
+ * press: on until pressed again. While transmitting, = held always sends 1750 Hz. */
+enum { KA_NONE, KA_MONITOR, KA_SCAN, KA_AB, KA_VM, KA_BW, KA_POWER, KA_LAMP, KA_DW, KA_LOCK, KA_COUNT };
+static const char *const L_KEYACT[KA_COUNT] = { "NONE", "MONITOR", "SCAN", "A/B", "VFO/MR", "W/N", "POWER",
+                                                "LAMP", "DUAL WATCH", "KEY LOCK" };
+static uint8_t s_eq_act[3] = { KA_NONE, KA_NONE, KA_MONITOR };   /* press, double press, hold */
+static const char *const L_BATT[] = { "ICON", "PERCENT", "VOLTS" };
 #define M_NORMAL   (M_ABOUT + 1)         /* the normal menu: items 1..M_NORMAL */
 /* Hidden items, after the normal ones: shown only when the radio was switched on with = held (the update mode's key
  * without PTT-A), which opens the menu at the first of them. They go again when the menu is left. */
@@ -449,6 +484,10 @@ static const char *menu_name(int i)
 #if KEYTEST_ENABLE
 	case M_KEYTEST: return "KEY TEST";
 #endif
+	case M_BATT:    return "BATTERY";
+	case M_EQ_PRESS: return "= PRESS";
+	case M_EQ_DBL:  return "= DOUBLE";
+	case M_EQ_HOLD: return "= HOLD";
 	case M_ABOUT:   return "ABOUT";
 	case M_REGION:  return "REGION";
 	case M_TXLOCK:  return "TX LOCK";
@@ -587,6 +626,9 @@ static const char *menu_value(int i, char *b)
 #else
 	case M_CHSAVE: case M_CHDEL: case M_SCANADD: return "NO SAVE";
 #endif
+	case M_BATT:    return L_BATT[s_batt_show < 3 ? s_batt_show : 0];
+	case M_EQ_PRESS: case M_EQ_DBL: case M_EQ_HOLD:
+		return L_KEYACT[s_eq_act[i - M_EQ_PRESS] < KA_COUNT ? s_eq_act[i - M_EQ_PRESS] : 0];
 	case M_ABOUT:   return FW_VERSION;
 	case M_REGION:  return TXLOCK_RegionName(TXLOCK_Region());
 	case M_TXLOCK:  return TXLOCK_ModeName(TXLOCK_Mode(), TXLOCK_Region());
@@ -637,6 +679,15 @@ static void menu_change(int i, int dir)
 		return;
 	}
 	switch (i) {
+	case M_BATT:
+		s_batt_show = (uint8_t)((s_batt_show + 3 + dir) % 3);
+		return;
+	case M_EQ_PRESS: case M_EQ_DBL: case M_EQ_HOLD: {
+		uint8_t *a = &s_eq_act[i - M_EQ_PRESS];
+		*a = (uint8_t)((*a + KA_COUNT + (dir ? dir : 1)) % KA_COUNT);
+		RADIO_Monitor(false);            /* a monitor left on by the old action ends */
+		return;
+	}
 	case M_REGION:                       /* fixed by the build: no change */
 		if (TXLOCK_RegionFixed())
 			RADIO_Beep(400, 120);
@@ -1167,6 +1218,8 @@ enum {
 	EXT_MOD_A = 6,                   /* Modulation_t (A at 6, B at 7) */
 	EXT_TXLOCK = 8,                  /* TxLock_t + 1 (radio/txlock.h); 0 = not set */
 	EXT_REGION = 9,                  /* Region_t + 1; 0 = not set */
+	EXT_BATT = 10,                   /* battery on the status bar: 0 icon, 1 percent, 2 volts */
+	EXT_EQ = 11,                     /* = key actions + 1 (press 11, double 12, hold 13); 0 = the default */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -1192,6 +1245,11 @@ static void start_from_stock(void)
 	/* stored + 1, so the 0 of a log saved before these bytes existed means "not set"; bad values fall back to HAM */
 	if (ext_ok() && gStock.ext[EXT_TXLOCK] && gStock.ext[EXT_REGION])
 		TXLOCK_Set((TxLock_t)(gStock.ext[EXT_TXLOCK] - 1u), (Region_t)(gStock.ext[EXT_REGION] - 1u));
+	if (ext_ok() && gStock.ext[EXT_BATT] <= 2)
+		s_batt_show = gStock.ext[EXT_BATT];
+	for (int i = 0; i < 3; i++)
+		if (ext_ok() && gStock.ext[EXT_EQ + i] && gStock.ext[EXT_EQ + i] <= KA_COUNT)
+			s_eq_act[i] = (uint8_t)(gStock.ext[EXT_EQ + i] - 1u);
 	s_side[0].vfo = s_side[1].vfo = gVfo;
 	s_side[0].ch = s_side[1].ch = -1;
 	for (uint8_t side = 0; side < 2; side++) {
@@ -1334,6 +1392,9 @@ static void save_now(void)
 	gStock.ext[EXT_VOLUME] = gVfo.volume;
 	gStock.ext[EXT_TXLOCK] = (uint8_t)(TXLOCK_Mode() + 1u);
 	gStock.ext[EXT_REGION] = (uint8_t)(TXLOCK_Region() + 1u);
+	gStock.ext[EXT_BATT] = s_batt_show;
+	for (int i = 0; i < 3; i++)
+		gStock.ext[EXT_EQ + i] = (uint8_t)(s_eq_act[i] + 1u);
 	for (int i = 0; i < 2; i++) {
 		uint16_t ch = s_side[i].ch < 0 ? 0xFFFFu : (uint16_t)s_side[i].ch;
 		gStock.ext[EXT_CH_A + 2 * i] = (uint8_t)ch;
@@ -1494,6 +1555,92 @@ static void tot_tick(void)
 	}
 }
 
+/* The = key: one press, two presses (the second within EQ_DOUBLE_MS of letting go) and held (EQ_HOLD_MS), each
+ * with the action chosen in the menu. Only on the main screen with the keys unlocked; a press waits EQ_DOUBLE_MS
+ * for a second one only when a double-press action is set. While transmitting, = sends 1750 Hz (app_tick). */
+#define EQ_HOLD_MS   500u
+#define EQ_DOUBLE_MS 300u
+
+static void key_action(uint8_t a)
+{
+	switch (a) {
+	case KA_MONITOR: RADIO_Monitor(!RADIO_MonitorOn()); break;
+	case KA_SCAN:
+		if (SCAN_Active())
+			SCAN_Stop();
+		else
+			scan_start(+1);
+		break;
+	case KA_AB:    key_main(KEY_ACT_AB); break;
+	case KA_VM:    key_main(KEY_ACT_VM); break;
+	case KA_BW:    key_main(KEY_ACT_BW); break;
+	case KA_LAMP:  key_main(KEY_ACT_LAMP); break;
+	case KA_POWER: menu_change(M_POWER, 0); RADIO_Apply(); break;
+	case KA_DW:    menu_change(M_DW, 0); break;
+	case KA_LOCK:
+		gStock.raw[SET_KEY_LOCK] = 1;
+		note("KEYS LOCKED", COLOR_WARN);
+		break;
+	default:
+		return;
+	}
+	if (gStock.raw[SET_BEEP])
+		RADIO_Beep(1000, 40);
+	light_wake();
+	s_redraw = true;
+#if SETTINGS_ENABLE_SAVE
+	save_soon();
+#endif
+}
+
+static void eq_tick(bool ptt)
+{
+	static uint8_t  taps;
+	static uint16_t ms;
+	static bool     held, was, block;
+	bool down = s_key_held == KEY_EQUALS && !s_wait_release && s_screen == SCREEN_MAIN && !ptt
+	            && RADIO_State() != RADIO_TX && !gStock.raw[SET_KEY_LOCK] && !s_entry_len;
+
+	/* a = still down from something else (the 1750 Hz tone, the menu, the lock) counts only after it is let go */
+	if (s_key_held != KEY_EQUALS)
+		block = false;
+	else if (!down && !was)
+		block = true;
+	down = down && !block;
+
+	if (ms < 0xFFFFu - APP_TICK_MS)
+		ms += APP_TICK_MS;
+	if (down != was)
+		ms = 0;
+	if (down && !was)
+		light_wake();
+	if (down && !was && !held)
+		taps++;
+	if (down && taps == 1 && !held && ms >= EQ_HOLD_MS) {
+		held = true;
+		taps = 0;
+		if (s_eq_act[2] == KA_MONITOR)
+			RADIO_Monitor(true);         /* open while held */
+		else
+			key_action(s_eq_act[2]);
+	}
+	if (!down && held) {
+		held = false;
+		if (s_eq_act[2] == KA_MONITOR)
+			RADIO_Monitor(false);
+	}
+	if (!down && taps) {
+		if (taps >= 2) {
+			taps = 0;
+			key_action(s_eq_act[1]);
+		} else if (s_eq_act[1] == KA_NONE || ms >= EQ_DOUBLE_MS) {
+			taps = 0;
+			key_action(s_eq_act[0]);
+		}
+	}
+	was = down;
+}
+
 /* A PTT pin counts as changed only after PTT_STABLE_MS of the same reading (it bounced on a radio). */
 #define PTT_STABLE_MS 40u
 #define PTT_ARM_MS    1000u        /* both PTTs released this long after power-on before either works */
@@ -1631,7 +1778,7 @@ void APP_Tick(void)
 			RADIO_EndTx();
 	}
 #endif
-	dw_tick(ptt || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
+	dw_tick(ptt || RADIO_MonitorOn() || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();
 	else
@@ -1658,6 +1805,8 @@ void APP_Tick(void)
 			d = 14;
 		else if (s_key_held == KEY_HASH)
 			d = 15;
+		else if (s_key_held == KEY_EQUALS)
+			d = 19;                        /* = held: the 1750 Hz repeater tone burst (K5 feature 1.14) */
 		if (d >= 0) {
 			if (k != KEY_INVALID)
 				RADIO_TxTone((uint8_t)d, gStock.raw[SET_DTMF_MON] & 1u);
@@ -1712,7 +1861,7 @@ void APP_Tick(void)
 		s_lamp_ms = 0;
 		IO_Lamp(!IO_LampIsOn());
 	}
-	if (k != KEY_INVALID && !ptt && !s_tx_swapped) {
+	if (k != KEY_INVALID && k != KEY_EQUALS && !ptt && !s_tx_swapped) {   /* = is eq_tick's */
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)
@@ -1722,6 +1871,8 @@ void APP_Tick(void)
 		else
 			key_menu(k);
 	}
+
+	eq_tick(ptt);
 
 	if (s_screen == SCREEN_MAIN) {
 		draw_main();

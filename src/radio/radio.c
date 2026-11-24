@@ -92,6 +92,7 @@ bool RADIO_ToneHeard(void) { return s_tone_heard; }
 
 /* ------------------------------------------------------------------------------------------- receive */
 static uint16_t s_mute_ms;     /* receive audio held off after transmit (repeater tail) */
+static bool     s_monitor;     /* squelch held open (RADIO_Monitor) */
 
 static void audio(bool open)
 {
@@ -130,10 +131,32 @@ void RADIO_Apply(void)
 	squelch_levels();
 	s_state = RADIO_RX;
 	s_open_count = s_close_count = 0;
-	audio(gVfo.squelch == 0);
-	if (gVfo.squelch == 0)
+	audio(gVfo.squelch == 0 || s_monitor);
+	if (gVfo.squelch == 0 || s_monitor)
 		s_state = RADIO_RX_OPEN;
 }
+
+/* Monitor (K5 feature 1.13): the squelch held open, as squelch 0, until turned off; then the squelch decides again. */
+void RADIO_Monitor(bool on)
+{
+	if (s_monitor == on)
+		return;
+	s_monitor = on;
+	if (s_state == RADIO_TX)
+		return;
+	if (on) {
+		s_state = RADIO_RX_OPEN;
+		if (!s_beep_ms)
+			audio(true);
+	} else if (gVfo.squelch) {
+		s_state = RADIO_RX;
+		s_open_count = 0;
+		if (!s_beep_ms)
+			audio(false);
+	}
+}
+
+bool RADIO_MonitorOn(void) { return s_monitor; }
 
 void RADIO_Init(void)
 {
@@ -181,7 +204,7 @@ bool RADIO_Carrier(void)
 {
 	if (s_state == RADIO_TX)
 		return false;
-	return BK4819_SquelchOpen() || (gVfo.squelch && s_state == RADIO_RX_OPEN);
+	return BK4819_SquelchOpen() || (gVfo.squelch && !s_monitor && s_state == RADIO_RX_OPEN);
 }
 
 /* The beep's tone off and receive back on (BK4819_Beep turns the chip's receive path off while it plays). */
@@ -209,7 +232,7 @@ void RADIO_Tick(void)
 	if (s_state == RADIO_TX || s_beep_ms)       /* the receiver is off while a beep plays */
 		return;
 	s_rssi = BK4819_GetRSSI();
-	if (gVfo.squelch == 0) {
+	if (gVfo.squelch == 0 || s_monitor) {
 		if (s_state != RADIO_RX_OPEN) {
 			s_state = RADIO_RX_OPEN;
 			audio(true);

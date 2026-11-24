@@ -37,8 +37,8 @@ this radio (reason given). ROADMAP rows in brackets.
 | 1.10 | AM fix (gain control for AM) | todo | Fusion removed its old one; worth a look for airband |
 | 1.11 | More squelch sensitivity, better squelch and S-meter behaviour | partial | the stock thresholds today [3.4] |
 | 1.12 | More frequency steps | partial | 2.5 to 100 kHz; 8.33 kHz airband and finer SSB steps todo |
-| 1.13 | Monitor (squelch open while held) | todo | a key action |
-| 1.14 | 1750 Hz tone burst | partial | in the driver; no key sends it yet [3.6] |
+| 1.13 | Monitor (squelch open while held) | have | `=` held by default (MENU → = HOLD); on a press it stays open until pressed again; PC-tested only |
+| 1.14 | 1750 Hz tone burst | have | `=` held while transmitting; PC-tested only |
 | 1.15 | DTMF calling, scrambler | partial | DTMF send and decode, PTT-ID have; scrambler todo (Fusion turns both off) |
 
 ## Watching and scanning
@@ -75,7 +75,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.5 | Channel name + frequency display | have | name large, number and frequency small (2026-11-24) |
 | 4.6 | Channel name editing in the menu | todo | names only from CHIRP today [4.6] |
 | 4.7 | Better frequency and channel entry | partial | 6 digits, 3-digit channel |
-| 4.8 | Battery percentage or voltage on the status bar | todo | bars only |
+| 4.8 | Battery percentage or voltage on the status bar | have | MENU → BATTERY: ICON, PERCENT, VOLTS; percent from the radio's calibrated battery thresholds, so it agrees with the bars (a two-cell pack: 6.1 V empty, 8.0 V full) |
 | 4.9 | Mic level bar while transmitting; audio level display | todo | the mic ADC is read for VOX already |
 | 4.10 | Backlight: longer times, dimming, smooth fade, quick min/max (F+8, F+9) | partial | stock 5-20 s or always; dimming needs a PWM pin, unknown |
 | 4.11 | Contrast and inverted display (`SetCtr`, `SetInv`) | n/a / todo | contrast is for mono LCDs; inverted colours could be a theme |
@@ -85,7 +85,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.15 | Reordered, renamed menu entries | have | our own order |
 | 4.16 | Navigation layout per radio model (`SetNav`) | n/a | one keypad here |
 | 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | partial | # held locks keys; PTT always works |
-| 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | # long press locks; no F layer or assignable actions yet [4.3] |
+| 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); # held locks; no F layer yet [4.3] |
 | 4.19 | F+UP / F+DOWN squelch, saved; F+F1 / F+F2 step | todo | |
 | 4.20 | Quick actions: RX mode, main VFO only, wide/narrow, 1750, mute, audio profile, max power, offset removal | partial | `*` toggles wide/narrow; the rest todo |
 | 4.21 | Long-press EXIT restores the full VFO state | todo | |
@@ -145,8 +145,8 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 
 ## Suggested order
 
-1. Things that make it a better daily radio, all small: battery percentage (4.8), monitor key (1.13), F+UP/DOWN
-   squelch (4.19), 1750 Hz key (1.14), RX/TX timers (4.2), channel name editing (4.6), EXIT restores (2.9, 4.21).
+1. Things that make it a better daily radio, all small: ~~battery percentage (4.8), monitor key (1.13)~~, F+UP/DOWN
+   squelch (4.19), ~~1750 Hz key (1.14)~~, RX/TX timers (4.2), channel name editing (4.6), EXIT restores (2.9, 4.21).
 2. Signal: S-meter in S-units (1.2), more power levels (1.1), 6.25 kHz narrow (1.3), priority watch (2.1).
 3. Scanning: fast scan (2.5), scan lists (2.3), exclusions (2.4).
 4. Spectrum analyser (3.1): the most-used extra on the K5.
