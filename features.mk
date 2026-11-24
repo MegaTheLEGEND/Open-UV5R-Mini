@@ -33,6 +33,12 @@ REGION              ?= 0
 # bands of the other modes. The default mode is always HAM.
 ENABLE_TX_UNLOCK    ?= 1
 
+# The key test (src/app/keytest.c): menu item KEY TEST, and VM, A/B or the flashlight key held at power-on. It shows
+# raw key codes, PTT inputs and chip registers, for finding hardware. Off: not in the image, and the menu items
+# after it move up one number.
+ENABLE_KEYTEST      ?= 1
+
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
                  -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI) \
-                 -DTXLOCK_REGIONS=$(ENABLE_REGIONS) -DTXLOCK_REGION=$(REGION) -DTXLOCK_UNLOCK=$(ENABLE_TX_UNLOCK)
+                 -DTXLOCK_REGIONS=$(ENABLE_REGIONS) -DTXLOCK_REGION=$(REGION) -DTXLOCK_UNLOCK=$(ENABLE_TX_UNLOCK) \
+                 -DKEYTEST_ENABLE=$(ENABLE_KEYTEST)

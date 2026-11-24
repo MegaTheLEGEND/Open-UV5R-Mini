@@ -24,6 +24,9 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
 ASM := src/start.S src/update/handover.S
 
 include features.mk
+ifeq ($(ENABLE_KEYTEST),0)
+SRC := $(filter-out src/app/keytest.c,$(SRC))
+endif
 
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
           -std=c11 -Wall -Wextra -Isrc $(FEATURE_FLAGS)

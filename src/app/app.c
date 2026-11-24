@@ -11,7 +11,9 @@
 #include "store/calib.h"
 #include "store/channels.h"
 #include "app/keys.h"
+#if KEYTEST_ENABLE
 #include "app/keytest.h"
+#endif
 #include "app/program.h"
 #include "app/version.h"
 #include "radio/radio.h"
@@ -407,8 +409,14 @@ static const SetItem_t SET_ITEMS[] = {
 	{ "MENU EXIT",  0x21,          11, L_MENU_EXIT, 0,   0,   0,    false },
 };
 #define SET_COUNT  ((int)(sizeof SET_ITEMS / sizeof SET_ITEMS[0]))
-#define M_KEYTEST  (M_SET0 + SET_COUNT)
+#define M_SETEND   (M_SET0 + SET_COUNT)  /* first item after the setting bytes */
+/* Items are numbered by position (draw_menu), so one left out of the build leaves no gap in the numbers. */
+#if KEYTEST_ENABLE
+#define M_KEYTEST  M_SETEND
 #define M_ABOUT    (M_KEYTEST + 1)
+#else
+#define M_ABOUT    M_SETEND             /* no KEY TEST in this build (features.mk ENABLE_KEYTEST) */
+#endif
 #define M_NORMAL   (M_ABOUT + 1)         /* the normal menu: items 1..M_NORMAL */
 /* Hidden items, after the normal ones: shown only when the radio was switched on with = held (the update mode's key
  * without PTT-A), which opens the menu at the first of them. They go again when the menu is left. */
@@ -428,10 +436,12 @@ static const char *menu_name(int i)
 {
 	if (i < M_SET0)
 		return MENU_NAMES[i];
-	if (i < M_KEYTEST)
+	if (i < M_SETEND)
 		return SET_ITEMS[i - M_SET0].name;
 	switch (i) {
+#if KEYTEST_ENABLE
 	case M_KEYTEST: return "KEY TEST";
+#endif
 	case M_ABOUT:   return "ABOUT";
 	case M_REGION:  return "REGION";
 	case M_TXLOCK:  return "TX LOCK";
@@ -500,7 +510,7 @@ static const char *menu_value(int i, char *b)
 {
 	static const char *const MOD[] = { "AUTO", "FM", "AM" };
 
-	if (i >= M_SET0 && i < M_KEYTEST)
+	if (i >= M_SET0 && i < M_SETEND)
 		return set_value(&SET_ITEMS[i - M_SET0], b);
 	switch (i) {
 	case M_AB:      return s_active ? "B" : "A";
@@ -611,7 +621,7 @@ static int first_free_channel(void)
 
 static void menu_change(int i, int dir)
 {
-	if (i >= M_SET0 && i < M_KEYTEST) {
+	if (i >= M_SET0 && i < M_SETEND) {
 		const SetItem_t *it = &SET_ITEMS[i - M_SET0];
 		uint8_t v = gStock.raw[it->off] < it->count ? gStock.raw[it->off] : 0;
 		gStock.raw[it->off] = (uint8_t)((v + it->count + dir) % it->count);
@@ -1006,10 +1016,12 @@ static void draw_about(void)
 static void menu_enter(void)
 {
 	switch (s_menu_sel) {
+#if KEYTEST_ENABLE
 	case M_KEYTEST:
 		KEYTEST_Run();
 		s_redraw = true;
 		return;
+#endif
 	case M_ABOUT:
 		go(SCREEN_ABOUT);
 		return;
@@ -1426,12 +1438,14 @@ void APP_Init(void)
 	/* = held at power-on without PTT-A (the update mode's check, update_radio.c, without the PTT): the menu, opened
 	 * at its hidden items (region, TX lock). Read here, as UPDATE_Requested reads it: rows all low, PC2 low. */
 	bool hidden_menu = !KEYBOARD_IsPttPressed() && !GPIO_CheckBit(PIN_KEY_COL0);
+#if KEYTEST_ENABLE
 	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
 	if (!hidden_menu && !KEYBOARD_IsPttPressed()) {
 		KEY_Code_t k0 = KEYBOARD_Poll();
 		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP)
 			KEYTEST_Run();
 	}
+#endif
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	if (s_xf_ok) {
@@ -1513,6 +1527,9 @@ static void tot_tick(void)
 
 /* A PTT pin counts as changed only after PTT_STABLE_MS of the same reading (it bounced on a radio). */
 #define PTT_STABLE_MS 40u
+#define PTT_ARM_MS    1000u        /* both PTTs released this long after power-on before either works */
+static bool     s_ptt_armed;
+static uint16_t s_ptt_arm_ms;
 static bool ptt_debounced(bool raw, unsigned i)
 {
 	static bool    state[2];
@@ -1560,9 +1577,21 @@ void APP_Tick(void)
 	} else
 		s_off_ticks = 0;
 
-	/* PTT; PTT-B transmits on side B (it becomes the active side) */
-	ptt = ptt_debounced(KEYBOARD_IsPttPressed(), 0);
-	if (ptt_debounced(KEYBOARD_IsPtt2Pressed(), 1)) {
+	/* PTT; PTT-B transmits on side B (it becomes the active side). Neither counts until both have read released for
+	 * PTT_ARM_MS since power-on: on a radio (2026-11-24) the radio switched to B and keyed 1-3 short blips at every
+	 * start-up, so PTT-B (PA12) reads low for a while as the board powers up. A PTT held at power-on is ignored
+	 * until it is let go. */
+	bool raw_a = KEYBOARD_IsPttPressed(), raw_b = KEYBOARD_IsPtt2Pressed();
+	bool ptt_a = ptt_debounced(raw_a, 0), ptt_b = ptt_debounced(raw_b, 1);
+	if (!s_ptt_armed) {
+		if (raw_a || raw_b)
+			s_ptt_arm_ms = 0;
+		else if ((s_ptt_arm_ms += APP_TICK_MS) >= PTT_ARM_MS)
+			s_ptt_armed = true;
+		ptt_a = ptt_b = false;
+	}
+	ptt = ptt_a;
+	if (ptt_b) {
 		if (!s_ptt_down && s_active != 1) {
 			side_switch();
 #if SETTINGS_ENABLE_SAVE
@@ -1617,8 +1646,8 @@ void APP_Tick(void)
 	tscan_tick();
 	dtmf_tick();
 #if RADIO_ENABLE_TX
-	/* VOX (stock setting 0x3A), not while PTT is held, scanning or in a menu */
-	if (gStock.raw[0x3A] && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
+	/* VOX (stock setting 0x3A), not while PTT is held, scanning or in a menu, nor before PTT is armed at start-up */
+	if (gStock.raw[0x3A] && s_ptt_armed && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
 		uint16_t a = ADC_Read(ADC_CH_PA1, 1);
 		VoxAction_t v = VOX_Tick(a == 0xFFFFu ? 0 : (uint8_t)(a >> 2), gStock.raw[0x02], gStock.raw[0x20],
 		                         RADIO_State() == RADIO_TX, APP_TICK_MS);
