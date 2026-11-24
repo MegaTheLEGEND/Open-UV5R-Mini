@@ -4,20 +4,19 @@
  * (RADIO_ProbeRssi: tune, VCO re-calibration, SPEC_SETTLE_US, RSSI) and the level drawn as a bar. A few are measured
  * every tick, so a sweep of 64 takes about 0.15 s and keys still answer. The audio is off while it runs.
  *
- * Keys: UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; 1 and 3 the wait
- * at each step; 5 freezes; MENU tunes
- * the VFO to the strongest frequency and goes back to the main screen; EXIT goes back to the menu. PTT closes it
- * (app.c).
+ * Keys: digits tune the centre as on the main screen (6 digits, MHz then kHz; MENU takes fewer, the rest 0; EXIT
+ * drops them); UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; = freezes;
+ * MENU tunes the VFO to the marked peak and goes back to the main screen; EXIT goes back. PTT (A or B) closes it and
+ * transmits on the centre frequency on the selected side (app.c; Sean, 2026-11-24).
  *
- * 1 and 3 make the wait at each step shorter / longer (0.4 to 10 ms, shown in the title bar with the step); the
- * first version waited 1.5 ms and read about 0 everywhere on a radio (2026-11-24); now 3.2 ms as F4HWN. */
+ * The wait at each step is F4HWN's 3.2 ms: a first version with 1.5 ms read about 0 everywhere on a radio. */
 #include "app/apps.h"
 #if APP_SPECTRUM_ENABLE
 #include "app/keys.h"
 #include "radio/radio.h"
 #include "ui/screen_apps.h"
 
-#define SPEC_SETTLE_US   3200u           /* F4HWN's default scan delay; 1 and 3 change it on the radio */
+#define SPEC_SETTLE_US   3200u           /* F4HWN's default scan delay; bars on a radio with it (2026-11-24) */
 #define SPEC_PER_TICK    3u
 #define SPEC_DBM_MIN   (-130)
 #define SPEC_DBM_MAX    (-50)
@@ -28,7 +27,9 @@ static uint16_t s_rssi[UI_SPECTRUM_N];   /* raw: dBm = raw / 2 - 160 */
 static uint8_t  s_pos;                   /* the next column to measure */
 static uint8_t  s_peak;                  /* the strongest column of the last full sweep */
 static bool     s_frozen, s_swept;
-static uint16_t s_settle = SPEC_SETTLE_US;
+static bool     s_has_peak;              /* the strongest column stands out of the noise */
+static uint32_t s_khz;                   /* digits typed for a new centre */
+static uint8_t  s_typed;
 
 static uint32_t freq_at(unsigned i)
 {
@@ -69,18 +70,6 @@ static void draw_frame(void)
 	uint32_t half = (uint32_t)RADIO_Steps[s_step] * (UI_SPECTRUM_N / 2);   /* 10 Hz */
 
 	step_text(st, RADIO_Steps[s_step]);
-	{                                    /* "12.5K 3.2MS": the step and the wait at each step */
-		char *p = st;
-		while (*p)
-			p++;
-		*p++ = ' ';
-		p = APPS_PutInt(p, s_settle / 1000u);
-		*p++ = '.';
-		*p++ = (char)('0' + s_settle / 100u % 10u);
-		*p++ = 'M';
-		*p++ = 'S';
-		*p = 0;
-	}
 	APPS_FormatMhz(c, s_centre);
 	/* the edges as offsets from the centre: "-400K" / "+400K", or "-1.6M" above 999 kHz */
 	l[0] = '-';
@@ -107,12 +96,31 @@ static void draw_peak(void)
 {
 	char t[22], *p = t;
 
+	if (s_typed) {                       /* "TUNE 145.5__" while digits are typed */
+		uint32_t v = s_khz;
+		const char *q = "TUNE ";
+		while (*q)
+			*p++ = *q++;
+		for (int k = 0; k < 7; k++)
+			p[k] = k == 3 ? '.' : '_';
+		for (int k = s_typed - 1; k >= 0; k--) {
+			p[k < 3 ? k : k + 1] = (char)('0' + v % 10u);
+			v /= 10u;
+		}
+		p[7] = 0;
+		UI_SpectrumPeak(t, true);
+		return;
+	}
 	if (s_frozen) {
-		UI_SpectrumPeak("FROZEN  5: RUN", true);
+		UI_SpectrumPeak("FROZEN  =: RUN", true);
 		return;
 	}
 	if (!s_swept) {
 		UI_SpectrumPeak("", false);
+		return;
+	}
+	if (!s_has_peak) {
+		UI_SpectrumPeak("NO SIGNAL", false);
 		return;
 	}
 	*p++ = 'P'; *p++ = 'K'; *p++ = ' ';
@@ -130,10 +138,13 @@ static void restart(void)
 		s_rssi[i] = 0;
 	s_pos = 0;
 	s_swept = false;
+	s_has_peak = false;
+	gAppsTune = s_centre;                /* PTT transmits here (app.c) */
 }
 
 static void enter(void)
 {
+	s_typed = 0;
 	s_centre = gVfo.freq;
 	s_step = gVfo.step < RADIO_StepCount ? gVfo.step : 4;
 	s_frozen = false;
@@ -146,14 +157,42 @@ static void leave(void)
 	RADIO_ProbeEnd();
 }
 
+/* the typed digits as the new centre (missing ones 0), if it is a frequency the radio has */
+static void typed_tune(void)
+{
+	uint32_t khz = s_khz;
+
+	for (int k = s_typed; k < 6; k++)
+		khz *= 10u;
+	s_typed = 0;
+	if (khz * 100u >= FREQ_MIN && khz * 100u <= FREQ_MAX)
+		s_centre = khz * 100u;
+}
+
 static AppsResult_t key(KEY_Code_t k)
 {
 	uint32_t span = (uint32_t)RADIO_Steps[s_step] * UI_SPECTRUM_N;
+	int d = KEY_Digit(k);
 
-	if (k == KEY_ACT_EXIT)
+	if (d >= 0) {                        /* tuning by number, as on the main screen */
+		s_khz = s_typed ? s_khz * 10u + (uint32_t)d : (uint32_t)d;
+		if (++s_typed < 6) {
+			draw_peak();
+			return APPS_STAY;
+		}
+		typed_tune();
+	} else if (s_typed && (k == KEY_ACT_EXIT || k == KEY_ACT_MENU)) {
+		if (k == KEY_ACT_MENU)
+			typed_tune();
+		s_typed = 0;
+		if (k == KEY_ACT_EXIT) {
+			draw_peak();
+			return APPS_STAY;
+		}
+	} else if (k == KEY_ACT_EXIT)
 		return APPS_EXIT;
-	if (k == KEY_ACT_MENU) {
-		if (!s_swept)
+	else if (k == KEY_ACT_MENU) {
+		if (!s_has_peak)
 			return APPS_STAY;
 		gAppsTune = freq_at(s_peak);
 		return APPS_TUNE;
@@ -166,11 +205,7 @@ static AppsResult_t key(KEY_Code_t k)
 		s_step--;
 	else if (k == KEY_HASH && s_step + 1u < RADIO_StepCount)
 		s_step++;
-	else if (k == KEY_1 && s_settle > 400u)
-		s_settle = (uint16_t)(s_settle - (s_settle > 2000u ? 800u : 400u));
-	else if (k == KEY_3 && s_settle < 10000u)
-		s_settle = (uint16_t)(s_settle + (s_settle >= 2000u ? 800u : 400u));
-	else if (k == KEY_5) {
+	else if (k == KEY_EQUALS) {
 		s_frozen = !s_frozen;
 		draw_peak();
 		return APPS_STAY;
@@ -192,24 +227,35 @@ static AppsResult_t tick(bool full)
 		return APPS_STAY;
 	for (unsigned n = 0; n < SPEC_PER_TICK; n++) {
 		uint8_t i = s_pos;
-		bool was_peak = s_swept && i == s_peak;
-		s_rssi[i] = RADIO_ProbeRssi(freq_at(i), s_settle);
+		bool was_peak = s_has_peak && i == s_peak;
+		uint16_t r = RADIO_ProbeRssi(freq_at(i), SPEC_SETTLE_US);
+		/* as F4HWN: a rise shows at once, a fall halves the gap each sweep, so the picture holds still */
+		s_rssi[i] = r >= s_rssi[i] || !s_swept ? r : (uint16_t)((s_rssi[i] + r) / 2u);
 		UI_SpectrumBar(i, height_of(s_rssi[i]), was_peak);
-		if (++s_pos >= UI_SPECTRUM_N) {   /* a sweep done: mark its peak */
-			uint8_t old = s_peak;
+		if (++s_pos >= UI_SPECTRUM_N) {
+			/* a sweep done. The peak is marked only when it stands 10 dB over the average (noise alone made the
+			 * mark jump from sweep to sweep on a radio, 2026-11-24), and it moves only to a column 3 dB stronger */
+			uint8_t old = s_peak, best = 0;
+			bool had = s_has_peak;
+			uint32_t sum = 0;
 			s_pos = 0;
-			s_peak = 0;
-			for (unsigned j = 1; j < UI_SPECTRUM_N; j++)
-				if (s_rssi[j] > s_rssi[s_peak])
-					s_peak = (uint8_t)j;
+			for (unsigned j = 0; j < UI_SPECTRUM_N; j++) {
+				sum += s_rssi[j];
+				if (s_rssi[j] > s_rssi[best])
+					best = (uint8_t)j;
+			}
+			if (!had || s_rssi[best] >= s_rssi[old] + 6u)     /* raw RSSI is in 0.5 dB */
+				s_peak = best;
+			s_has_peak = s_rssi[s_peak] >= sum / UI_SPECTRUM_N + 20u;
 			s_swept = true;
-			UI_SpectrumBar(old, height_of(s_rssi[old]), false);
-			UI_SpectrumBar(s_peak, height_of(s_rssi[s_peak]), true);
+			if (had && old != s_peak)
+				UI_SpectrumBar(old, height_of(s_rssi[old]), false);
+			UI_SpectrumBar(s_peak, height_of(s_rssi[s_peak]), s_has_peak);
 			draw_peak();
 		}
 	}
 	return APPS_STAY;
 }
 
-const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave };
+const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave, true };
 #endif

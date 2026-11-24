@@ -45,12 +45,13 @@ typedef struct {
 	AppsResult_t (*key)(KEY_Code_t k);   /* a key press */
 	AppsResult_t (*tick)(bool full);     /* every APP_TICK_MS; full = draw everything */
 	void         (*leave)(void);
+	bool         ptt_tunes;              /* PTT transmits on gAppsTune (the spectrum's centre), on the selected side */
 } AppDef_t;
 
 /* Set by app.c for the apps to read */
 extern bool     gAppsFlashOk;            /* the external flash answered (channels can be read) */
 extern uint32_t gAppsUptimeMs;           /* since power-on */
-/* Set by an app before it returns APPS_TUNE / APPS_CHANNEL */
+/* Set by an app before it returns APPS_TUNE / APPS_CHANNEL (and kept current by a ptt_tunes app) */
 extern uint32_t gAppsTune;
 extern int      gAppsChannel;
 

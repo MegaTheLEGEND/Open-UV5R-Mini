@@ -61,7 +61,7 @@ this radio (reason given). ROADMAP rows in brackets.
 
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
-| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | partial | MENU → APPS → SPECTRUM (or an `=` key action): 64 steps round the VFO, step `*`/`#`, UP/DOWN move, 5 freezes, MENU tunes to the peak; channel names and saved settings todo; PC-checked only |
+| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | partial | MENU → APPS → SPECTRUM (or an `=` key action): 64 steps round the VFO, digits tune, step `*`/`#`, UP/DOWN move, `=` freezes, MENU tunes to the peak, PTT transmits on its centre; bars seen on a radio; channel names and saved settings todo; PC-checked only |
 | 3.2 | Restore the spectrum at start-up | todo | |
 
 ## Screen and controls

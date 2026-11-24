@@ -1316,6 +1316,7 @@ static void draw_about(void)
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
 static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
 static bool s_app_from_menu;             /* opened from the menu: EXIT goes back there, else to the main screen */
+static bool s_ptt_here;                  /* this PTT press transmits on the selected side (it left the spectrum) */
 
 static void app_open(const AppDef_t *a)
 {
@@ -2385,6 +2386,18 @@ void APP_Tick(void)
 		s_app = 0;
 		if (a)
 			a->leave();
+		if (a && a->ptt_tunes) {
+			/* the spectrum: transmit where it is tuned, on the selected side, whichever PTT (Sean, 2026-11-24) */
+			if (gAppsTune && gAppsTune != gVfo.freq) {
+				s_mr = false;
+				s_ch = -1;
+				gVfo.tx_freq = 0;
+				gVfo.rx_only = false;
+				vfo_retune(gAppsTune);
+				RADIO_Apply();
+			}
+			s_ptt_here = true;
+		}
 		go(SCREEN_MAIN);
 	}
 	if (ptt) {
@@ -2401,7 +2414,7 @@ void APP_Tick(void)
 		/* each PTT transmits on its own side (A wins if both), without changing the selection: the other side is
 		 * swapped in for the transmission and swapped back when it ends (s_tx_swapped). Only A/B changes the
 		 * selected side (Sean, 2026-11-24: PTT-B used to make B the selected side, and PTT-A sent on B then). */
-		uint8_t want = ptt_a ? 0u : 1u;
+		uint8_t want = s_ptt_here ? s_active : ptt_a ? 0u : 1u;
 		if (s_active != want) {
 			side_switch();
 			s_tx_swapped = !s_tx_swapped;
@@ -2425,6 +2438,8 @@ void APP_Tick(void)
 		s_tx_refused = s_tot_hit = false;
 	}
 	s_ptt_down = ptt;
+	if (!ptt)
+		s_ptt_here = false;
 
 	if (RADIO_State() != RADIO_TX) {
 		DTMFSEQ_Stop();
@@ -2568,7 +2583,8 @@ void APP_Tick(void)
 		s_lamp_ms = 0;
 		IO_Lamp(!IO_LampIsOn());
 	}
-	if (k != KEY_INVALID && k != KEY_EQUALS && !ptt && !s_tx_swapped) {   /* = is eq_tick's */
+	if (k != KEY_INVALID && (k != KEY_EQUALS || s_screen == SCREEN_APP) && !ptt && !s_tx_swapped) {
+		/* = is eq_tick's on the main screen; an app gets it as a key */
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)

@@ -115,5 +115,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_METER = { "SIGNAL METER", enter, key, tick, leave };
+const AppDef_t APP_METER = { "SIGNAL METER", enter, key, tick, leave, false };
 #endif
