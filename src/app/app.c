@@ -1315,6 +1315,7 @@ static void draw_about(void)
 
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
 static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
+static bool s_app_from_menu;             /* opened from the menu: EXIT goes back there, else to the main screen */
 
 static void app_open(const AppDef_t *a)
 {
@@ -1322,6 +1323,7 @@ static void app_open(const AppDef_t *a)
 	SCAN_Stop();
 	tscan_stop();
 	RADIO_Monitor(false);
+	s_app_from_menu = s_screen == SCREEN_MENU;
 	s_app = a;
 	a->enter();
 	go(SCREEN_APP);
@@ -1348,7 +1350,7 @@ static void app_close(AppsResult_t r)
 		channel_show(gAppsChannel);
 		go(SCREEN_MAIN);
 	} else if (r == APPS_CHANNEL || r == APPS_EXIT)
-		go(a == 0 ? SCREEN_MAIN : SCREEN_MENU);
+		go(a != 0 && s_app_from_menu ? SCREEN_MENU : SCREEN_MAIN);
 }
 
 /* MENU on a row: rows that act at once, rows that ask first (SAVE CH, DEL CH), or edit with UP/DOWN. */
