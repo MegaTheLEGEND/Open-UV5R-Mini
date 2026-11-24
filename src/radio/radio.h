@@ -58,6 +58,11 @@ void         RADIO_Beep(uint16_t hz, uint16_t ms);
 void         RADIO_Monitor(bool on);        /* squelch held open while on */
 void         RADIO_RxSleep(void);           /* the receiver (BK4819) asleep until RADIO_Apply or RADIO_StartTx */
 bool         RADIO_RxAsleep(void);
+/* Spectrum: audio off, the squelch idle; RADIO_ProbeRssi(f) tunes to f, waits settle_us and reads the raw RSSI;
+ * RADIO_ProbeEnd tunes back to gVfo (RADIO_Apply). */
+void         RADIO_ProbeBegin(void);
+uint16_t     RADIO_ProbeRssi(uint32_t freq, uint16_t settle_us);
+void         RADIO_ProbeEnd(void);
 bool         RADIO_MonitorOn(void);
 
 /* Tones sent while transmitting (stock sub_01E510A2): code 0-15 = DTMF 0-9, A, B, C, D, *, #; 17-20 = one tone of

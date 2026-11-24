@@ -78,6 +78,11 @@ everything that uses a changed switch is rebuilt.
 | `REGION` | 0 | lock the image to one region: 0 = chosen in the menu; 1 US, 2 EU/UK, 3 AU (needs `ENABLE_REGIONS=1`) |
 | `ENABLE_TX_UNLOCK` | 1 | the UNLOCKED TX LOCK mode; 0 = the image can't transmit outside the other modes' bands |
 | `ENABLE_KEYTEST` | 1 | the key test (menu item KEY TEST; VM, A/B or flashlight key held at power-on); 0 = not in the image, and the menu items after it move up a number |
+| `ENABLE_APP_SPECTRUM` | 1 | MENU → APPS → SPECTRUM (`src/app/spectrum.c`) |
+| `ENABLE_APP_METER` | 1 | MENU → APPS → SIGNAL METER, for fox hunting (`src/app/meter.c`) |
+| `ENABLE_APP_CHANNELS` | 1 | MENU → APPS → CHANNELS, the channel book (`src/app/chbook.c`) |
+| `ENABLE_APP_SYSINFO` | 1 | MENU → APPS → SYSTEM INFO (`src/app/sysinfo.c`) |
+| `ENABLE_APP_SNAKE` | 1 | MENU → APPS → SNAKE (`src/app/snake.c`). With every app off the APPS section goes from the menu |
 | `ENABLE_LCD_SPI` | 1 | screen and external flash through SPI1 hardware with DMA (checks itself at power-on, else bit-banged); 0 = always bit-banged |
 | `ENABLE_SCREEN_TEST` | 0 | start-up check of the CHIRP cable set-up (labels on the screen) |
 

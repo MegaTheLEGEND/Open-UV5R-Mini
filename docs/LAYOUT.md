@@ -13,7 +13,7 @@ Everything that runs on the radio is under `src/`. Everything else is a tool, a 
 | `src/driver/` | One driver per chip or peripheral: `bk4819`, `st7735s`, `keyboard`, `uart`, `gpio`, `system`, `adc`, `flash`, `extflash`, `io`. Drivers know registers and pins, never the radio's behaviour |
 | `src/radio/` | Radio behaviour with no screen: the radio core (`radio.c`: tune, squelch, TX), tones, scan, dual watch, VOX, DTMF sequences |
 | `src/store/` | Data kept in the radio's flash, read the stock way: calibration, channels, settings |
-| `src/app/` | The application: `app.c` (keys, screens, the main loop), `keys.h`, the key test, battery |
+| `src/app/` | The application: `app.c` (keys, screens, the main loop), `keys.h`, the key test, battery; the apps (`apps.h`, one file each, each behind an `ENABLE_APP_*` switch) |
 | `src/ui/` | Drawing: font, text and icon helpers, colours (`theme.h`), one file per screen (`screen_main.c`), and the generated `icons.c` / `icons.h` |
 | `src/update/` | The cable update mode. Safety-critical (AGENTS.md rule 3): change it only with `tests/update_host.py` and `tests/flasher_guard.py` passing |
 | `src/bt/`, `src/platform/` | Bluetooth interface (stub by default) and the JieLi SDK glue for the Bluetooth edition |

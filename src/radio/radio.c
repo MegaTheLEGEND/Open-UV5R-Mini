@@ -95,6 +95,7 @@ static uint16_t s_mute_ms;     /* receive audio held off after transmit (repeate
 static bool     s_monitor;     /* squelch held open (RADIO_Monitor) */
 static bool     s_rx_asleep;   /* the BK4819 is asleep (RADIO_RxSleep) until RADIO_Apply or transmit */
 static void beep_end(void);
+static bool     s_probe;       /* the spectrum has the receiver (RADIO_ProbeBegin) */
 
 static void audio(bool open)
 {
@@ -178,6 +179,49 @@ void RADIO_RxSleep(void)
 
 bool RADIO_RxAsleep(void) { return s_rx_asleep; }
 
+/* Probe, for the spectrum app: the audio muted and the squelch left alone while the receiver is moved from
+ * frequency to frequency and its RSSI read. The way the UV-K5 spectrum does it: set the frequency, turn the receive
+ * path off and on again (REG_30, BK4819_RxOn) so the VCO re-calibrates, wait, read REG_67. RADIO_ProbeEnd tunes
+ * back to gVfo. */
+void RADIO_ProbeBegin(void)
+{
+	if (s_state == RADIO_TX)
+		return;
+	if (s_beep_ms)
+		beep_end();
+	s_monitor = false;
+	audio(false);
+	s_state = RADIO_RX;
+	s_open_count = s_close_count = 0;
+	s_probe = true;
+}
+
+uint16_t RADIO_ProbeRssi(uint32_t f, uint16_t settle_us)
+{
+	static Band_t last = (Band_t)0xFF;
+	Band_t b = band_of(f);
+
+	if (!s_probe)
+		return 0;
+	if (b != last) {
+		front_end(b, false);
+		last = b;
+	}
+	BK4819_SetFrequency(f);
+	BK4819_RxOn();
+	s_rx_asleep = false;
+	SYSTEM_DelayUs(settle_us);
+	return BK4819_GetRSSI();
+}
+
+void RADIO_ProbeEnd(void)
+{
+	if (!s_probe)
+		return;
+	s_probe = false;
+	RADIO_Apply();
+}
+
 void RADIO_Init(void)
 {
 	gVfo.freq = 14552000u;     /* 145.520 MHz */
@@ -222,7 +266,7 @@ static void squelch_levels(void)
  * side for ever. With squelch 0 the audio is always open, so only the chip's squelch counts. */
 bool RADIO_Carrier(void)
 {
-	if (s_state == RADIO_TX || s_rx_asleep)
+	if (s_state == RADIO_TX || s_rx_asleep || s_probe)
 		return false;
 	return BK4819_SquelchOpen() || (gVfo.squelch && !s_monitor && s_state == RADIO_RX_OPEN);
 }
@@ -249,7 +293,7 @@ void RADIO_Tick(void)
 		else
 			beep_end();
 	}
-	if (s_state == RADIO_TX || s_beep_ms || s_rx_asleep)   /* the receiver is off while a beep plays, or asleep */
+	if (s_state == RADIO_TX || s_beep_ms || s_rx_asleep || s_probe)   /* off while a beep plays, asleep, probing */
 		return;
 	s_rssi = BK4819_GetRSSI();
 	if (gVfo.squelch == 0 || s_monitor) {
@@ -348,7 +392,8 @@ bool RADIO_StartTx(void)
 		beep_end();
 	audio(false);
 	BK4819_DtmfRxOff();
-	s_rx_asleep = false;               /* the TX set-up writes REG_37 again (BK4819_TxOn) */
+	s_rx_asleep = false;
+	s_probe = false;               /* the TX set-up writes REG_37 again (BK4819_TxOn) */
 	s_state = RADIO_TX;
 	BK4819_SetFrequency(tx_freq());
 	BK4819_SetFilterBandwidth(gVfo.narrow);

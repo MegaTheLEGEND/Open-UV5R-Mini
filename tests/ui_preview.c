@@ -5,6 +5,7 @@
 #include "driver/st7735s.h"
 #include "ui/screen_main.h"
 #include "ui/screen_menu.h"
+#include "ui/screen_apps.h"
 #include "ui/theme.h"
 
 bool test_pins[128];
@@ -133,8 +134,8 @@ int main(int argc, char **argv)
 	 * a channel name being edited, and SYSTEM with the hidden items after a start with = held. Names and numbers
 	 * as the app has them (ENABLE_KEYTEST on). */
 	{
-		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "SYSTEM", "ABOUT" };
-		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-45", 0 };
+		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "APPS", "SYSTEM", "ABOUT" };
+		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-37", "38-50", 0 };
 		static const char *const CH[] = { "SHIFT", "OFFSET", "TX POWER", "BANDWIDTH", "MODULATION", "STEP",
 		                                  "SQUELCH" };
 		static const char *const SYS[] = { "AUTO LOCK", "MENU EXIT", "= PRESS", "= DOUBLE", "= HOLD", "KEY TEST",
@@ -142,10 +143,10 @@ int main(int argc, char **argv)
 		UiMenu_t m;
 		memset(&m, 0, sizeof m);
 		m.title = "MENU";
-		m.count = 5;
+		m.count = 6;
 		m.sel = 0;
 		m.cursor = -1;
-		for (int r = 0; r < 5; r++) {
+		for (int r = 0; r < 6; r++) {
 			m.name[r] = PAGE[r];
 			m.right[r] = PAGE_R[r];
 		}
@@ -164,7 +165,7 @@ int main(int argc, char **argv)
 			m.name[r] = CH[r];
 			m.num[r] = (uint8_t)(m.top + r + 1);
 		}
-		strcpy(m.corner, "11/45");
+		strcpy(m.corner, "11/50");
 		m.value = "3";
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu_channel.ppm", dir);
@@ -180,7 +181,7 @@ int main(int argc, char **argv)
 				m.num[r] = (uint8_t)(r + 1);
 			}
 		}
-		strcpy(m.corner, "02/45");
+		strcpy(m.corner, "02/50");
 		m.value = "CITY RPTR   ";
 		m.edit = true;
 		m.cursor = 5;
@@ -191,20 +192,99 @@ int main(int argc, char **argv)
 		memset(&m, 0, sizeof m);
 		m.title = "SYSTEM";
 		m.count = 15;
-		m.sel = 13;                                 /* REGION, item 46 */
+		m.sel = 13;                                 /* REGION, item 51 */
 		m.top = UI_MenuTop(m.sel);
 		m.cursor = -1;
 		for (int r = 0; r < UI_MENU_ROWS; r++) {
 			m.name[r] = SYS[m.top + r - 7];
-			m.num[r] = (uint8_t)(33 + m.top + r);
+			m.num[r] = (uint8_t)(38 + m.top + r);
 			m.hidden[r] = m.top + r >= 13;
 		}
-		strcpy(m.corner, "46/47");
+		strcpy(m.corner, "51/52");
 		m.corner_warn = true;
 		m.value = "US";
 		m.edit = true;
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu_hidden.ppm", dir);
+		dump(path);
+	}
+
+	/* the apps (src/ui/screen_apps.c), with made-up readings */
+	{
+		/* spectrum: noise, a strong carrier left of centre, a weaker one right */
+		UI_SpectrumFrame("12.5K", "-400K", "145.520", "+400K");
+		for (int i = 0; i < UI_SPECTRUM_N; i++) {
+			int h = 6 + (i * 7919) % 9;
+			if (i >= 20 && i <= 22)
+				h = i == 21 ? 70 : 38;
+			if (i == 44)
+				h = 30;
+			UI_SpectrumBar((uint8_t)i, (uint8_t)h, i == 21);
+		}
+		UI_SpectrumPeak("PK 145.395 -76dBm", false);
+		snprintf(path, sizeof path, "%s/app_spectrum.ppm", dir);
+		dump(path);
+
+		/* signal meter: a fox getting closer */
+		static UiMeter_t m;
+		memset(&m, 0, sizeof m);
+		strcpy(m.freq, "146.56500");
+		m.dbm = -87;
+		m.peak_dbm = -79;
+		strcpy(m.sunits, "S9");
+		m.hist_n = 90;
+		for (int i = 0; i < m.hist_n; i++)
+			m.hist[i] = (uint8_t)(8 + i * 30 / 90 + (i * 31) % 6);
+		m.tick_sound = true;
+		m.open = true;
+		UI_MeterDraw(&m, true);
+		snprintf(path, sizeof path, "%s/app_meter.ppm", dir);
+		dump(path);
+
+		/* system info */
+		UiInfo_t p;
+		memset(&p, 0, sizeof p);
+		p.title = "SYSTEM INFO";
+		p.label[0] = "BATTERY";  p.value[0] = "7.42V 63%";
+		p.label[1] = "CALIB";    p.value[1] = "OK";
+		p.label[2] = "FLASH";    p.value[2] = "OK";
+		p.label[3] = "CHANNELS"; p.value[3] = "37 USED";
+		p.label[4] = "TX LOCK";  p.value[4] = "HAM US";
+		p.label[5] = "UPTIME";   p.value[5] = "1:23:45";
+		p.label[6] = "VERSION";  p.value[6] = "0.1.0";
+		p.label[7] = "BUILD";    p.value[7] = "81689c1";
+		p.label[8] = "RADIO";    p.value[8] = "NRF HW V1.7";
+		p.hint = "ANY KEY: BACK";
+		UI_InfoDraw(&p, true);
+		snprintf(path, sizeof path, "%s/app_sysinfo.ppm", dir);
+		dump(path);
+
+		/* channel book, drawn with the menu screen */
+		static const char *const CH[] = { "001 CALLING", "002 145.500", "005 CITY RPTR", "012 W1AW",
+		                                  "013 GMRS 20", "020 MARINE 16", "021 NOAA 1" };
+		UiMenu_t c;
+		memset(&c, 0, sizeof c);
+		c.title = "CHANNELS";
+		c.count = 7;
+		c.sel = 2;
+		c.cursor = -1;
+		for (int r = 0; r < 7; r++)
+			c.name[r] = CH[r];
+		strcpy(c.corner, "CH 5");
+		c.value = "146.94000";
+		UI_MenuDraw(&c, true);
+		snprintf(path, sizeof path, "%s/app_channels.ppm", dir);
+		dump(path);
+
+		/* snake */
+		UI_GameFrame("SNAKE");
+		UI_GameScore("SCORE 7");
+		for (int i = 0; i < 9; i++)
+			UI_GameCell((uint8_t)(6 + i), 9, i == 8 ? COLOR_ACCENT : COLOR_RX);
+		for (int i = 0; i < 3; i++)
+			UI_GameCell(5, (uint8_t)(9 - i), COLOR_RX);
+		UI_GameCell(16, 4, COLOR_TX);
+		snprintf(path, sizeof path, "%s/app_snake.ppm", dir);
 		dump(path);
 	}
 

@@ -61,7 +61,7 @@ this radio (reason given). ROADMAP rows in brackets.
 
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
-| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | todo | BK4819 RSSI sweep; the colour screen makes it nicer |
+| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | partial | MENU → APPS → SPECTRUM (or an `=` key action): 64 steps round the VFO, step `*`/`#`, UP/DOWN move, 5 freezes, MENU tunes to the peak; channel names and saved settings todo; PC-checked only |
 | 3.2 | Restore the spectrum at start-up | todo | |
 
 ## Screen and controls
@@ -125,7 +125,7 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 | # | App | Status | Needs |
 | --- | --- | --- | --- |
 | 7.1 | Broadcast FM | partial | ours: the AC695N's own FM receiver [3.9] |
-| 7.2 | Fox Hunt (S-meter, history graph, attenuation, Geiger audio) | todo | RSSI; BK4819 attenuation |
+| 7.2 | Fox Hunt (S-meter, history graph, attenuation, Geiger audio) | partial | MENU → APPS → SIGNAL METER: dBm, S-units, peak, history, tick sound; attenuation todo; PC-checked only |
 | 7.3 | Beacon (Morse ID, timed TX, safe READY screen) | todo | CW keying through the BK4819; TX lock applies |
 | 7.4 | Signal Finder, Spectrum3D | todo | spectrum sweep (3.1) |
 | 7.5 | ToneCall | todo | tone generator (have) |
@@ -139,9 +139,9 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 | 7.13 | CW Decode, CW Keyer, CW Mem, CW Mem Edit, CW Trainer, CW USB | todo | CW TX keying, audio tone detection |
 | 7.14 | SSTV | todo | audio sampling; the colour screen suits it |
 | 7.15 | AF Scope and AF Spectro (oscilloscope, tuner, spectrum, sonogram) | todo | audio samples through the MCU's ADC |
-| 7.16 | ChannelBook (browse channels by list, letter, number range) | todo | |
-| 7.17 | QR Map, Resistor, System Info, Flash Map | todo | small tools |
-| 7.18 | Games and demos: Breakout, Cube3D, Hell Maze, Minesweeper, Plasma, Rapid Roll, Snake, Sokoban, Space Impact, Tetris | todo | our own versions; colour helps |
+| 7.16 | ChannelBook (browse channels by list, letter, number range) | partial | MENU → APPS → CHANNELS: list with names, UP/DOWN, 3-digit jump, MENU picks; by letter todo; PC-checked only |
+| 7.17 | QR Map, Resistor, System Info, Flash Map | partial | SYSTEM INFO done (battery, calibration, flash, channels, TX lock, uptime, build); the others todo |
+| 7.18 | Games and demos: Breakout, Cube3D, Hell Maze, Minesweeper, Plasma, Rapid Roll, Snake, Sokoban, Space Impact, Tetris | partial | SNAKE (our own); the rest todo |
 
 ## Suggested order
 
@@ -149,7 +149,7 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
    squelch (4.19), ~~1750 Hz key (1.14), RX/TX timers (4.2), channel name editing (4.6), EXIT restores (2.9)~~, 4.21.
 2. Signal: S-meter in S-units (1.2), more power levels (1.1), 6.25 kHz narrow (1.3), priority watch (2.1).
 3. Scanning: fast scan (2.5), scan lists (2.3), exclusions (2.4).
-4. Spectrum analyser (3.1): the most-used extra on the K5.
+4. ~~Spectrum analyser (3.1)~~: done as an app, with the signal meter, channel book, system info and a game (each its own `ENABLE_APP_*` switch).
 5. SSB (1.9) and RX audio profiles (1.6).
 6. Data: an AFSK modem, then APRS RX (7.6, also a clock source), then POCSAG and the rest.
 7. Cable features: screen mirror (6.2), calibration backup (6.3).

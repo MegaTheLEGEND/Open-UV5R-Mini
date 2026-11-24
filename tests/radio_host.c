@@ -54,6 +54,7 @@ int BK4819_DtmfTake(void) { int c = dtmf_code; dtmf_code = -1; return c; }
 bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
 void BK4819_Sleep(void) { reg30 = 0; }
+void SYSTEM_DelayUs(uint32_t us) { (void)us; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
 void BK4819_TxMute(bool on) { (void)on; }
 static uint8_t mic_gain = 0xFF;
@@ -139,6 +140,21 @@ int main(void)
 	at(14552000u);
 	ticks(5);
 	CHECK(!RADIO_RxAsleep() && reg30 == 0xBFF1 && RADIO_State() == RADIO_RX_OPEN, "awake again, opens on signal");
+	rssi = 60;
+	ticks(30);
+	/* spectrum probe (app/spectrum.c): audio off and the squelch idle while the receiver is moved and read; the
+	 * end tunes back to the VFO and the squelch works again */
+	RADIO_ProbeBegin();
+	rssi = 200;
+	{
+		uint16_t r = RADIO_ProbeRssi(43950000u, 100);
+		ticks(10);
+		CHECK(r == 200 && !amp && RADIO_State() == RADIO_RX && reg30 == 0xBFF1, "probe reads RSSI, stays muted");
+		CHECK(test_pins[PIN_RX_FRONT] == 0 && (reg33 & BK4819_GPIO_RX_UHF), "probe sets the UHF front end");
+	}
+	RADIO_ProbeEnd();
+	ticks(5);
+	CHECK(RADIO_State() == RADIO_RX_OPEN && amp && test_pins[PIN_RX_FRONT], "after the probe: back on the VFO, open");
 	rssi = 60;
 	ticks(30);
 	gVfo.squelch = 0;

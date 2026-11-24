@@ -63,6 +63,10 @@ Drawn on a PC by the firmware's own screen code (`python tests/ui_preview.py --s
 | --- | --- | --- | --- |
 | ![Menu](docs/screenshots/menu.png) | ![Channel section](docs/screenshots/menu_channel.png) | ![Channel name](docs/screenshots/menu_name.png) | ![Hidden menu items](docs/screenshots/menu_hidden.png) |
 
+| Spectrum | Signal meter | Channel book | System info | Snake |
+| --- | --- | --- | --- | --- |
+| ![Spectrum](docs/screenshots/app_spectrum.png) | ![Signal meter](docs/screenshots/app_meter.png) | ![Channel book](docs/screenshots/app_channels.png) | ![System info](docs/screenshots/app_sysinfo.png) | ![Snake](docs/screenshots/app_snake.png) |
+
 ## Find your way
 
 | Folder | What's in it |

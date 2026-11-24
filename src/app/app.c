@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "app/app.h"
 #include "app/battery.h"
+#include "app/apps.h"
 #include "store/calib.h"
 #include "store/channels.h"
 #include "app/keys.h"
@@ -41,7 +42,7 @@
 #include "ui/theme.h"
 
 
-typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT } Screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT, SCREEN_APP } Screen_t;
 
 static Screen_t s_screen;
 static bool     s_redraw = true;         /* whole screen */
@@ -475,9 +476,10 @@ static const SetItem_t SET_ITEMS[] = {
 
 /* = key actions (K5 features 1.13 monitor, 4.18 assignable keys). MONITOR held: open while = is held; MONITOR on a
  * press: on until pressed again. While transmitting, = held always sends 1750 Hz. */
-enum { KA_NONE, KA_MONITOR, KA_SCAN, KA_AB, KA_VM, KA_BW, KA_POWER, KA_LAMP, KA_DW, KA_LOCK, KA_COUNT };
+enum { KA_NONE, KA_MONITOR, KA_SCAN, KA_AB, KA_VM, KA_BW, KA_POWER, KA_LAMP, KA_DW, KA_LOCK, KA_SPECTRUM, KA_METER,
+       KA_COUNT };
 static const char *const L_KEYACT[KA_COUNT] = { "NONE", "MONITOR", "SCAN", "A/B", "VFO/MR", "W/N", "POWER",
-                                                "LAMP", "DUAL WATCH", "KEY LOCK" };
+                                                "LAMP", "DUAL WATCH", "KEY LOCK", "SPECTRUM", "SIG METER" };
 static uint8_t s_eq_act[3] = { KA_NONE, KA_NONE, KA_MONITOR };   /* press, double press, hold */
 static const char *const L_BATT[] = { "ICON", "PERCENT", "VOLTS" };
 /* Sleep, after F4HWN's (SetOff; Sean, 2026-11-24): after this long with no key, signal or transmit (sleep_tick). */
@@ -518,6 +520,44 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 #endif
                                    M_REGION, M_TXLOCK };
 #define HIDDEN_N 2                       /* the hidden items at the end of SEC_SYS */
+
+/* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
+#define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE)
+#define M_APP0     M_COUNT
+#if APPS_COUNT
+static const AppDef_t *const APPS[APPS_COUNT] = {
+#if APP_SPECTRUM_ENABLE
+	&APP_SPECTRUM,
+#endif
+#if APP_METER_ENABLE
+	&APP_METER,
+#endif
+#if APP_CHANNELS_ENABLE
+	&APP_CHANNELS,
+#endif
+#if APP_SYSINFO_ENABLE
+	&APP_SYSINFO,
+#endif
+#if APP_SNAKE_ENABLE
+	&APP_SNAKE,
+#endif
+};
+static const uint8_t SEC_APPS[APPS_COUNT] = {
+	M_APP0 + 0,
+#if APPS_COUNT > 1
+	M_APP0 + 1,
+#endif
+#if APPS_COUNT > 2
+	M_APP0 + 2,
+#endif
+#if APPS_COUNT > 3
+	M_APP0 + 3,
+#endif
+#if APPS_COUNT > 4
+	M_APP0 + 4,
+#endif
+};
+#endif
 typedef struct {
 	const char    *name;
 	const uint8_t *items;
@@ -527,7 +567,10 @@ static const Section_t SECTIONS[] = {
 	{ "CHANNEL",  SEC_CH,   sizeof SEC_CH },
 	{ "SCAN",     SEC_SCAN, sizeof SEC_SCAN },
 	{ "TRANSMIT", SEC_TX,   sizeof SEC_TX },
-	{ "SYSTEM",   SEC_SYS,  sizeof SEC_SYS },
+#if APPS_COUNT
+	{ "APPS",     SEC_APPS, sizeof SEC_APPS },
+#endif
+	{ "SYSTEM",   SEC_SYS,  sizeof SEC_SYS },     /* last: the hidden items are at its end */
 };
 #define SEC_COUNT ((int)(sizeof SECTIONS / sizeof SECTIONS[0]))
 static int8_t  s_menu_sec = -1;          /* the section open; -1 = the first page */
@@ -567,6 +610,10 @@ static const char *menu_name(int i)
 		return MENU_NAMES[i];
 	if (i < M_SETEND)
 		return SET_ITEMS[i - M_SET0].name;
+#if APPS_COUNT
+	if (i >= M_APP0 && i < M_APP0 + APPS_COUNT)
+		return APPS[i - M_APP0]->name;
+#endif
 	switch (i) {
 #if KEYTEST_ENABLE
 	case M_KEYTEST: return "KEY TEST";
@@ -656,6 +703,8 @@ static const char *menu_value(int i, char *b)
 
 	if (i >= M_SET0 && i < M_SETEND)
 		return set_value(&SET_ITEMS[i - M_SET0], b);
+	if (i >= M_APP0 && i < M_APP0 + APPS_COUNT)
+		return "OPEN";
 	switch (i) {
 	case M_AB:      return s_active ? "B" : "A";
 	case M_DW:      return gStock.raw[SET_DUAL_WATCH] ? "ON" : "OFF";
@@ -1246,9 +1295,53 @@ static void draw_about(void)
 	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 }
 
+/* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
+static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
+
+static void app_open(const AppDef_t *a)
+{
+	dw_end();
+	SCAN_Stop();
+	tscan_stop();
+	RADIO_Monitor(false);
+	s_app = a;
+	a->enter();
+	go(SCREEN_APP);
+}
+
+/* the app is done: its result says where to go */
+static void app_close(AppsResult_t r)
+{
+	const AppDef_t *a = s_app;
+
+	s_app = 0;
+	if (a)
+		a->leave();
+	if (r == APPS_TUNE) {                /* the VFO on that frequency (VFO mode, no shift) */
+		s_mr = false;
+		s_ch = -1;
+		gVfo.tx_freq = 0;
+		gVfo.rx_only = false;
+		vfo_retune(gAppsTune);
+		RADIO_Apply();
+		go(SCREEN_MAIN);
+	} else if (r == APPS_CHANNEL && gAppsChannel >= 0) {
+		s_mr = true;
+		channel_show(gAppsChannel);
+		go(SCREEN_MAIN);
+	} else if (r == APPS_CHANNEL || r == APPS_EXIT)
+		go(a == 0 ? SCREEN_MAIN : SCREEN_MENU);
+}
+
 /* MENU on a row: rows that act at once, rows that ask first (SAVE CH, DEL CH), or edit with UP/DOWN. */
 static void menu_enter(void)
 {
+#if APPS_COUNT
+	if (s_menu_sel >= M_APP0 && s_menu_sel < M_APP0 + APPS_COUNT) {
+		app_open(APPS[s_menu_sel - M_APP0]);
+		return;
+	}
+#endif
 	switch (s_menu_sel) {
 #if KEYTEST_ENABLE
 	case M_KEYTEST:
@@ -1842,6 +1935,7 @@ void APP_Init(void)
 #endif
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
+	gAppsFlashOk = s_xf_ok;
 	if (s_xf_ok) {
 		static uint8_t cal[CALIB_LEN];
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
@@ -1952,6 +2046,22 @@ static void key_action(uint8_t a)
 		gStock.raw[SET_KEY_LOCK] = 1;
 		note("KEYS LOCKED", COLOR_WARN);
 		break;
+	case KA_SPECTRUM:                    /* the app, if this build has it */
+#if APP_SPECTRUM_ENABLE
+		app_open(&APP_SPECTRUM);
+		return;
+#else
+		RADIO_Beep(400, 120);
+		return;
+#endif
+	case KA_METER:
+#if APP_METER_ENABLE
+		app_open(&APP_METER);
+		return;
+#else
+		RADIO_Beep(400, 120);
+		return;
+#endif
 	default:
 		return;
 	}
@@ -2224,6 +2334,13 @@ void APP_Tick(void)
 		ptt_a = ptt_b = false;
 	}
 	ptt = ptt_a || ptt_b;
+	if (ptt && s_screen == SCREEN_APP) { /* PTT leaves an app (the spectrum has the receiver) */
+		const AppDef_t *a = s_app;
+		s_app = 0;
+		if (a)
+			a->leave();
+		go(SCREEN_MAIN);
+	}
 	if (ptt) {
 		dw_end();
 		tscan_stop();
@@ -2278,6 +2395,7 @@ void APP_Tick(void)
 		s_tx_swapped = false;
 	}
 	RADIO_Tick();
+	gAppsUptimeMs += APP_TICK_MS;
 	{
 		static RadioState_t last;
 		RadioState_t st = RADIO_State();
@@ -2385,7 +2503,7 @@ void APP_Tick(void)
 #endif
 	}
 	/* menu time-out (stock setting 0x21: 5-50 s in 5 s steps, then 60 s), not while a value is being edited */
-	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_menu_edit || s_menu_hidden)
+	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_screen == SCREEN_APP || s_menu_edit || s_menu_hidden)
 		s_menu_ms = 0;
 	else if ((s_menu_ms += APP_TICK_MS) >= (gStock.raw[0x21] < 10 ? 5000u * (gStock.raw[0x21] + 1u) : 60000u)) {
 		s_menu_ms = 0;
@@ -2409,7 +2527,11 @@ void APP_Tick(void)
 			RADIO_Beep(1000, 40);
 		if (s_screen == SCREEN_MAIN)
 			key_main(k);
-		else if (s_screen == SCREEN_ABOUT)
+		else if (s_screen == SCREEN_APP) {
+			AppsResult_t r = s_app ? s_app->key(k) : APPS_EXIT;
+			if (r != APPS_STAY)
+				app_close(r);
+		} else if (s_screen == SCREEN_ABOUT)
 			go(SCREEN_MENU);
 		else
 			key_menu(k);
@@ -2423,11 +2545,16 @@ void APP_Tick(void)
 		saving = s_save_due;             /* a change still to be written: stay awake until it is */
 #endif
 		sleep_tick(ptt || s_key_held != KEY_INVALID || RADIO_State() != RADIO_RX || SCAN_Active() || s_tscan
+		           || s_screen == SCREEN_APP
 		           || s_entry_len || s_eot || s_tail_ms || saving);
 	}
 	if (s_asleep)
 		;                                  /* the panel is off: nothing drawn */
-	else if (s_screen == SCREEN_MAIN) {
+	else if (s_screen == SCREEN_APP) {
+		AppsResult_t r = s_app ? s_app->tick(s_redraw) : APPS_EXIT;
+		if (r != APPS_STAY)
+			app_close(r);
+	} else if (s_screen == SCREEN_MAIN) {
 		draw_main();
 	} else if (s_redraw && s_screen == SCREEN_ABOUT)
 		draw_about();

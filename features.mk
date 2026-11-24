@@ -38,7 +38,23 @@ ENABLE_TX_UNLOCK    ?= 1
 # after it move up one number.
 ENABLE_KEYTEST      ?= 1
 
+# Apps (MENU -> APPS; src/app/apps.h), one switch each. Off: the app's file is left out and its menu row goes (the
+# rows after it move up one number). With all off, the APPS section itself goes.
+# Spectrum: the band around the VFO frequency from the receiver's signal strength (src/app/spectrum.c).
+ENABLE_APP_SPECTRUM ?= 1
+# Signal meter for fox hunting: level, S-units, peak, history, tick sound (src/app/meter.c).
+ENABLE_APP_METER    ?= 1
+# Channel book: the channel list with names, pick one (src/app/chbook.c).
+ENABLE_APP_CHANNELS ?= 1
+# System info: battery, calibration, flash, channels, TX lock, uptime, build (src/app/sysinfo.c).
+ENABLE_APP_SYSINFO  ?= 1
+# A snake game (src/app/snake.c).
+ENABLE_APP_SNAKE    ?= 1
+
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
                  -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI) \
                  -DTXLOCK_REGIONS=$(ENABLE_REGIONS) -DTXLOCK_REGION=$(REGION) -DTXLOCK_UNLOCK=$(ENABLE_TX_UNLOCK) \
-                 -DKEYTEST_ENABLE=$(ENABLE_KEYTEST)
+                 -DKEYTEST_ENABLE=$(ENABLE_KEYTEST) \
+                 -DAPP_SPECTRUM_ENABLE=$(ENABLE_APP_SPECTRUM) -DAPP_METER_ENABLE=$(ENABLE_APP_METER) \
+                 -DAPP_CHANNELS_ENABLE=$(ENABLE_APP_CHANNELS) -DAPP_SYSINFO_ENABLE=$(ENABLE_APP_SYSINFO) \
+                 -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE)
