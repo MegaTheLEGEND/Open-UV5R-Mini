@@ -98,8 +98,10 @@ void BK4819_Init(void)
 	BK4819_WriteRegister(BK4819_REG_72, 0x3065);
 	BK4819_WriteRegister(BK4819_REG_5C, 0x5665);
 	BK4819_WriteRegister(BK4819_REG_5D, 0x0F00);
-	/* stock reads REG_40 here and writes back 0x04D2 into it (deviation); kept as a plain write */
-	BK4819_WriteRegister(BK4819_REG_40, 0x04D2);
+	/* TX deviation, as stock (0x01E47142): REG_40 = (REG_40 & 0xF000) | 0x04D2, the top 4 bits kept from the chip's
+	 * reset value. Bit 12 there switches TX deviation on (UV-K5 notes). A plain write of 0x04D2 (until 2026-11-24)
+	 * cleared it, and on a radio transmit sent a bare carrier: no voice, no CTCSS/DCS. */
+	BK4819_WriteRegister(BK4819_REG_40, (uint16_t)((BK4819_ReadRegister(BK4819_REG_40) & 0xF000u) | 0x04D2u));
 	BK4819_WriteRegister(BK4819_REG_75, 0xD42D);
 	BK4819_WriteRegister(BK4819_REG_54, 0x91C1);
 	BK4819_WriteRegister(BK4819_REG_55, 0x3040);
