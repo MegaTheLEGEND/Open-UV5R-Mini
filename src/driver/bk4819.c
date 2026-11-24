@@ -420,16 +420,24 @@ void BK4819_TxOn(void)
 	BK4819_WriteRegister(BK4819_REG_30, 0xC1FE);
 }
 
-/* A local tone through the speaker (key beep): tone 1 on, AF = beep. hz 0 = off. */
+/* A local tone through the speaker (key beep). The tone generator only runs with the transmit audio path on: with the
+ * chip left in receive (REG_30 = 0xBFF1) AF = beep gave hiss, not a tone (radio, 2026-11-24). So, as the UV-K5 open
+ * firmware plays a tone: modulation muted (REG_50), AF = beep, tone 1 on (REG_70, REG_71), then REG_30 = AF DAC |
+ * discriminator | TX DSP (0x0302): no VCO or PA bits, so nothing is radiated. hz 0 = off; the caller puts receive back
+ * (BK4819_RxOn). */
 void BK4819_Beep(uint16_t hz)
 {
 	if (!hz) {
 		BK4819_WriteRegister(BK4819_REG_70, 0);
+		BK4819_TxMute(false);
 		return;
 	}
-	BK4819_WriteRegister(BK4819_REG_70, (uint16_t)(0x8000u | 96u << 8));
-	BK4819_WriteRegister(BK4819_REG_71, (uint16_t)(((uint32_t)hz * 1032444u) / 100000u));
+	BK4819_TxMute(true);
 	BK4819_SetAF(BK4819_AF_BEEP);
+	BK4819_WriteRegister(BK4819_REG_70, (uint16_t)(0x8000u | 96u << 8));
+	BK4819_WriteRegister(BK4819_REG_71, BK4819_ToneWord(hz));
+	BK4819_WriteRegister(BK4819_REG_30, 0x0000);
+	BK4819_WriteRegister(BK4819_REG_30, 0x0302);
 }
 
 /* The chip's own squelch result (RSSI, noise and glitch against REG_78 / REG_4F / REG_4D-4E): REG_0C bit 1, set

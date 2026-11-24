@@ -62,7 +62,7 @@ Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
 Built in but **compiled off** (`RADIO_ENABLE_TX 0` in `src/radio/radio.h`). With it on (and only then), mic gain comes from
 the radio's calibration and VOX works as stock (stock VOX setting; the mic level on PA1). Transmit is guarded:
 
-- only 144–148 and 420–450 MHz, never AM, never airband or 200–300 MHz (no TX path there);
+- only where the TX lock allows (`src/radio/txlock.h`): HAM by default (144–148 and 420–450 MHz in the US), or LOCKED, GMRS / PMR446 / UHF CB by region, HAM + that service, UNLOCKED. Switch on with `=` held: the menu opens at its hidden items, REGION and TX LOCK. Never AM, never airband or 200–300 MHz (no TX path there);
 - the PA bias and gain come from the radio's own calibration (High or Low, by frequency), as the stock app does it;
   no calibration for a frequency (or none at all) means no transmit;
 - a channel's own TX frequency is checked the same way, and receive-only channels never transmit;

@@ -21,5 +21,18 @@ ENABLE_TX           ?= 1
 # power-on (the flash ID read through it) and falls back to bit-banging. Off: always bit-banged, as before.
 ENABLE_LCD_SPI      ?= 1
 
+# Region-specific transmit modes (src/radio/txlock.h): the REGION item (US, EU/UK, AU) and the TX LOCK modes that
+# depend on it (GMRS, PMR446, UHF CB, and each region's amateur band edges). Off: nothing region specific in the
+# image; TX LOCK offers only LOCKED, HAM (144-146 and 430-440 MHz, common to all ITU regions) and UNLOCKED.
+ENABLE_REGIONS      ?= 1
+
+# Lock the image to one region: 0 = chosen in the menu's REGION item; 1 US, 2 EU/UK, 3 AU (needs ENABLE_REGIONS=1).
+REGION              ?= 0
+
+# The UNLOCKED transmit mode (anywhere the radio has a transmit path). Off: the image cannot transmit outside the
+# bands of the other modes. The default mode is always HAM.
+ENABLE_TX_UNLOCK    ?= 1
+
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
-                 -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI)
+                 -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI) \
+                 -DTXLOCK_REGIONS=$(ENABLE_REGIONS) -DTXLOCK_REGION=$(REGION) -DTXLOCK_UNLOCK=$(ENABLE_TX_UNLOCK)

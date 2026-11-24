@@ -74,6 +74,9 @@ everything that uses a changed switch is rebuilt.
 | `ENABLE_CHIRP` | 1 | programming with CHIRP over the cable (UV-5R Mini driver, 115200) |
 | `ENABLE_SAVE` | 1 | saving channel, VFO and settings changes; off: no flash-writing code at all |
 | `ENABLE_TX` | 1 | transmitting, only in the bands allowed by default |
+| `ENABLE_REGIONS` | 1 | region-specific transmit modes: the hidden REGION item (US, EU/UK, AU) and the TX LOCK modes that depend on it (GMRS, PMR446, UHF CB, each region's amateur band edges); 0 = nothing region specific, TX LOCK has only LOCKED, HAM (144–146, 430–440 MHz) and UNLOCKED |
+| `REGION` | 0 | lock the image to one region: 0 = chosen in the menu; 1 US, 2 EU/UK, 3 AU (needs `ENABLE_REGIONS=1`) |
+| `ENABLE_TX_UNLOCK` | 1 | the UNLOCKED TX LOCK mode; 0 = the image can't transmit outside the other modes' bands |
 | `ENABLE_LCD_SPI` | 1 | screen and external flash through SPI1 hardware with DMA (checks itself at power-on, else bit-banged); 0 = always bit-banged |
 | `ENABLE_SCREEN_TEST` | 0 | start-up check of the CHIRP cable set-up (labels on the screen) |
 

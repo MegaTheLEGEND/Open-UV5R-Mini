@@ -12,6 +12,7 @@
 #include "radio/scan.h"
 #include "radio/vox.h"
 #include "radio/tones.h"
+#include "radio/txlock.h"
 #include "board.h"
 #include "driver/bk4819.h"
 #include "driver/io.h"
@@ -73,7 +74,7 @@ void BK4819_TxMonitor(bool on) { tx_mon = on; reg30 = on ? 0xC3FA : 0xC1FE; }
 void SYSTEM_DelayMs(uint32_t ms) { delay_ms += ms; }
 static int tail_mode = -1;     /* -1 none, 0 55 Hz, 1 DCS */
 void BK4819_TailTone(bool dcs, uint8_t level) { (void)level; tail_mode = dcs; }
-void BK4819_Beep(uint16_t hz) { (void)hz; }
+void BK4819_Beep(uint16_t hz) { if (hz) reg30 = 0x0302; }
 void IO_Init(void) {}
 void IO_Amp(uint8_t who, bool on) { (void)who; amp = on; }
 void IO_LedRx(bool on) { led_rx = on; }
@@ -464,6 +465,83 @@ int main(void)
 		RADIO_Apply();
 		CHECK(!RADIO_StartTx(), "no TX on a receive-only channel");
 		gVfo.rx_only = false;
+	}
+
+	/* TX lock modes (radio/txlock.c): which frequencies each allows, and the local services' rules */
+	{
+		static const struct { TxLock_t m; Region_t r; uint32_t f; bool low, narrow; int ok; } L[] = {
+			{ TXL_LOCKED,    REGION_US, 14552000u, true,  false, 0 },
+			{ TXL_HAM,       REGION_US, 14700000u, true,  false, 1 },
+			{ TXL_HAM,       REGION_EU, 14700000u, true,  false, 0 },   /* 2 m ends at 146 in Europe */
+			{ TXL_HAM,       REGION_EU, 43500000u, true,  false, 1 },
+			{ TXL_HAM,       REGION_EU, 44600000u, true,  false, 0 },
+			{ TXL_HAM,       REGION_ITU, 14552000u, true, false, 1 },
+			{ TXL_HAM,       REGION_ITU, 42500000u, true, false, 0 },
+			{ TXL_LOCAL,     REGION_US, 46256250u, false, false, 1 },   /* GMRS 1 */
+			{ TXL_LOCAL,     REGION_US, 46272500u, false, false, 1 },   /* GMRS 22 */
+			{ TXL_LOCAL,     REGION_US, 46256000u, true,  true,  0 },   /* off channel */
+			{ TXL_LOCAL,     REGION_US, 46756250u, false, true,  0 },   /* GMRS 8: high power */
+			{ TXL_LOCAL,     REGION_US, 46756250u, true,  false, 0 },   /* GMRS 8: wide */
+			{ TXL_LOCAL,     REGION_US, 46756250u, true,  true,  1 },
+			{ TXL_LOCAL,     REGION_US, 46760000u, false, false, 1 },   /* repeater input */
+			{ TXL_LOCAL,     REGION_US, 14552000u, true,  false, 0 },
+			{ TXL_HAM_LOCAL, REGION_US, 14552000u, true,  false, 1 },
+			{ TXL_HAM_LOCAL, REGION_US, 46255000u, false, false, 1 },
+			{ TXL_HAM_LOCAL, REGION_US, 46000000u, false, false, 0 },
+			{ TXL_LOCAL,     REGION_EU, 44600625u, true,  true,  1 },   /* PMR446 1 */
+			{ TXL_LOCAL,     REGION_EU, 44619375u, true,  true,  1 },   /* PMR446 16 */
+			{ TXL_LOCAL,     REGION_EU, 44620625u, true,  true,  0 },
+			{ TXL_LOCAL,     REGION_EU, 44600625u, false, true,  0 },
+			{ TXL_LOCAL,     REGION_AU, 47642500u, false, true,  1 },   /* UHF CB 1 */
+			{ TXL_LOCAL,     REGION_AU, 47695000u, false, true,  0 },   /* 22: data */
+			{ TXL_LOCAL,     REGION_AU, 47696250u, false, true,  0 },   /* 62: reserved */
+			{ TXL_LOCAL,     REGION_AU, 47700000u, false, true,  1 },   /* 24 */
+			{ TXL_LOCAL,     REGION_AU, 47741250u, false, true,  1 },   /* 80 */
+			{ TXL_LOCAL,     REGION_AU, 47642500u, false, false, 0 },
+			{ TXL_UNLOCKED,  REGION_US, 15600000u, false, false, 1 },
+		};
+		for (unsigned i = 0; i < sizeof L / sizeof L[0]; i++) {
+			TXLOCK_Set(L[i].m, L[i].r);
+			CHECK(TXLOCK_Mode() == L[i].m && TXLOCK_Region() == L[i].r, "lock %u set", i);
+			const char *why = TXLOCK_Check(L[i].f, L[i].low, L[i].narrow);
+			CHECK((why == 0) == (L[i].ok != 0), "lock %u (%s %s) at %lu: %s", i, TXLOCK_ModeName(L[i].m, L[i].r),
+			      TXLOCK_RegionName(L[i].r), (unsigned long)L[i].f, why ? why : "ok");
+		}
+		TXLOCK_Set(TXL_LOCAL, REGION_ITU);
+		CHECK(TXLOCK_Mode() == TXL_HAM, "no local service without a region: falls back to HAM");
+		TXLOCK_Set(TXL_HAM, REGION_COUNT);
+		CHECK(TXLOCK_Region() == REGION_DEFAULT, "bad region: default");
+
+		/* through the radio: unlocked still needs a transmit path and calibration */
+		TXLOCK_Set(TXL_UNLOCKED, REGION_US);
+		gVfo.power = POWER_LOW;
+		at(15600000u);
+		CHECK(RADIO_StartTx() == RADIO_ENABLE_TX, "unlocked: TX at 156 MHz");
+		RADIO_EndTx();
+		at(22300000u);
+		CHECK(!RADIO_StartTx(), "unlocked: no TX path at 223 MHz");
+		at(12000000u);
+		CHECK(!RADIO_StartTx(), "unlocked: no TX on airband");
+		TXLOCK_Set(TXL_LOCKED, REGION_US);
+		at(14552000u);
+		CHECK(!RADIO_StartTx(), "locked: no TX at 145.52 MHz");
+		TXLOCK_Set(TXL_HAM, REGION_US);
+	}
+
+	/* key beep: the receiver comes back when it ends, and PTT during a beep still transmits */
+	{
+		at(14552000u);
+		RADIO_Beep(1000, 40);
+		CHECK(reg30 == 0x0302, "beep: tone path on (%04X)", reg30);
+		ticks(5);
+		CHECK(reg30 == 0xBFF1, "beep over: receive back (%04X)", reg30);
+		RADIO_Beep(1000, 400);
+		CHECK(RADIO_StartTx() == RADIO_ENABLE_TX, "PTT during a beep");
+		if (RADIO_ENABLE_TX) {
+			ticks(50);
+			CHECK(reg30 == 0xC1FE, "the beep's end leaves transmit alone (%04X)", reg30);
+			RADIO_EndTx();
+		}
 	}
 
 	/* PTT-ID sequence: wait, each code for the on time, silence for the off time, ends at 0xFF or 16 codes */

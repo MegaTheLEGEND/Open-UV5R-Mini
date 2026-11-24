@@ -21,6 +21,7 @@
 #include "radio/vox.h"
 #include "store/settings.h"
 #include "radio/tones.h"
+#include "radio/txlock.h"
 #include "update/update.h"
 #include "board.h"
 #include "bt/bt.h"
@@ -408,8 +409,20 @@ static const SetItem_t SET_ITEMS[] = {
 #define SET_COUNT  ((int)(sizeof SET_ITEMS / sizeof SET_ITEMS[0]))
 #define M_KEYTEST  (M_SET0 + SET_COUNT)
 #define M_ABOUT    (M_KEYTEST + 1)
-#define M_COUNT    (M_ABOUT + 1)
-#define MENU_ROWS 8                      /* rows on screen; the list scrolls */
+#define M_NORMAL   (M_ABOUT + 1)         /* the normal menu: items 1..M_NORMAL */
+/* Hidden items, after the normal ones: shown only when the radio was switched on with = held (the update mode's key
+ * without PTT-A), which opens the menu at the first of them. They go again when the menu is left. */
+#define M_REGION   M_NORMAL
+#define M_TXLOCK   (M_NORMAL + 1)
+#define M_COUNT    (M_NORMAL + 2)
+#define MENU_ROWS  7                     /* list rows on screen; the list scrolls */
+
+static bool s_menu_hidden;               /* the hidden items are in the list */
+
+static int menu_count(void)
+{
+	return s_menu_hidden ? M_COUNT : M_NORMAL;
+}
 
 static const char *menu_name(int i)
 {
@@ -417,7 +430,13 @@ static const char *menu_name(int i)
 		return MENU_NAMES[i];
 	if (i < M_KEYTEST)
 		return SET_ITEMS[i - M_SET0].name;
-	return i == M_KEYTEST ? "KEY TEST" : "ABOUT";
+	switch (i) {
+	case M_KEYTEST: return "KEY TEST";
+	case M_ABOUT:   return "ABOUT";
+	case M_REGION:  return "REGION";
+	case M_TXLOCK:  return "TX LOCK";
+	default:        return "";
+	}
 }
 
 static const char *set_value(const SetItem_t *it, char *b)
@@ -552,6 +571,8 @@ static const char *menu_value(int i, char *b)
 	case M_CHSAVE: case M_CHDEL: case M_SCANADD: return "NO SAVE";
 #endif
 	case M_ABOUT:   return FW_VERSION;
+	case M_REGION:  return TXLOCK_RegionName(TXLOCK_Region());
+	case M_TXLOCK:  return TXLOCK_ModeName(TXLOCK_Mode(), TXLOCK_Region());
 	default:        return "";
 	}
 }
@@ -599,6 +620,20 @@ static void menu_change(int i, int dir)
 		return;
 	}
 	switch (i) {
+	case M_REGION:                       /* fixed by the build: no change */
+		if (TXLOCK_RegionFixed())
+			RADIO_Beep(400, 120);
+		else
+			TXLOCK_Set(TXLOCK_Mode(), (Region_t)((TXLOCK_Region() + REGION_COUNT + dir) % REGION_COUNT));
+		return;
+	case M_TXLOCK: {                     /* the next mode this build and region have */
+		int m = TXLOCK_Mode();
+		do
+			m = (m + TXL_COUNT + (dir ? dir : 1)) % TXL_COUNT;
+		while (!TXLOCK_Available((TxLock_t)m, TXLOCK_Region()));
+		TXLOCK_Set((TxLock_t)m, TXLOCK_Region());
+		return;
+	}
 	case M_MEM:
 		s_mr = s_xf_ok && !s_mr;
 		if (s_mr)
@@ -665,32 +700,64 @@ static void menu_change(int i, int dir)
 
 static void draw_menu(void)
 {
-	char b[12];
+	/* Laid out like the UV-K5 open firmware's menu: a numbered list, the selected item highlighted, its number out of
+	 * the total in the corner, and its value large in a box of its own (green while it is being changed). */
+	char b[12], n[4];
+	int count = menu_count();
+	int top = s_menu_sel < MENU_ROWS ? 0 : s_menu_sel - MENU_ROWS + 1;
 
 	if (s_redraw) {
 		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
-		UI_PrintString("MENU", 52, 2, COLOR_WARN, COLOR_BG, 1);
-		UI_PrintString("UP/DN MENU EXIT", 0, 120, COLOR_DIM, COLOR_BG, 1);
+		ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
+		UI_PrintString("MENU", 2, 2, COLOR_TEXT, COLOR_BAR, 1);
+		ST7735S_FillRect(0, 98, 128, 1, COLOR_DIM);
+		s_menu_top = -1;
 	}
-	int top = s_menu_sel < MENU_ROWS ? 0 : s_menu_sel - MENU_ROWS + 1;
-
+	/* NN/MM, top right */
+	{
+		char c[8], *p = c;
+		const char *q = UI_FormatDec(n, (uint32_t)s_menu_sel + 1u, 2);
+		*p++ = q[0]; *p++ = q[1]; *p++ = '/';
+		q = UI_FormatDec(n, (uint32_t)count, 2);
+		*p++ = q[0]; *p++ = q[1]; *p = 0;
+		UI_PrintString(c, 96, 2, s_menu_sel >= M_NORMAL ? COLOR_WARN : COLOR_DIM, COLOR_BAR, 1);
+	}
 	if (top != s_menu_top) {
 		s_menu_top = top;
-		ST7735S_FillRect(0, 14, 128, 12 * MENU_ROWS + 2, COLOR_BG);
+		ST7735S_FillRect(0, 12, 128, 12 * MENU_ROWS + 2, COLOR_BG);
 	}
-	for (int i = top; i < M_COUNT && i < top + MENU_ROWS; i++) {
-		uint8_t y = (uint8_t)(16 + 12 * (i - top));
+	for (int i = top; i < count && i < top + MENU_ROWS; i++) {
+		uint8_t y = (uint8_t)(15 + 12 * (i - top));
 		bool sel = i == s_menu_sel;
-		uint16_t bg = sel ? COLOR_BAR : COLOR_BG;
-		ST7735S_FillRect(0, y - 1, 128, 10, bg);
-		UI_PrintString(menu_name(i), 2, y, COLOR_TEXT, bg, 1);
-		UI_PrintString(menu_value(i, b), 76, y, sel && s_menu_edit ? COLOR_RX : COLOR_WARN, bg, 1);
+		uint16_t bg = sel ? COLOR_ACCENT : COLOR_BG;
+		ST7735S_FillRect(0, y - 2, 128, 11, bg);
+		UI_PrintString(UI_FormatDec(n, (uint32_t)i + 1u, 2), 3, y,
+		               sel ? COLOR_TEXT : i >= M_NORMAL ? COLOR_WARN : COLOR_DIM, bg, 1);
+		UI_PrintString(menu_name(i), 22, y, COLOR_TEXT, bg, 1);
+	}
+	/* the selected item's value, large if it fits */
+	{
+		const char *v = menu_value(s_menu_sel, b);
+		unsigned len = 0;
+		uint16_t fg = s_menu_edit ? COLOR_RX : COLOR_WARN;
+		while (v[len])
+			len++;
+		ST7735S_FillRect(0, 100, 128, 28, COLOR_BG);
+		if (len <= 10)
+			UI_PrintString(v, (uint8_t)((128 - 12 * len) / 2), 107, fg, COLOR_BG, 2);
+		else
+			UI_PrintString(v, (uint8_t)(len < 21 ? (128 - 6 * len) / 2 : 0), 110, fg, COLOR_BG, 1);
 	}
 }
 
 /* ------------------------------------------------------------------------------------------- keys */
 static void go(Screen_t s)
 {
+	if (s == SCREEN_MAIN && s_menu_hidden) {
+		s_menu_hidden = false;           /* the hidden items go with the menu */
+		if (s_menu_sel >= M_NORMAL)
+			s_menu_sel = 0;
+	}
 	s_screen = s;
 	s_redraw = true;
 }
@@ -1042,7 +1109,7 @@ static void key_menu(KEY_Code_t k)
 		if (s_menu_edit)
 			menu_change(s_menu_sel, -dir);
 		else
-			s_menu_sel = (uint8_t)((s_menu_sel + M_COUNT + dir) % M_COUNT);
+			s_menu_sel = (uint8_t)((s_menu_sel + menu_count() + dir) % menu_count());
 	} else if (d >= 0 && s_menu_edit && s_menu_sel == M_OFFSET) {
 		/* typed in kHz: 6 0 0 = 600 kHz, 5 0 0 0 = 5 MHz */
 		int sh = vfo_shift();
@@ -1072,6 +1139,7 @@ static void key_menu(KEY_Code_t k)
 
 /* press events, with repeat for UP/DOWN after 0.5 s */
 static KEY_Code_t s_key_held = KEY_INVALID;
+static bool       s_wait_release;
 
 static KEY_Code_t key_event(void)
 {
@@ -1080,6 +1148,12 @@ static KEY_Code_t key_event(void)
 	KEY_Code_t k = KEYBOARD_Poll();
 
 	s_key_held = k;
+	if (s_wait_release) {                    /* a key held since power-on: nothing until it is let go */
+		if (k == KEY_INVALID)
+			s_wait_release = false;
+		last = KEY_INVALID;
+		return KEY_INVALID;
+	}
 	if (k != last) {
 		last = k;
 		held = 0;
@@ -1108,6 +1182,8 @@ enum {
 	EXT_VOLUME = 1,                  /* 0-15 */
 	EXT_CH_A = 2,                    /* 2 bytes each, little-endian, 0-998; FFFF none (A at 2, B at 4) */
 	EXT_MOD_A = 6,                   /* Modulation_t (A at 6, B at 7) */
+	EXT_TXLOCK = 8,                  /* TxLock_t + 1 (radio/txlock.h); 0 = not set */
+	EXT_REGION = 9,                  /* Region_t + 1; 0 = not set */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -1130,6 +1206,9 @@ static void start_from_stock(void)
 		gVfo.squelch = gStock.raw[SET_SQUELCH];
 	if (ext_ok() && gStock.ext[EXT_VOLUME] <= 15)
 		gVfo.volume = gStock.ext[EXT_VOLUME];
+	/* stored + 1, so the 0 of a log saved before these bytes existed means "not set"; bad values fall back to HAM */
+	if (ext_ok() && gStock.ext[EXT_TXLOCK] && gStock.ext[EXT_REGION])
+		TXLOCK_Set((TxLock_t)(gStock.ext[EXT_TXLOCK] - 1u), (Region_t)(gStock.ext[EXT_REGION] - 1u));
 	s_side[0].vfo = s_side[1].vfo = gVfo;
 	s_side[0].ch = s_side[1].ch = -1;
 	for (uint8_t side = 0; side < 2; side++) {
@@ -1272,6 +1351,8 @@ static void save_now(void)
 	side_save();
 	gStock.ext[EXT_MAGIC] = EXT_MAGIC_VALUE;
 	gStock.ext[EXT_VOLUME] = gVfo.volume;
+	gStock.ext[EXT_TXLOCK] = (uint8_t)(TXLOCK_Mode() + 1u);
+	gStock.ext[EXT_REGION] = (uint8_t)(TXLOCK_Region() + 1u);
 	for (int i = 0; i < 2; i++) {
 		uint16_t ch = s_side[i].ch < 0 ? 0xFFFFu : (uint16_t)s_side[i].ch;
 		gStock.ext[EXT_CH_A + 2 * i] = (uint8_t)ch;
@@ -1342,8 +1423,11 @@ void APP_Init(void)
 	if (UPDATE_Requested())
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
 	BK4819_Init();
+	/* = held at power-on without PTT-A (the update mode's check, update_radio.c, without the PTT): the menu, opened
+	 * at its hidden items (region, TX lock). Read here, as UPDATE_Requested reads it: rows all low, PC2 low. */
+	bool hidden_menu = !KEYBOARD_IsPttPressed() && !GPIO_CheckBit(PIN_KEY_COL0);
 	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
-	if (!KEYBOARD_IsPttPressed()) {
+	if (!hidden_menu && !KEYBOARD_IsPttPressed()) {
 		KEY_Code_t k0 = KEYBOARD_Poll();
 		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP)
 			KEYTEST_Run();
@@ -1373,6 +1457,13 @@ void APP_Init(void)
 #endif
 	BT_Init(0);
 	go(SCREEN_MAIN);
+	if (hidden_menu) {
+		s_menu_hidden = true;
+		s_menu_sel = M_NORMAL;               /* item M_NORMAL + 1, the first hidden one */
+		s_menu_edit = 0;
+		s_wait_release = true;               /* the = still held is not a press */
+		go(SCREEN_MENU);
+	}
 }
 
 /* Backlight as the stock setting 0x03: 0 always on, 1-4 = 5/10/15/20 s after the last key, PTT or signal. */
@@ -1600,7 +1691,7 @@ void APP_Tick(void)
 #endif
 	}
 	/* menu time-out (stock setting 0x21: 5-50 s in 5 s steps, then 60 s), not while a value is being edited */
-	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_menu_edit)
+	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_menu_edit || s_menu_hidden)
 		s_menu_ms = 0;
 	else if ((s_menu_ms += APP_TICK_MS) >= (gStock.raw[0x21] < 10 ? 5000u * (gStock.raw[0x21] + 1u) : 60000u)) {
 		s_menu_ms = 0;

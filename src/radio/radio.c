@@ -2,6 +2,7 @@
 #include "radio/radio.h"
 #include "store/calib.h"
 #include "radio/tones.h"
+#include "radio/txlock.h"
 #include "board.h"
 #include "driver/bk4819.h"
 #include "driver/gpio.h"
@@ -109,6 +110,11 @@ void RADIO_Apply(void)
 		gVfo.freq = FREQ_MAX;
 	if (s_state == RADIO_TX)
 		return;
+	if (s_beep_ms) {                   /* retuning puts receive back on, which would leave the beep half set up */
+		s_beep_ms = 0;
+		BK4819_Beep(0);
+		IO_Amp(AUDIO_BEEP, false);
+	}
 	BK4819_SetFrequency(gVfo.freq);
 	BK4819_SetFilterBandwidth(gVfo.narrow || RADIO_IsAm());
 	BK4819_SetVolume(gVfo.volume);
@@ -178,6 +184,18 @@ bool RADIO_Carrier(void)
 	return BK4819_SquelchOpen() || (gVfo.squelch && s_state == RADIO_RX_OPEN);
 }
 
+/* The beep's tone off and receive back on (BK4819_Beep turns the chip's receive path off while it plays). */
+static void beep_end(void)
+{
+	s_beep_ms = 0;
+	BK4819_Beep(0);
+	IO_Amp(AUDIO_BEEP, false);
+	if (s_state != RADIO_TX) {
+		BK4819_RxOn();
+		audio(s_state == RADIO_RX_OPEN);
+	}
+}
+
 void RADIO_Tick(void)
 {
 	if (s_mute_ms && (s_mute_ms = s_mute_ms > 10u ? (uint16_t)(s_mute_ms - 10u) : 0) == 0 && s_state == RADIO_RX_OPEN)
@@ -185,15 +203,10 @@ void RADIO_Tick(void)
 	if (s_beep_ms) {
 		if (s_beep_ms > 10u)
 			s_beep_ms -= 10u;
-		else {
-			s_beep_ms = 0;
-			BK4819_Beep(0);
-			IO_Amp(AUDIO_BEEP, false);
-			if (s_state != RADIO_TX)
-				audio(s_state == RADIO_RX_OPEN);
-		}
+		else
+			beep_end();
 	}
-	if (s_state == RADIO_TX)
+	if (s_state == RADIO_TX || s_beep_ms)       /* the receiver is off while a beep plays */
 		return;
 	s_rssi = BK4819_GetRSSI();
 	if (gVfo.squelch == 0) {
@@ -252,12 +265,8 @@ char RADIO_DtmfPoll(void)
 uint16_t RADIO_Rssi(void) { return s_rssi; }
 
 /* ------------------------------------------------------------------------------------------- transmit
- * Only inside these amateur bands (AGENTS.md rule 5), and only through a transmit path the hardware has. */
-static const struct { uint32_t lo, hi; } TX_BANDS[] = {
-	{ 14400000u, 14800000u },   /* 2 m */
-	{ 42000000u, 45000000u },   /* 70 cm */
-};
-
+ * Only where the TX lock allows (radio/txlock.h; the amateur bands by default, AGENTS.md rule 5), and only through
+ * a transmit path the hardware has. */
 static uint32_t tx_freq(void)
 {
 	return gVfo.tx_freq ? gVfo.tx_freq : gVfo.freq;
@@ -267,7 +276,7 @@ const char *RADIO_TxRefusal(void)
 {
 	uint32_t f = tx_freq();
 	Band_t b = band_of(f);
-	bool band = false;
+	const char *why;
 
 	if (!RADIO_ENABLE_TX)
 		return "TX OFF IN BUILD";
@@ -275,11 +284,10 @@ const char *RADIO_TxRefusal(void)
 		return "RX ONLY CHANNEL";
 	if (RADIO_IsAm())
 		return "NO TX IN AM";
-	for (unsigned i = 0; i < sizeof TX_BANDS / sizeof TX_BANDS[0]; i++)
-		if (f >= TX_BANDS[i].lo && f < TX_BANDS[i].hi)
-			band = true;
-	if (!band || b == BAND_AIR || b == BAND_220)
-		return "NO TX: NOT HAM BAND";
+	if ((why = TXLOCK_Check(f, gVfo.power == POWER_LOW, gVfo.narrow)) != 0)
+		return why;
+	if (b == BAND_AIR || b == BAND_220)
+		return "NO TX PATH HERE";
 	if (!CALIB_Present())
 		return "NO TX: NO CALIB";
 	if (CALIB_PaBias(f, gVfo.power) == 0)       /* no calibration for this frequency: no TX */
@@ -293,6 +301,8 @@ bool RADIO_StartTx(void)
 {
 	if (s_state == RADIO_TX || !RADIO_TxAllowed())
 		return false;
+	if (s_beep_ms)
+		beep_end();
 	audio(false);
 	BK4819_DtmfRxOff();
 	s_state = RADIO_TX;
