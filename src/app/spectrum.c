@@ -157,16 +157,18 @@ static void leave(void)
 	RADIO_ProbeEnd();
 }
 
-/* the typed digits as the new centre (missing ones 0), if it is a frequency the radio has */
-static void typed_tune(void)
+/* the typed digits as the new centre (missing ones 0), if it is a frequency the receiver has (18-660 MHz) */
+static bool typed_tune(void)
 {
 	uint32_t khz = s_khz;
 
 	for (int k = s_typed; k < 6; k++)
 		khz *= 10u;
 	s_typed = 0;
-	if (khz * 100u >= FREQ_MIN && khz * 100u <= FREQ_MAX)
-		s_centre = khz * 100u;
+	if (khz * 100u < FREQ_MIN || khz * 100u > FREQ_MAX)
+		return false;
+	s_centre = khz * 100u;
+	return true;
 }
 
 static AppsResult_t key(KEY_Code_t k)
@@ -180,15 +182,13 @@ static AppsResult_t key(KEY_Code_t k)
 			draw_peak();
 			return APPS_STAY;
 		}
-		typed_tune();
+		goto tune;
 	} else if (s_typed && (k == KEY_ACT_EXIT || k == KEY_ACT_MENU)) {
 		if (k == KEY_ACT_MENU)
-			typed_tune();
+			goto tune;
 		s_typed = 0;
-		if (k == KEY_ACT_EXIT) {
-			draw_peak();
-			return APPS_STAY;
-		}
+		draw_peak();
+		return APPS_STAY;
 	} else if (k == KEY_ACT_EXIT)
 		return APPS_EXIT;
 	else if (k == KEY_ACT_MENU) {
@@ -211,6 +211,15 @@ static AppsResult_t key(KEY_Code_t k)
 		return APPS_STAY;
 	} else
 		return APPS_STAY;
+	goto redraw;
+tune:
+	/* a typed frequency: the sweep starts again round it. (Until 2026-11-24 the typed centre was set but the sweep
+	 * and labels were not redrawn, so on a radio it looked as if typing did nothing.) */
+	if (!typed_tune()) {
+		UI_SpectrumPeak("18-660 MHZ ONLY", true);
+		return APPS_STAY;
+	}
+redraw:
 	restart();
 	draw_frame();
 	draw_peak();
