@@ -399,6 +399,28 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
   no FM receiver code (`fm_inside` is a library only in JieLi's sound-box SDKs, licence unknown), so the DSP has to
   be understood from the stock code and written fresh.
 
+#### FM receiver, traced (2026-11-23)
+
+`python emu/fm_trace.py --isa ../pi32v2-isa [--lo 100000 --mode 0]` boots stock in the emulator, runs the FM open
+routine (and the tuning routine) and prints every register write. The emulator has no FM or analog block, so values
+that depend on read-backs (calibration results) are not real; the order and fixed values are.
+
+| Step | Stock | What it does |
+| --- | --- | --- |
+| Memory | `0x01E3D184` | three buffers: 6040 bytes (state, `0x198C0+320`), 36 (`+332`), 4096 (`+324`, the sample buffer); band 8750–10800, step 100 |
+| Clock | `0x01E3D25E` | `0x1E0010` bit 22 on (FM clock; tuning sets bits 22–23 = 1 again) |
+| Analog block | `0x01E3CCCE`.. | `0x1E1920` = 0x371D524D, `0x1E1948` = 0x001963CC, `0x1E194C` = 0xFE7FAC00, then `0x1E1958`–`0x1E196C` (the synthesizer) |
+| VCO calibration | `0x01E3D6AC`–`0x01E3D7C4` | sweeps the VCO from 3685 MHz in 5 MHz steps (47 at most): divider = f / 48 MHz, integer << 4 into `0x1E1968`, fraction × 2^24 into `0x1E196C`, reset pulse on `0x1E1958` bit 14, 600 µs, then reads lock status `0x1E1950` bits 5–6; stores the VCO's low and high edges in MHz at `0x198C0+78` / `+80` |
+| Band table | `sub_01E3CF02(n)`, n = 15..9 | threshold(n) = ((high / n) >> 2 + (low / (n − 1)) / 4) / 2 MHz, at `0x198C0+82`..`+94` |
+| VCO cap table | `sub_01E3CF2A` | 80 VCO frequencies at `0x198C0+4540`, cap codes at `+2083`: the first entry above the wanted VCO gives the code (`0x1E1958` bits 26–31 and `0x1E195C` bit 0) |
+| Tune | `sub_01E3CF56(kHz, mode)` | LO = f − 1875 (mode 0), − 2143 (1) or − 1500 (2) kHz (a low IF); mode also sets `0x1F1708` bits 2–3 = 3 / 1 / 2. Multiplier 4n from the band table (60 at the bottom, 36 above `+94`); VCO = 4n × LO; `0x1E195C` gets the band bits (1152–1920), divider as in calibration, then the reset pulse; `0x1F1750` = integer << 24 \| fraction |
+| Front end | `0x01E3DB10`.. | `JL_FM` CON = 0x4001, then 0x4009; `+0xC` (ADC_CON1) = 0x80000000; 16 words into HF_CRAM (`+0x18`, a filter, values fixed); ADC_CON = 0x1E; ADC_CON1 = 0x8007F9FE; BASE = the 4096-byte buffer; HF_CON1 = 1, then 0x2001; ADC_CON = 0x1F; CON = 0x4019; audio `0x1E2F00` = 0x01000000 |
+| Seek | RAM `0x02003950` | tunes (`sub_01E3CF56`), then reads ADC_CON ten times: bits 24–31 and 16–23 (signed levels), bits 5–15; keeps the best of each; used for station search |
+| Samples | interrupt 43, RAM `0x02003D8A` | clears HF_CON1 bit 6 (pending), then for each 2 KB half of the buffer runs `0x02003DF2` (~600 instructions; helpers `0x02004DC0`, `0x02004FC4`, app `0x01E34818`–`0x01E34ACC`) and hands the result on through `0x01E57190`: demodulation and filtering in software, output to the audio DAC |
+
+Still unread: the DSP itself (`0x02003DF2`), what `0x01E57190` does with the audio, the DAC set-up and how the DAC's
+output reaches the speaker alongside the BK4819 (the LM2904 mixer, RE-NOTES "Audio").
+
 ### Clocks, timer tick, watchdog
 
 | What | Found |
