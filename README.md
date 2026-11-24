@@ -44,12 +44,24 @@ the file against its pinned SHA-256 and refuses any other file.
 | CHIRP and Codeplug Studio programming | to do: CHIRP's existing UV-5R Mini driver should work unchanged |
 | Own firmware: cable update mode (so a radio can always be flashed again) | **works on one radio at 9600** (2026-11-22): ours installed and stock put back over the cable, both ways twice; 38400 and the official updater still to do |
 | Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
-| Own firmware: transmit, VOX, PTT-ID, roger beep | written, compiled off until receive and the PA calibration are proven |
-| Own firmware: saving settings | written, compiled off |
+| Own firmware: transmit, with a TX lock (ham, GMRS / PMR446 / UHF CB by region, unlocked) | **transmits on a radio** (2026-11-24); VOX, PTT-ID and roger beep written, not all tried |
+| Own firmware: saving settings and channels | on; PC-tested |
 | Own firmware: clocks, timer interrupts, FM broadcast radio, voice prompts | to do |
 | Bluetooth | to do; optional, through JieLi's own libraries |
 
 Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+## Screenshots
+
+Drawn on a PC by the firmware's own screen code (`python tests/ui_preview.py --screenshots`), 4x size.
+
+| Main screen | Receiving, long channel name on B | Typing a frequency |
+| --- | --- | --- |
+| ![Main screen](docs/screenshots/main_idle.png) | ![Receiving](docs/screenshots/main_rx.png) | ![Typing a frequency](docs/screenshots/main_entry.png) |
+
+| Menu | Hidden items (switched on with `=` held) |
+| --- | --- |
+| ![Menu](docs/screenshots/menu.png) | ![Hidden menu items](docs/screenshots/menu_hidden.png) |
 
 ## Find your way
 

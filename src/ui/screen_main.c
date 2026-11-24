@@ -66,13 +66,10 @@ static void draw_status(const UiMain_t *v, bool full)
 
 	if (full) {
 		ST7735S_FillRect(0, 0, LCD_WIDTH, BAR_H, COLOR_BAR);
-		UI_DrawIcon(&ICON_STATUS_VOLUME, 2, 1, COLOR_DIM, COLOR_BAR);
-		UI_DrawIcon(&ICON_STATUS_SQUELCH, 27, 1, COLOR_DIM, COLOR_BAR);
+		UI_DrawIcon(&ICON_STATUS_SQUELCH, 2, 1, COLOR_DIM, COLOR_BAR);   /* no volume: the radio has a knob */
 	}
-	if (full || v->volume != o->volume)
-		UI_PrintString(UI_FormatDec(b, v->volume, 2), 11, 2, COLOR_TEXT, COLOR_BAR, 1);
 	if (full || v->squelch != o->squelch)
-		UI_PrintString(UI_FormatDec(b, v->squelch, 1), 42, 2, COLOR_TEXT, COLOR_BAR, 1);
+		UI_PrintString(UI_FormatDec(b, v->squelch, 1), 17, 2, COLOR_TEXT, COLOR_BAR, 1);
 	if (full || v->dual_watch != o->dual_watch)
 		flag_icon(&ICON_STATUS_DUALWATCH, 51, v->dual_watch, COLOR_INFO);
 	if (full || v->scan != o->scan || v->scan_hold != o->scan_hold)

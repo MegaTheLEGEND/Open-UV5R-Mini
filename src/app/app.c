@@ -37,6 +37,7 @@
 #include "driver/system.h"
 #include "ui/helper.h"
 #include "ui/screen_main.h"
+#include "ui/screen_menu.h"
 #include "ui/theme.h"
 
 
@@ -50,7 +51,6 @@ static uint16_t s_lamp_ms;
 static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
-static int      s_menu_top = -1;
 static uint16_t s_off_ticks, s_batt_ticks;
 static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
 static uint32_t s_idle_ms;                /* main screen with no key, for auto lock */
@@ -129,7 +129,6 @@ static Side_t   s_side[2];
 static uint8_t  s_active;                /* 0 = A, 1 = B */
 static bool     s_peek;                  /* dual watch: tuned to the other side for a moment */
 static bool     s_peek_held;             /* ... and it opened */
-static uint16_t s_dw_peeks, s_dw_holds;  /* dual watch test counts (shown on the bottom line) */
 static void side_save(void);
 
 static char *put_num(char *p, unsigned n)          /* decimal, no padding; returns the end */
@@ -325,7 +324,6 @@ static void main_view(UiMain_t *v)
 		v->entry[i] = 0;
 	}
 
-	v->volume = gVfo.volume;
 	v->squelch = gVfo.squelch;
 	v->dual_watch = gStock.raw[SET_DUAL_WATCH] != 0;
 	v->scan = SCAN_Active() || SCAN_Holding();
@@ -363,27 +361,8 @@ static void main_view(UiMain_t *v)
 		*p++ = 'D'; *p++ = 'T'; *p++ = 'M'; *p++ = 'F'; *p++ = ' ';
 		copy_text(p, s_dtmf, 17);
 		v->bottom_color = COLOR_WARN;
-	} else if (s_entry_len)
-		copy_text(v->bottom, "# ENTER  EXIT CLEAR", sizeof v->bottom);
-	else if (gStock.raw[SET_DUAL_WATCH]) {
-		/* dual watch test line: how many times it looked at the other side, and how many times it stayed there
-		 * for a signal (radio, 2026-11-22: dual watch never received; this says whether it switches at all) */
-		char *p = v->bottom;
-		*p++ = 'D'; *p++ = 'W'; *p++ = ' '; *p++ = 'P';
-		p = put_num(p, s_dw_peeks % 10000u);
-		*p++ = ' '; *p++ = 'H';
-		p = put_num(p, s_dw_holds % 10000u);
-		*p = 0;
-	}
-	else if (s_mr)
-		copy_text(v->bottom, "MENU *BW  HOLD# LOCK", sizeof v->bottom);
-	else {
-		char *p = v->bottom;
-		const char *q = "STEP ";
-		while (*q)
-			*p++ = *q++;
-		copy_text(p, fmt_step(b, RADIO_Steps[gVfo.step]), 8);
-	}
+	} else
+		v->bottom[0] = 0;               /* only DTMF and notifications here (Sean, 2026-11-24): no hints */
 }
 
 static void draw_main(void)
@@ -448,7 +427,6 @@ static const SetItem_t SET_ITEMS[] = {
 #define M_REGION   M_NORMAL
 #define M_TXLOCK   (M_NORMAL + 1)
 #define M_COUNT    (M_NORMAL + 2)
-#define MENU_ROWS  7                     /* list rows on screen; the list scrolls */
 
 static bool s_menu_hidden;               /* the hidden items are in the list */
 
@@ -735,54 +713,18 @@ static void menu_change(int i, int dir)
 
 static void draw_menu(void)
 {
-	/* Laid out like the UV-K5 open firmware's menu: a numbered list, the selected item highlighted, its number out of
-	 * the total in the corner, and its value large in a box of its own (green while it is being changed). */
-	char b[12], n[4];
-	int count = menu_count();
-	int top = s_menu_sel < MENU_ROWS ? 0 : s_menu_sel - MENU_ROWS + 1;
+	UiMenu_t m;
+	char b[12];
 
-	if (s_redraw) {
-		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
-		ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
-		UI_PrintString("MENU", 2, 2, COLOR_TEXT, COLOR_BAR, 1);
-		ST7735S_FillRect(0, 98, 128, 1, COLOR_DIM);
-		s_menu_top = -1;
-	}
-	/* NN/MM, top right */
-	{
-		char c[8], *p = c;
-		const char *q = UI_FormatDec(n, (uint32_t)s_menu_sel + 1u, 2);
-		*p++ = q[0]; *p++ = q[1]; *p++ = '/';
-		q = UI_FormatDec(n, (uint32_t)count, 2);
-		*p++ = q[0]; *p++ = q[1]; *p = 0;
-		UI_PrintString(c, 96, 2, s_menu_sel >= M_NORMAL ? COLOR_WARN : COLOR_DIM, COLOR_BAR, 1);
-	}
-	if (top != s_menu_top) {
-		s_menu_top = top;
-		ST7735S_FillRect(0, 12, 128, 12 * MENU_ROWS + 2, COLOR_BG);
-	}
-	for (int i = top; i < count && i < top + MENU_ROWS; i++) {
-		uint8_t y = (uint8_t)(15 + 12 * (i - top));
-		bool sel = i == s_menu_sel;
-		uint16_t bg = sel ? COLOR_ACCENT : COLOR_BG;
-		ST7735S_FillRect(0, y - 2, 128, 11, bg);
-		UI_PrintString(UI_FormatDec(n, (uint32_t)i + 1u, 2), 3, y,
-		               sel ? COLOR_TEXT : i >= M_NORMAL ? COLOR_WARN : COLOR_DIM, bg, 1);
-		UI_PrintString(menu_name(i), 22, y, COLOR_TEXT, bg, 1);
-	}
-	/* the selected item's value, large if it fits */
-	{
-		const char *v = menu_value(s_menu_sel, b);
-		unsigned len = 0;
-		uint16_t fg = s_menu_edit ? COLOR_RX : COLOR_WARN;
-		while (v[len])
-			len++;
-		ST7735S_FillRect(0, 100, 128, 28, COLOR_BG);
-		if (len <= 10)
-			UI_PrintString(v, (uint8_t)((128 - 12 * len) / 2), 107, fg, COLOR_BG, 2);
-		else
-			UI_PrintString(v, (uint8_t)(len < 21 ? (128 - 6 * len) / 2 : 0), 110, fg, COLOR_BG, 1);
-	}
+	m.count = (uint8_t)menu_count();
+	m.sel = s_menu_sel;
+	m.top = UI_MenuTop(s_menu_sel);
+	m.hidden_from = M_NORMAL;
+	m.edit = s_menu_edit != 0;
+	for (int r = 0; r < UI_MENU_ROWS; r++)
+		m.name[r] = m.top + r < m.count ? menu_name(m.top + r) : 0;
+	m.value = menu_value(s_menu_sel, b);
+	UI_MenuDraw(&m, s_redraw);
 }
 
 /* ------------------------------------------------------------------------------------------- keys */
@@ -1343,7 +1285,6 @@ static void dw_begin(void)
 	RADIO_Apply();
 	s_peek = true;
 	s_peek_held = false;
-	s_dw_peeks++;
 }
 
 static void dw_end(void)
@@ -1367,7 +1308,6 @@ static void dw_tick(bool busy)
 		break;
 	case DW_HELD:
 		s_peek_held = true;
-		s_dw_holds++;
 		break;
 	default:
 		break;

@@ -113,7 +113,7 @@ then `tools/lift/lift.py --variant nrfb`.
 ## Checks before you commit
 
 - `make check` (also checks the generated icons are up to date), and `make TOOLCHAIN=…` if you touched firmware code.
-- Screen or icons changed: `python tests/ui_preview.py`, then look at `build/ui/*.png`.
+- Screen or icons changed: `python tests/ui_preview.py`, then look at `build/ui/*.png`; `--screenshots` also refreshes `docs/screenshots/` (the README pictures).
 - Update mode or flasher changed: `python tests/update_host.py`; UART driver changed: `python tests/uart_host.py`; radio core changed: `python tests/radio_host.py`; stock settings reader or writer changed: `python tests/settings_host.py`; CHIRP programming (`src/app/program.c`) changed: `python tests/chirp_host.py` (needs a CHIRP checkout); flasher guard or update-mode marker changed: `python tests/flasher_guard.py`; SDK build's C library (`tools/sdk/libc`) changed: `python tests/sdk_libc_host.py` (runs in WSL on Windows).
 - Lifter changed: `python tools/lift/insn_test.py` (0 must disagree) and
   `python tools/lift/func_test.py --steps 3000000` (all must match).

@@ -1,9 +1,10 @@
-/* PC preview of the main screen: src/ui/screen_main.c drawn into a framebuffer through a stand-in LCD, for a few
+/* PC preview of the screens: src/ui/screen_main.c and screen_menu.c drawn into a framebuffer through a stand-in LCD, for a few
  * made-up scenes. tests/ui_preview.py builds it, checks the drawing stays on screen, and writes PNGs. */
 #include <stdio.h>
 #include <string.h>
 #include "driver/st7735s.h"
 #include "ui/screen_main.h"
+#include "ui/screen_menu.h"
 #include "ui/theme.h"
 
 bool test_pins[128];
@@ -81,8 +82,8 @@ int main(int argc, char **argv)
 	v.side[0].high_power = true;
 	v.side[1].narrow = true;
 	v.side[0].meter = 1;
-	v.volume = 10; v.squelch = 3; v.battery = 3;
-	strcpy(v.bottom, "STEP 12.5K");
+	v.squelch = 3; v.battery = 3;
+	v.bottom[0] = 0;
 	v.bottom_color = COLOR_DIM;
 	UI_MainDraw(&v, true);
 	snprintf(path, sizeof path, "%s/main_idle.ppm", dir);
@@ -110,8 +111,8 @@ int main(int argc, char **argv)
 	v.battery = 1;
 	v.battery_low = true;
 	v.warning = true;
-	strcpy(v.bottom, "MENU *BW #LAMP");
-	v.bottom_color = COLOR_DIM;
+	strcpy(v.bottom, "CHANNEL SAVED");
+	v.bottom_color = COLOR_ACCENT;
 	UI_MainDraw(&v, false);
 	snprintf(path, sizeof path, "%s/main_entry.ppm", dir);
 	dump(path);
@@ -127,6 +128,39 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
+	/* the menu (src/ui/screen_menu.c): a normal item, then the hidden items after a start with = held, one being
+	 * changed. Names as the app has them around those places. */
+	{
+		static const char *const NAMES[] = { "A/B", "DUAL WATCH", "MEMORY", "SCAN", "SCAN MODE", "SQUELCH",
+		                                     "VOLUME", "STEP" };
+		static const char *const HIDDEN[] = { "DTMF HOLD", "AUTO LOCK", "MENU EXIT", "KEY TEST", "ABOUT", "REGION",
+		                                      "TX LOCK" };
+		UiMenu_t m;
+		memset(&m, 0, sizeof m);
+		m.count = 37;
+		m.hidden_from = 37;
+		m.sel = 5;
+		m.top = UI_MenuTop(m.sel);
+		for (int r = 0; r < UI_MENU_ROWS; r++)
+			m.name[r] = NAMES[m.top + r];
+		m.value = "3";
+		UI_MenuDraw(&m, true);
+		snprintf(path, sizeof path, "%s/menu.ppm", dir);
+		dump(path);
+
+		m.count = 39;
+		m.hidden_from = 37;
+		m.sel = 38;
+		m.top = UI_MenuTop(m.sel);
+		for (int r = 0; r < UI_MENU_ROWS; r++)      /* items 33-39 */
+			m.name[r] = HIDDEN[r];
+		m.value = "HAM+GMRS";
+		m.edit = true;
+		UI_MenuDraw(&m, true);
+		snprintf(path, sizeof path, "%s/menu_hidden.ppm", dir);
+		dump(path);
+	}
+
 	if (bad) {
 		printf("FAIL: %u pixels or windows off the screen\n", bad);
 		return 1;

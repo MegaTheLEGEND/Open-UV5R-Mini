@@ -3,6 +3,7 @@ r"""Build and run tests/ui_preview.c (src/ui/screen_main.c with a stand-in LCD) 
 draws as PNGs (4x size) into build/ui/, to look at before anything goes on a radio.
 
   python tests/ui_preview.py
+  python tests/ui_preview.py --screenshots     # also copy them to docs/screenshots/ (README pictures)
 """
 import os
 import struct
@@ -39,7 +40,7 @@ def main():
     exe = os.path.join(OUT, 'ui_preview.exe')
     subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
                     '-I', os.path.join(ROOT, 'tests', 'stubs'), '-I', SRC,
-                    os.path.join(ROOT, 'tests', 'ui_preview.c'), os.path.join(SRC, 'ui', 'screen_main.c'),
+                    os.path.join(ROOT, 'tests', 'ui_preview.c'), os.path.join(SRC, 'ui', 'screen_main.c'), os.path.join(SRC, 'ui', 'screen_menu.c'),
                     os.path.join(SRC, 'ui', 'helper.c'), os.path.join(SRC, 'ui', 'font.c'),
                     os.path.join(SRC, 'ui', 'icons.c'), '-o', exe], check=True)
     r = subprocess.run([exe, OUT])
@@ -48,6 +49,14 @@ def main():
             ppm_to_png(os.path.join(OUT, fn), os.path.join(OUT, fn[:-4] + '.png'))
             os.remove(os.path.join(OUT, fn))
     print('previews in %s' % os.path.relpath(OUT, ROOT))
+    if '--screenshots' in sys.argv[1:] and r.returncode == 0:
+        shots = os.path.join(ROOT, 'docs', 'screenshots')
+        os.makedirs(shots, exist_ok=True)
+        for fn in sorted(os.listdir(OUT)):
+            if fn.endswith('.png'):
+                with open(os.path.join(OUT, fn), 'rb') as a, open(os.path.join(shots, fn), 'wb') as b:
+                    b.write(a.read())
+        print('screenshots in %s' % os.path.relpath(shots, ROOT))
     return r.returncode
 
 
