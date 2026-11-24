@@ -263,20 +263,31 @@ static uint32_t tx_freq(void)
 	return gVfo.tx_freq ? gVfo.tx_freq : gVfo.freq;
 }
 
-bool RADIO_TxAllowed(void)
+const char *RADIO_TxRefusal(void)
 {
 	uint32_t f = tx_freq();
 	Band_t b = band_of(f);
+	bool band = false;
 
-	if (!RADIO_ENABLE_TX || gVfo.rx_only || RADIO_IsAm() || b == BAND_AIR || b == BAND_220)
-		return false;
-	if (CALIB_PaBias(f, gVfo.power) == 0)       /* no calibration for this frequency: no TX */
-		return false;
+	if (!RADIO_ENABLE_TX)
+		return "TX OFF IN BUILD";
+	if (gVfo.rx_only)
+		return "RX ONLY CHANNEL";
+	if (RADIO_IsAm())
+		return "NO TX IN AM";
 	for (unsigned i = 0; i < sizeof TX_BANDS / sizeof TX_BANDS[0]; i++)
 		if (f >= TX_BANDS[i].lo && f < TX_BANDS[i].hi)
-			return true;
-	return false;
+			band = true;
+	if (!band || b == BAND_AIR || b == BAND_220)
+		return "NO TX: NOT HAM BAND";
+	if (!CALIB_Present())
+		return "NO TX: NO CALIB";
+	if (CALIB_PaBias(f, gVfo.power) == 0)       /* no calibration for this frequency: no TX */
+		return "NO TX: CALIB 0";
+	return 0;
 }
+
+bool RADIO_TxAllowed(void) { return RADIO_TxRefusal() == 0; }
 
 bool RADIO_StartTx(void)
 {

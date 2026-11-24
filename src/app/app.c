@@ -56,6 +56,7 @@ static int      s_ch = -1;               /* channel slot shown, 0-based */
 static char     s_ch_name[13];
 static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
+static const char *s_tx_why;              /* what the bottom line says while PTT is refused */
 static const char *s_note;              /* a message on the bottom line for a few seconds (saving, loading) */
 static uint16_t s_note_color;
 static uint32_t s_note_ms;
@@ -309,7 +310,7 @@ static void main_view(UiMain_t *v)
 	/* bottom line, most important first */
 	v->bottom_color = COLOR_DIM;
 	if (s_tx_refused) {
-		copy_text(v->bottom, "NO TX HERE", sizeof v->bottom);
+		copy_text(v->bottom, s_tx_why ? s_tx_why : "NO TX HERE", sizeof v->bottom);
 		v->bottom_color = COLOR_TX;
 	} else if (s_note_ms && s_note) {
 		copy_text(v->bottom, s_note, sizeof v->bottom);
@@ -1086,6 +1087,7 @@ static void tot_tick(void)
 	if (tot && tot <= 12 && (s_tx_ms += APP_TICK_MS) >= 15000u * tot) {
 		RADIO_EndTx();
 		s_tot_hit = s_tx_refused = true;
+		s_tx_why = "TX TIME OUT";
 		RADIO_Beep(400, 300);
 	}
 }
@@ -1163,7 +1165,8 @@ void APP_Tick(void)
 	if (ptt && !s_ptt_down) {
 		light_wake();
 		s_tot_hit = false;
-		s_tx_refused = tx_busy_locked() || !RADIO_StartTx();
+		s_tx_why = tx_busy_locked() ? "NO TX: BUSY" : RADIO_TxRefusal();
+		s_tx_refused = s_tx_why || !RADIO_StartTx();
 		if (s_tx_refused)
 			RADIO_Beep(400, 150);
 		else

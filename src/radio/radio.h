@@ -51,6 +51,7 @@ RadioState_t RADIO_State(void);
 uint16_t     RADIO_Rssi(void);             /* last raw RSSI (dBm = raw / 2 - 160) */
 bool         RADIO_IsAm(void);
 bool         RADIO_TxAllowed(void);
+const char  *RADIO_TxRefusal(void);        /* why transmit is refused here (for the screen), or 0 if allowed */
 bool         RADIO_StartTx(void);          /* false if refused */
 void         RADIO_EndTx(void);
 void         RADIO_Beep(uint16_t hz, uint16_t ms);
