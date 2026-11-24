@@ -20,6 +20,7 @@
  * Every wait has a time-out, so a wrong guess comes back as an error rather than hanging (the watchdog would then
  * restart the radio).
  */
+#include "driver/irq.h"
 #include <stdint.h>
 #include "bsp/ac695n.h"
 #include "driver/flash.h"
@@ -74,22 +75,28 @@
 
 #define BUSY_LOOPS 3000000u
 
-static uint32_t s_con, s_spi;
+static uint32_t s_con, s_spi, s_irq;
 
 /* Hand the flash from the controller to SPI0, as the boot ROM's lock does (0x1127D4): wait for 0x101000 bit 5,
- * wait for the controller to finish its current read, controller off, SPI0 on. */
+ * wait for the controller to finish its current read, controller off, SPI0 on. Interrupts are held off while the
+ * flash is ours (the FM radio's handler runs from the flash; driver/irq.h: IRQ_Save is inline, no flash call). */
 static RAMFUNC uint32_t fl_lock(void)
 {
 	uint32_t n, mode = (SFC_CON >> 8) & 0xFu;
 
 	if (mode == 6u || mode == 7u)
 		return FLASH_ERR_CONTINUOUS;
+	s_irq = IRQ_Save();
 	for (n = WAIT_LOOPS; !(REG32(0x00101000u) & 0x20u); )
-		if (!--n)
+		if (!--n) {
+			IRQ_Restore(s_irq);
 			return FLASH_ERR_TIMEOUT;
+		}
 	for (n = WAIT_LOOPS; SFC_CON & 0x80000000u; )
-		if (!--n)
+		if (!--n) {
+			IRQ_Restore(s_irq);
 			return FLASH_ERR_TIMEOUT;
+		}
 	s_con = SFC_CON;
 	s_spi = SPI0_CON;
 	SFC_CON = s_con & ~1u;
@@ -104,6 +111,7 @@ static RAMFUNC void fl_unlock(void)
 	CS_HIGH();
 	SPI0_CON = (s_spi & ~1u) & ~0x1000u;
 	SFC_CON = s_con;
+	IRQ_Restore(s_irq);
 }
 
 /* command byte and, if addr_bytes, a 24-bit address, with CS left low */

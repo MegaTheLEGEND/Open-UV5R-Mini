@@ -535,10 +535,14 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 #define HIDDEN_N 2                       /* the hidden items at the end of SEC_SYS */
 
 /* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
-#define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE)
+#define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
+                    + APP_FM_ENABLE)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
+#if APP_FM_ENABLE
+	&APP_FM,
+#endif
 #if APP_SPECTRUM_ENABLE
 	&APP_SPECTRUM,
 #endif
@@ -568,6 +572,9 @@ static const uint8_t SEC_APPS[APPS_COUNT] = {
 #endif
 #if APPS_COUNT > 4
 	M_APP0 + 4,
+#endif
+#if APPS_COUNT > 5
+	M_APP0 + 5,
 #endif
 };
 #endif

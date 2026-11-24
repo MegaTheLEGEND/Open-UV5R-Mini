@@ -6,6 +6,7 @@
  *   ENABLE_APP_CHANNELS  app/chbook.c    the channel list with names; MENU picks one
  *   ENABLE_APP_SYSINFO   app/sysinfo.c   battery, calibration, flash, channels, TX lock, uptime, build
  *   ENABLE_APP_SNAKE     app/snake.c     a snake game
+ *   ENABLE_APP_FM        app/fmradio.c   FM broadcast radio (needs JieLi's libraries, features.mk)
  *
  * app.c opens an app from the menu (or an = key action), hands it every key and calls its tick every APP_TICK_MS
  * while it is open. PTT closes it first. Drawing goes through ui/screen_apps.c (or the menu screen). */
@@ -30,6 +31,9 @@
 #endif
 #ifndef APP_SNAKE_ENABLE
 #define APP_SNAKE_ENABLE 1
+#endif
+#ifndef APP_FM_ENABLE
+#define APP_FM_ENABLE 0
 #endif
 
 typedef enum {
@@ -78,6 +82,9 @@ extern const AppDef_t APP_CHANNELS;
 #endif
 #if APP_SYSINFO_ENABLE
 extern const AppDef_t APP_SYSINFO;
+#endif
+#if APP_FM_ENABLE
+extern const AppDef_t APP_FM;
 #endif
 #if APP_SNAKE_ENABLE
 extern const AppDef_t APP_SNAKE;

@@ -68,4 +68,23 @@ void UI_GameFrame(const char *title);
 void UI_GameCell(uint8_t x, uint8_t y, uint16_t color);
 void UI_GameScore(const char *text);
 
+/* FM broadcast radio:
+ *   y 0-10    title bar: "FM RADIO" and STEREO / MONO
+ *   y 16-39   the frequency, large ("101.5"), "MHZ" beside it
+ *   y 46-53   the level bar
+ *   y 60      volume
+ *   y 74-104  three lines of diagnostics (dim): how far the receiver got, interrupts, DAC
+ *   y 116     typed digits, a message, or the keys */
+typedef struct {
+	char    freq[8];                     /* "101.5" */
+	bool    stereo;
+	uint8_t level;                       /* 0..100 */
+	uint8_t vol;                         /* 0..15 */
+	char    diag[3][22];
+	char    bottom[22];
+	bool    bottom_warn;
+} UiFm_t;
+
+void UI_FmDraw(const UiFm_t *f, bool full);
+
 #endif

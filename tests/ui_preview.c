@@ -260,6 +260,21 @@ int main(int argc, char **argv)
 		snprintf(path, sizeof path, "%s/app_sysinfo.ppm", dir);
 		dump(path);
 
+		/* FM radio, with its diagnostic lines as they should read when it runs */
+		static UiFm_t fm;
+		memset(&fm, 0, sizeof fm);
+		strcpy(fm.freq, "101.5");
+		fm.stereo = true;
+		fm.level = 72;
+		fm.vol = 10;
+		strcpy(fm.diag[0], "S9 CK0200/01C2 H10272");
+		strcpy(fm.diag[1], "IRQ/S 1172 PK 9311");
+		strcpy(fm.diag[2], "OUT/S 48000 DR 0 A0");
+		strcpy(fm.bottom, "=:SEEK */#:VOL");
+		UI_FmDraw(&fm, true);
+		snprintf(path, sizeof path, "%s/app_fm.ppm", dir);
+		dump(path);
+
 		/* channel book, drawn with the menu screen */
 		static const char *const CH[] = { "001 CALLING", "002 145.500", "005 CITY RPTR", "012 W1AW",
 		                                  "013 GMRS 20", "020 MARINE 16", "021 NOAA 1" };

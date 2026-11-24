@@ -68,6 +68,23 @@ Steps:
 | BR23 SDK build with open tools | `tools/sdk/build_sdk.sh`: `ac635n_spp_and_le` links (`sdk.elf`, `app.bin`); no `.ufw`, not run (2026-11-24) |
 | SDK integration script | not written; steps above are manual |
 
+## What Bluetooth could do on this radio (2026-11-24)
+
+The AC695N has Bluetooth 5 (classic and BLE) and JieLi's public SDK has its stack. What each idea needs:
+
+| Idea | Profile | Needs | Effort |
+| --- | --- | --- | --- |
+| CHIRP over Bluetooth: the PC sees a Bluetooth serial port, CHIRP talks our cable protocol (`src/app/program.c`) to it unchanged | classic SPP | the Bluetooth edition; SPP glue exists (`bt_spp.c`) | medium |
+| Phone app: change channel or frequency, see the S-meter and spectrum, edit channels | BLE, one data service | a phone app (web Bluetooth would do) and a small protocol | medium |
+| APRS / packet with a phone app (APRSdroid and others speak KISS over Bluetooth, as Mobilinkd TNCs) | SPP, KISS | an AFSK 1200 modem on the BK4819 (ROADMAP 7.x), then KISS framing | large |
+| The clock set from the phone (ROADMAP 4.7) and GPS position for APRS beacons | BLE or SPP | the phone app above | small, after it |
+| Remote PTT button / Bluetooth PTT key | BLE HID (the radio as host) | host-side HID in JieLi's stack; unclear it supports that | unknown |
+| Bluetooth speaker: music from a phone through the radio's speaker | A2DP sink | the DAC path (working once the FM radio plays), the SBC decoder (in `media.a`), and room: the full stack is about 150-250 KB | large |
+| Headset for the radio (hear receive and talk on transmit through Bluetooth earbuds) | HFP / A2DP source | receive audio into the MCU and the MCU's audio out to the BK4819's mic input: stock never feeds radio audio through the MCU, and the board wiring for it is not known (RE-NOTES "Audio") | probably not possible without board changes |
+| Firmware updates over Bluetooth | SPP | a safe update path; a crash there can't be fixed by cable | not planned |
+
+All of them need the Bluetooth edition: JieLi's controller and stack are closed libraries that expect JieLi's OS (tasks, timers). Since 2026-11-24 the FM radio shows JieLi's libraries can link into our bare-metal build with a small glue, but the Bluetooth stack leans on the OS far more than the FM library does, so the plan is still to run our radio code as a task inside the SDK.
+
 ## A smaller option: BLE only (idea, not started)
 
 To control the radio from a phone you only need Bluetooth Low Energy with one data service, like a wireless serial

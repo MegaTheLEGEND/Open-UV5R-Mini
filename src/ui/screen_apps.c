@@ -190,3 +190,43 @@ void UI_GameScore(const char *text)
 	ST7735S_FillRect(60, 0, 68, 11, COLOR_BAR);
 	UI_PrintString(text, (uint8_t)(126 - 6 * text_len(text)), 2, COLOR_WARN, COLOR_BAR, 1);
 }
+
+/* ------------------------------------------------------------------------------------------- FM radio */
+static UiFm_t s_fm_shown;
+
+void UI_FmDraw(const UiFm_t *f, bool full)
+{
+	const UiFm_t *o = &s_fm_shown;
+
+	if (full) {
+		ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BG);
+		ST7735S_FillRect(0, 112, LCD_WIDTH, 1, COLOR_BAR);
+	}
+	if (full || f->stereo != o->stereo)
+		title_bar("FM RADIO", f->stereo ? "STEREO" : "MONO");
+	if (full || differ(f->freq, o->freq)) {
+		unsigned n = text_len(f->freq);
+		ST7735S_FillRect(0, 16, LCD_WIDTH, 24, COLOR_BG);
+		UI_PrintString(f->freq, (uint8_t)(n * 18u < 100u ? (100u - n * 18u) / 2u : 0u), 16, COLOR_TEXT, COLOR_BG, 3);
+		UI_PrintString("MHZ", 104, 30, COLOR_DIM, COLOR_BG, 1);
+	}
+	if (full || f->level != o->level) {
+		uint8_t w = (uint8_t)(f->level > 100 ? 120 : f->level * 120u / 100u);
+		ST7735S_FillRect(4, 46, 120, 8, COLOR_FAINT);
+		if (w)
+			ST7735S_FillRect(4, 46, w, 8, COLOR_RX);
+	}
+	if (full || f->vol != o->vol) {
+		char b[8] = "VOL ";
+		b[4] = (char)('0' + f->vol / 10u);
+		b[5] = (char)('0' + f->vol % 10u);
+		b[6] = 0;
+		UI_PrintPadded(b, 4, 60, COLOR_INFO, COLOR_BG, 8);
+	}
+	for (int i = 0; i < 3; i++)
+		if (full || differ(f->diag[i], o->diag[i]))
+			UI_PrintPadded(f->diag[i], 2, (uint8_t)(74 + 11 * i), COLOR_DIM, COLOR_BG, 21);
+	if (full || differ(f->bottom, o->bottom) || f->bottom_warn != o->bottom_warn)
+		UI_PrintPadded(f->bottom, 2, 116, f->bottom_warn ? COLOR_WARN : COLOR_DIM, COLOR_BG, 21);
+	s_fm_shown = *f;
+}

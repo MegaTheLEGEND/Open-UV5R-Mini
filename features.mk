@@ -50,6 +50,16 @@ ENABLE_APP_CHANNELS ?= 1
 ENABLE_APP_SYSINFO  ?= 1
 # A snake game (src/app/snake.c).
 ENABLE_APP_SNAKE    ?= 1
+# FM broadcast radio, 64-108 MHz through the speaker (src/app/fmradio.c, src/platform/jl_sdk/fmrx.c). Needs JieLi's
+# FM and DAC libraries from their public SDK in build/sdk/ (sh tools/sdk/fm_libs.sh <sdk clone>); without them it is
+# left out with a warning. The image then holds JieLi's closed (Apache-2.0) library code: docs/THIRD-PARTY.md.
+ENABLE_APP_FM       ?= 1
+ifeq ($(ENABLE_APP_FM),1)
+ifeq ($(wildcard build/sdk/cpu.a build/sdk/media.a),)
+$(warning ENABLE_APP_FM: build/sdk/cpu.a and media.a not found (tools/sdk/fm_libs.sh); the FM radio is left out)
+override ENABLE_APP_FM := 0
+endif
+endif
 
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
                  -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI) \
@@ -57,4 +67,4 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DKEYTEST_ENABLE=$(ENABLE_KEYTEST) \
                  -DAPP_SPECTRUM_ENABLE=$(ENABLE_APP_SPECTRUM) -DAPP_METER_ENABLE=$(ENABLE_APP_METER) \
                  -DAPP_CHANNELS_ENABLE=$(ENABLE_APP_CHANNELS) -DAPP_SYSINFO_ENABLE=$(ENABLE_APP_SYSINFO) \
-                 -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE)
+                 -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE) -DAPP_FM_ENABLE=$(ENABLE_APP_FM)

@@ -14,7 +14,7 @@ Never in this group: Baofeng's stock firmware or anything derived from it (no li
 
 | Code | Where in the repo | Licence | Source | Used for |
 | --- | --- | --- | --- | --- |
-| *(none yet)* | | | | |
+| JieLi BR23 libraries `cpu.a` (FM receiver: `fm_inside_api`, `fm_init`, `fm_rf`, `fm_scan`, `fm_digital_set`, `fm_global_dat`, `fm_dem`; helpers `clock`, `efuse`, `p33`) and `media.a` (`audio_dac`) | not in the repo: `tools/sdk/fm_libs.sh` copies them from your SDK clone into `build/sdk/` with the SDK's `LICENSE`; linked into images built with `ENABLE_APP_FM` | Apache-2.0 (the SDK's `LICENSE`) | [fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK) `cpu/br23/liba/`, tested at commit fdc018d | the FM radio (ROADMAP 3.9). Unchanged; our own glue around them in `src/platform/jl_sdk/` |
 
 Candidates, licence still to check: UV-K5 open firmware (DualTachyon, egzumer; Apache-2.0 per their repos), FreeRTOS
 (MIT).

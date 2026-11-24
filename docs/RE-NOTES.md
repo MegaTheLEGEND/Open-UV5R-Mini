@@ -399,6 +399,19 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
   no FM receiver code (`fm_inside` is a library only in JieLi's sound-box SDKs, licence unknown), so the DSP has to
   be understood from the stock code and written fresh.
 
+#### FM receiver: what our FM radio is built on (2026-11-24)
+
+| What | Found |
+| --- | --- |
+| The library | Stock's FM code is JieLi's `fm_inside` library, the same one that ships (as LLVM bitcode, Apache-2.0) in the public BR23 SDK's `cpu.a`: `fm_inside_api`, `fm_init`, `fm_rf`, `fm_scan`, `fm_digital_set`, `fm_global_dat`, `fm_dem` (assembly). It links into our bare-metal build (LTO) with a small glue (`src/platform/jl_sdk/fm_glue.c`) |
+| Open, as stock | `fm_inside_mem_init()`; `fm_inside_io_ctrl(4, -1, -67, 2, 8)`, `(5, 8750, 10800, 100)`, `(0, 400, 600, 2, 3)`, `(1, 34, 34, 1)`; `fm_inside_on()` (stock `0x01E3D184` is this, inlined) |
+| Tuning | `fm_inside_freq_set(kHz)`: stock's driver (`0x01E3DE4C`) multiplies its 10 kHz value by 10. Returns 1 when the library judges a station is there (used for seek) |
+| Audio out | the interrupt (43, `fmhw_isr`) demodulates each buffer (`fm_dem`) and calls `fm_sample_output_handler(buf, 128)`: 32 interleaved 16-bit L/R frames. Stock sets the source rate to **37,500 Hz** (`0x01E4B8EE`) |
+| CPU clock | stock adds `FM_INSIDE_CLK` (**96 MHz**) to its clock budget when FM opens (`clock_add(47)` `0x01E3CBD4`, table `0x01E654CA`+7224: id, MHz, name) and calls `clk_set("sys", …)` |
+| DAC board settings | stock's `dac_platform_data` (RAM `0x68B8`, read in the emulator): output 1 (right only), LDO level 2, LDO bias 3, LPF bias 8, LDO load 2, VCMO on (word `0x00068321`) |
+| Interrupts | vector table fixed at RAM `0x2BF00` (64 entries); IPCON `0x10F100` + 4·(n/8), a nibble each (bit 0 on, bits 1-3 priority; stock `request_irq` `sub_01E1EAA0` takes the priority from a table at `0x01E6421E`); IPMASK `0x10F1A8`; global enable ICFG bits 8-9 |
+| boot_info | the bootloader's record (passed in r0) holds the chip id (+28) and the band-gap and battery trims (+30) that JieLi's `efuse` reads; start.S already copies it to `0xD920` in that layout, so `boot_info = 0xD920` in our linker script |
+
 #### FM receiver, traced (2026-11-23)
 
 `python emu/fm_trace.py --isa ../pi32v2-isa [--lo 100000 --mode 0]` boots stock in the emulator, runs the FM open

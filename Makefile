@@ -20,8 +20,10 @@ TARGET := $(BUILD)/firmware
 SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/app/program.c src/app/version.c src/update/update.c src/update/update_radio.c \
        src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
        src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c src/driver/spi1.c \
+       src/driver/irq.c \
        src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
        src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
+       src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c \
        src/ui/screen_apps.c
 ASM := src/start.S src/update/handover.S
 
@@ -43,6 +45,15 @@ SRC := $(filter-out src/app/sysinfo.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_SNAKE),0)
 SRC := $(filter-out src/app/snake.c,$(SRC))
+endif
+# FM: our files, then JieLi's libraries at link time (link-time optimised: they are LLVM bitcode) and the
+# compiler's helper library for their 64-bit and float arithmetic
+ifeq ($(ENABLE_APP_FM),1)
+LIBS := --start-group build/sdk/cpu.a build/sdk/media.a --end-group \
+        $(wildcard $(if $(TOOLCHAIN),$(TOOLCHAIN)/../lib/clang/*/lib/pi32v2/libclang_rt.builtins.a,))
+else
+SRC := $(filter-out src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c,$(SRC))
+LIBS :=
 endif
 
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
@@ -76,7 +87,7 @@ $(BUILD)/%.o: %.S
 	$(CC) --target=pi32v2 -c $< -o $@
 
 $(TARGET).elf: $(OBJ) src/firmware.ld
-	$(LD) $(LDFLAGS) $(OBJ) -o $@
+	$(LD) $(LDFLAGS) $(OBJ) $(LIBS) -o $@
 	$(SIZE) $@
 
 $(TARGET).bin: $(TARGET).elf

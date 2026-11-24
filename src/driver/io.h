@@ -11,6 +11,7 @@ enum {
 	AUDIO_RX   = 1u << 0,
 	AUDIO_BEEP = 1u << 1,
 	AUDIO_TONE = 1u << 2,   /* a tone sent while transmitting, heard locally */
+	AUDIO_FM   = 1u << 3,   /* the FM broadcast radio, through the MCU's DAC */
 };
 
 void IO_Init(void);
