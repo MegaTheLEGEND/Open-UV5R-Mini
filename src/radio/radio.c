@@ -93,6 +93,8 @@ bool RADIO_ToneHeard(void) { return s_tone_heard; }
 /* ------------------------------------------------------------------------------------------- receive */
 static uint16_t s_mute_ms;     /* receive audio held off after transmit (repeater tail) */
 static bool     s_monitor;     /* squelch held open (RADIO_Monitor) */
+static bool     s_rx_asleep;   /* the BK4819 is asleep (RADIO_RxSleep) until RADIO_Apply or transmit */
+static void beep_end(void);
 
 static void audio(bool open)
 {
@@ -111,6 +113,7 @@ void RADIO_Apply(void)
 		gVfo.freq = FREQ_MAX;
 	if (s_state == RADIO_TX)
 		return;
+	s_rx_asleep = false;               /* BK4819_RxOn below wakes the chip (REG_37) */
 	if (s_beep_ms) {                   /* retuning puts receive back on, which would leave the beep half set up */
 		s_beep_ms = 0;
 		BK4819_Beep(0);
@@ -158,6 +161,23 @@ void RADIO_Monitor(bool on)
 
 bool RADIO_MonitorOn(void) { return s_monitor; }
 
+/* The receiver asleep, for the radio's sleep mode: audio off, then the BK4819 off as stock's power saving and
+ * F4HWN's sleep do (REG_30 = 0, REG_37 = 0x1D00: BK4819_Sleep). Nothing is heard until RADIO_Apply wakes it. */
+void RADIO_RxSleep(void)
+{
+	if (s_state == RADIO_TX || s_rx_asleep)
+		return;
+	if (s_beep_ms)
+		beep_end();
+	audio(false);
+	s_state = RADIO_RX;
+	s_open_count = s_close_count = 0;
+	BK4819_Sleep();
+	s_rx_asleep = true;
+}
+
+bool RADIO_RxAsleep(void) { return s_rx_asleep; }
+
 void RADIO_Init(void)
 {
 	gVfo.freq = 14552000u;     /* 145.520 MHz */
@@ -202,7 +222,7 @@ static void squelch_levels(void)
  * side for ever. With squelch 0 the audio is always open, so only the chip's squelch counts. */
 bool RADIO_Carrier(void)
 {
-	if (s_state == RADIO_TX)
+	if (s_state == RADIO_TX || s_rx_asleep)
 		return false;
 	return BK4819_SquelchOpen() || (gVfo.squelch && !s_monitor && s_state == RADIO_RX_OPEN);
 }
@@ -229,7 +249,7 @@ void RADIO_Tick(void)
 		else
 			beep_end();
 	}
-	if (s_state == RADIO_TX || s_beep_ms)       /* the receiver is off while a beep plays */
+	if (s_state == RADIO_TX || s_beep_ms || s_rx_asleep)   /* the receiver is off while a beep plays, or asleep */
 		return;
 	s_rssi = BK4819_GetRSSI();
 	if (gVfo.squelch == 0 || s_monitor) {
@@ -328,6 +348,7 @@ bool RADIO_StartTx(void)
 		beep_end();
 	audio(false);
 	BK4819_DtmfRxOff();
+	s_rx_asleep = false;               /* the TX set-up writes REG_37 again (BK4819_TxOn) */
 	s_state = RADIO_TX;
 	BK4819_SetFrequency(tx_freq());
 	BK4819_SetFilterBandwidth(gVfo.narrow);

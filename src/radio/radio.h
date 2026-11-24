@@ -56,6 +56,8 @@ bool         RADIO_StartTx(void);          /* false if refused */
 void         RADIO_EndTx(void);
 void         RADIO_Beep(uint16_t hz, uint16_t ms);
 void         RADIO_Monitor(bool on);        /* squelch held open while on */
+void         RADIO_RxSleep(void);           /* the receiver (BK4819) asleep until RADIO_Apply or RADIO_StartTx */
+bool         RADIO_RxAsleep(void);
 bool         RADIO_MonitorOn(void);
 
 /* Tones sent while transmitting (stock sub_01E510A2): code 0-15 = DTMF 0-9, A, B, C, D, *, #; 17-20 = one tone of

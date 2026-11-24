@@ -104,6 +104,20 @@ void ST7735S_SetBacklight(bool on)
 	GPIO_Write(PIN_LCD_BACKLIGHT, on);
 }
 
+/* Panel sleep for the radio's sleep mode: DISPOFF + SLPIN (the panel keeps its picture memory); waking is SLPOUT,
+ * which needs 120 ms before the next command (ST7735S datasheet), then DISPON. */
+void ST7735S_Sleep(bool on)
+{
+	if (on) {
+		LCD_Command(0x28);                              /* DISPOFF */
+		LCD_Command(0x10);                              /* SLPIN */
+	} else {
+		LCD_Command(0x11);                              /* SLPOUT */
+		SYSTEM_DelayMs(120);
+		LCD_Command(0x29);                              /* DISPON */
+	}
+}
+
 void ST7735S_Init(void)
 {
 	s_n = 0;

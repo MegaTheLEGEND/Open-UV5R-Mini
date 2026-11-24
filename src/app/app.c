@@ -63,6 +63,8 @@ static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
 static KEY_Code_t s_key_held;           /* the key down now (key_event; defined there) */
 static uint32_t s_trx_ms;                /* how long the radio has been transmitting, or receiving with squelch open */
+static bool     s_boot_eq;               /* switched on with = held */
+static bool     s_duty_on;               /* the receiver's duty cycle is running (battery save or sleep) */
 static uint8_t  s_batt_show;             /* 0 icon, 1 percent, 2 volts; saved in gStock.ext[EXT_BATT] */
 static const char *s_tx_why;              /* what the bottom line says while PTT is refused */
 static const char *s_note;              /* a message on the bottom line for a few seconds (saving, loading) */
@@ -458,9 +460,12 @@ static const SetItem_t SET_ITEMS[] = {
 #define M_SETEND   (M_SET0 + SET_COUNT)  /* first item after the setting bytes */
 /* Items are numbered by position (draw_menu), so one left out of the build leaves no gap in the numbers. */
 #define M_BATT     M_SETEND             /* battery on the status bar: icon, percent or volts (our own byte) */
-#define M_EQ_PRESS (M_BATT + 1)         /* what the = key does: one press, two presses, held (our own bytes) */
-#define M_EQ_DBL   (M_BATT + 2)
-#define M_EQ_HOLD  (M_BATT + 3)
+#define M_SLEEP    (M_BATT + 1)         /* sleep after this long idle (our own byte) */
+#define M_SLEEPNOW (M_BATT + 2)         /* sleep at once */
+#define M_BSAVE    (M_BATT + 3)         /* battery save: the receiver's duty cycle while awake (our own byte) */
+#define M_EQ_PRESS (M_BATT + 4)         /* what the = key does: one press, two presses, held (our own bytes) */
+#define M_EQ_DBL   (M_BATT + 5)
+#define M_EQ_HOLD  (M_BATT + 6)
 #if KEYTEST_ENABLE
 #define M_KEYTEST  (M_EQ_HOLD + 1)
 #define M_ABOUT    (M_KEYTEST + 1)
@@ -475,6 +480,20 @@ static const char *const L_KEYACT[KA_COUNT] = { "NONE", "MONITOR", "SCAN", "A/B"
                                                 "LAMP", "DUAL WATCH", "KEY LOCK" };
 static uint8_t s_eq_act[3] = { KA_NONE, KA_NONE, KA_MONITOR };   /* press, double press, hold */
 static const char *const L_BATT[] = { "ICON", "PERCENT", "VOLTS" };
+/* Sleep, after F4HWN's (SetOff; Sean, 2026-11-24): after this long with no key, signal or transmit (sleep_tick). */
+static const char *const L_SLEEP[] = { "OFF", "1 MIN", "5 MIN", "10 MIN", "15 MIN", "30 MIN", "1 HOUR",
+                                       "2 HOURS" };
+static const uint16_t SLEEP_S[] = { 0, 60, 300, 600, 900, 1800, 3600, 7200 };
+#define SLEEP_N       8
+#define SLEEP_DEFAULT 6                  /* 1 hour */
+/* Battery save (stock's Save Mode, setting 0x01, which CHIRP's UV-5R Mini driver shows as Off/On; the ratios as
+ * the UV-K5's BatSav): after 10 s idle on the main screen the receiver listens 100 ms, then is off for n x 100 ms.
+ * The ratio is our own byte; the stock byte is kept as on/off. */
+static const char *const L_BSAVE[] = { "OFF", "1:1", "1:2", "1:4" };
+static const uint8_t BSAVE_OFF[] = { 0, 1, 2, 4 };       /* off time in 100 ms */
+static uint8_t s_bsave = 3;              /* 1:4; from the stock byte when ours is not set */
+static bool    s_sleep_now;              /* SLEEP NOW chosen: sleep once the keys are let go */
+static uint8_t s_sleep_set = SLEEP_DEFAULT;
 #define M_NORMAL   (M_ABOUT + 1)         /* the normal menu: items 1..M_NORMAL */
 /* Hidden items, after the normal ones: shown only when the radio was switched on with = held (the update mode's key
  * without PTT-A), which opens the menu at the first of them. They go again when the menu is left. */
@@ -492,7 +511,8 @@ static const uint8_t SEC_CH[] = { M_FREQ, M_CHNAME, M_RXTONE, M_TXTONE, M_SHIFT,
                                   M_STEP, M_SQL, M_SCANADD, M_CHSAVE, M_CHDEL };
 static const uint8_t SEC_SCAN[] = { M_AB, M_MEM, M_DW, M_SCAN, M_SCANMODE, M_TSCAN, M_TSCANSAVE };
 static const uint8_t SEC_TX[] = { SI(2), SI(3), SI(4), SI(5), SI(6), SI(7), SI(8), SI(9), SI(10), SI(11), SI(12) };
-static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, SI(13), SI(14), M_EQ_PRESS, M_EQ_DBL, M_EQ_HOLD,
+static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP, M_SLEEPNOW, SI(13), SI(14),
+                                   M_EQ_PRESS, M_EQ_DBL, M_EQ_HOLD,
 #if KEYTEST_ENABLE
                                    M_KEYTEST,
 #endif
@@ -552,6 +572,9 @@ static const char *menu_name(int i)
 	case M_KEYTEST: return "KEY TEST";
 #endif
 	case M_BATT:    return "BATTERY";
+	case M_SLEEP:   return "SLEEP";
+	case M_SLEEPNOW: return "SLEEP NOW";
+	case M_BSAVE:   return "BAT SAVE";
 	case M_EQ_PRESS: return "= PRESS";
 	case M_EQ_DBL:  return "= DOUBLE";
 	case M_EQ_HOLD: return "= HOLD";
@@ -702,6 +725,9 @@ static const char *menu_value(int i, char *b)
 	case M_CHSAVE: case M_CHDEL: case M_SCANADD: return "NO SAVE";
 #endif
 	case M_BATT:    return L_BATT[s_batt_show < 3 ? s_batt_show : 0];
+	case M_SLEEP:   return L_SLEEP[s_sleep_set < SLEEP_N ? s_sleep_set : SLEEP_DEFAULT];
+	case M_SLEEPNOW: return "PRESS MENU";
+	case M_BSAVE:   return L_BSAVE[s_bsave < 4 ? s_bsave : 0];
 	case M_CHNAME:
 		if (s_menu_edit)
 			return s_name_buf;
@@ -775,6 +801,12 @@ static void menu_change(int i, int dir)
 	switch (i) {
 	case M_BATT:
 		s_batt_show = (uint8_t)((s_batt_show + 3 + dir) % 3);
+		return;
+	case M_SLEEP:
+		s_sleep_set = (uint8_t)((s_sleep_set + SLEEP_N + dir) % SLEEP_N);
+		return;
+	case M_BSAVE:
+		s_bsave = (uint8_t)((s_bsave + 4 + dir) % 4);
 		return;
 	case M_CHNAME: {                     /* the character at the cursor, through NAME_CHARS */
 		int n = (int)sizeof NAME_CHARS - 1, c = 0;
@@ -1227,6 +1259,10 @@ static void menu_enter(void)
 	case M_ABOUT:
 		go(SCREEN_ABOUT);
 		return;
+	case M_SLEEPNOW:
+		s_sleep_now = true;              /* sleep_tick sleeps once MENU is let go */
+		go(SCREEN_MAIN);
+		return;
 	case M_CHNAME:
 #if SETTINGS_ENABLE_SAVE
 		if (!s_mr || s_ch < 0 || !s_xf_ok) {
@@ -1536,6 +1572,8 @@ enum {
 	EXT_REGION = 9,                  /* Region_t + 1; 0 = not set */
 	EXT_BATT = 10,                   /* battery on the status bar: 0 icon, 1 percent, 2 volts */
 	EXT_EQ = 11,                     /* = key actions + 1 (press 11, double 12, hold 13); 0 = the default */
+	EXT_SLEEP = 14,                  /* sleep time index + 1 (L_SLEEP); 0 = the default */
+	EXT_BSAVE = 15,                  /* battery save ratio + 1 (L_BSAVE); 0 = from stock's on/off byte */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -1563,6 +1601,12 @@ static void start_from_stock(void)
 		TXLOCK_Set((TxLock_t)(gStock.ext[EXT_TXLOCK] - 1u), (Region_t)(gStock.ext[EXT_REGION] - 1u));
 	if (ext_ok() && gStock.ext[EXT_BATT] <= 2)
 		s_batt_show = gStock.ext[EXT_BATT];
+	if (ext_ok() && gStock.ext[EXT_SLEEP] && gStock.ext[EXT_SLEEP] <= SLEEP_N)
+		s_sleep_set = (uint8_t)(gStock.ext[EXT_SLEEP] - 1u);
+	if (ext_ok() && gStock.ext[EXT_BSAVE] && gStock.ext[EXT_BSAVE] <= 4)
+		s_bsave = (uint8_t)(gStock.ext[EXT_BSAVE] - 1u);
+	else
+		s_bsave = gStock.raw[SET_POWER_SAVE] ? 3 : 0;
 	for (int i = 0; i < 3; i++)
 		if (ext_ok() && gStock.ext[EXT_EQ + i] && gStock.ext[EXT_EQ + i] <= KA_COUNT)
 			s_eq_act[i] = (uint8_t)(gStock.ext[EXT_EQ + i] - 1u);
@@ -1709,6 +1753,9 @@ static void save_now(void)
 	gStock.ext[EXT_TXLOCK] = (uint8_t)(TXLOCK_Mode() + 1u);
 	gStock.ext[EXT_REGION] = (uint8_t)(TXLOCK_Region() + 1u);
 	gStock.ext[EXT_BATT] = s_batt_show;
+	gStock.ext[EXT_SLEEP] = (uint8_t)(s_sleep_set + 1u);
+	gStock.ext[EXT_BSAVE] = (uint8_t)(s_bsave + 1u);
+	gStock.raw[SET_POWER_SAVE] = s_bsave != 0;    /* stock's Save Mode as on/off, as CHIRP shows it */
 	for (int i = 0; i < 3; i++)
 		gStock.ext[EXT_EQ + i] = (uint8_t)(s_eq_act[i] + 1u);
 	for (int i = 0; i < 2; i++) {
@@ -1784,6 +1831,7 @@ void APP_Init(void)
 	/* = held at power-on without PTT-A (the update mode's check, update_radio.c, without the PTT): the menu, opened
 	 * at its hidden items (region, TX lock). Read here, as UPDATE_Requested reads it: rows all low, PC2 low. */
 	bool hidden_menu = !KEYBOARD_IsPttPressed() && !GPIO_CheckBit(PIN_KEY_COL0);
+	s_boot_eq = hidden_menu;             /* also lets the radio transmit under 5 % battery */
 #if KEYTEST_ENABLE
 	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
 	if (!hidden_menu && !KEYBOARD_IsPttPressed()) {
@@ -1851,6 +1899,12 @@ static void light_tick(void)
 
 /* Transmit refusals from the stock settings: busy lockout in VFO mode (0x0F) refuses PTT while a signal is
  * heard; the time-out timer (0x05, n x 15 s) ends a long transmission until PTT is let go. */
+/* Under 5 %: transmit refused, unless the radio was switched on with = held (Sean, 2026-11-24) */
+static bool tx_batt_locked(void)
+{
+	return !s_boot_eq && BATTERY_Raw() && BATTERY_Percent() < 5;
+}
+
 static bool tx_busy_locked(void)
 {
 	return !s_mr && gStock.raw[SET_BCL] && RADIO_State() == RADIO_RX_OPEN && gVfo.squelch;
@@ -1958,6 +2012,151 @@ static void eq_tick(bool ptt)
 	was = down;
 }
 
+/* ------------------------------------------------------------------------------------------- power saving
+ * One receiver duty cycle for both, as on the UV-K5 (its app/app.c, FUNCTION_POWER_SAVE): the BK4819 asleep
+ * (RADIO_RxSleep: REG_30 = 0, REG_37 = 0x1D00) for an off time, then awake to listen, on A and B in turn when dual
+ * watch is on. A carrier keeps it listening up to DUTY_HOLD_MS so a tone can be checked; the squelch opening makes
+ * sleep_tick busy, which ends the duty cycle and the radio receives as usual.
+ *  - Battery save (MENU -> BAT SAVE): after BSAVE_IDLE_MS idle on the main screen, listen 100 ms, off n x 100 ms.
+ *  - Sleep, after F4HWN's SetOff (MENU -> SLEEP, or SLEEP NOW): after the set time the last 10 s blink the
+ *    backlight; then the panel sleeps, the backlight is off, listen SLEEP_LISTEN_MS, off SLEEP_OFF_MS; the green
+ *    LED blinks every 5 s (F4HWN blinks its red one every 2 s). A key wakes it (and is not acted on), as does PTT.
+ * F4HWN keeps the MCU clock as it is; so do we: the BK4819 and the backlight are the big loads. */
+#define SLEEP_OFF_MS    3000u
+#define SLEEP_LISTEN_MS  200u
+#define SLEEP_WARN_MS  10000u
+#define BSAVE_IDLE_MS  10000u
+#define BSAVE_LISTEN_MS  100u
+#define DUTY_HOLD_MS    1000u
+
+static bool     s_asleep;
+static uint32_t s_idle_sleep_ms;        /* how long nothing has happened (sleep_tick) */
+static uint16_t s_blink_ms;
+static uint16_t s_phase_ms;             /* time in this off or listen phase */
+static bool     s_listening;            /* the receiver is awake for a listen window */
+static bool     s_listen_other;         /* this window is on the other side (dual watch) */
+
+/* Back to the active side: end a listen window on the other side first. */
+static void duty_rx_active(void)
+{
+	if (s_peek)
+		dw_end();                        /* the active side again (RADIO_Apply) */
+}
+
+static void duty_start(void)
+{
+	if (s_duty_on)
+		return;
+	s_duty_on = true;
+	s_phase_ms = 0;
+	s_listening = false;
+	s_listen_other = false;
+	RADIO_Monitor(false);
+	duty_rx_active();
+	RADIO_RxSleep();
+}
+
+static void duty_stop(void)
+{
+	if (!s_duty_on)
+		return;
+	s_duty_on = false;
+	s_listening = false;
+	/* a signal heard on the other side: back to the active side, and dual watch finds it again within its cycle */
+	duty_rx_active();
+	DW_Reset();
+	if (RADIO_RxAsleep())
+		RADIO_Apply();
+}
+
+static void duty_tick(uint16_t off_ms, uint16_t listen_ms)
+{
+	s_phase_ms = (uint16_t)(s_phase_ms + APP_TICK_MS);
+	if (!s_listening) {
+		if (s_phase_ms >= off_ms) {          /* listen: the next side in turn with dual watch on, else this one */
+			s_phase_ms = 0;
+			s_listening = true;
+			s_listen_other = gStock.raw[SET_DUAL_WATCH] && !s_listen_other;
+			if (s_listen_other)
+				dw_begin();              /* the other side's settings, receiver awake (RADIO_Apply) */
+			else
+				RADIO_Apply();
+		}
+	} else if (s_phase_ms >= (RADIO_Carrier() ? DUTY_HOLD_MS : listen_ms)) {
+		s_phase_ms = 0;                      /* nothing for this radio: off again */
+		s_listening = false;
+		duty_rx_active();
+		RADIO_RxSleep();
+	}
+}
+
+static void sleep_enter(void)
+{
+	s_asleep = true;
+	s_blink_ms = 0;
+	ST7735S_SetBacklight(false);
+	s_light_on = false;
+	ST7735S_Sleep(true);
+	duty_start();
+}
+
+static void sleep_wake(void)
+{
+	s_idle_sleep_ms = 0;
+	duty_stop();
+	if (!s_asleep)
+		return;
+	s_asleep = false;
+	if (RADIO_State() != RADIO_RX_OPEN)
+		IO_LedRx(false);
+	ST7735S_Sleep(false);
+	s_redraw = true;                     /* the panel kept its picture, but draw it all again anyway */
+	s_light_on = false;
+	light_wake();
+}
+
+/* busy: something that keeps the radio awake (a key down, PTT, transmit, an open squelch, scanning, typing) */
+static void sleep_tick(bool busy)
+{
+	uint32_t limit = (uint32_t)SLEEP_S[s_sleep_set < SLEEP_N ? s_sleep_set : SLEEP_DEFAULT] * 1000u;
+	uint8_t bs = s_bsave < 4 ? BSAVE_OFF[s_bsave] : 0;
+
+	if (busy) {
+		sleep_wake();                    /* SLEEP NOW stays pending until the keys are let go */
+		return;
+	}
+	if (s_sleep_now) {
+		s_sleep_now = false;
+		sleep_enter();
+		return;
+	}
+	if (s_asleep) {                      /* the green LED on for 50 ms every 5 s */
+		s_blink_ms = (uint16_t)(((unsigned)s_blink_ms + APP_TICK_MS) % 5000u);
+		if (RADIO_State() != RADIO_RX_OPEN)
+			IO_LedRx(s_blink_ms < 50u);
+		duty_tick(SLEEP_OFF_MS, SLEEP_LISTEN_MS);
+		return;
+	}
+	if (s_idle_sleep_ms < 0xFFFF0000u)
+		s_idle_sleep_ms += APP_TICK_MS;
+	if (limit) {
+		if (s_idle_sleep_ms + SLEEP_WARN_MS >= limit && s_idle_sleep_ms < limit) {
+			/* the last 10 s: the backlight on for 0.5 s every 2 s (as F4HWN) */
+			ST7735S_SetBacklight((limit - s_idle_sleep_ms) % 2000u >= 1500u);
+			s_light_on = false;          /* a key then lights it again (light_wake) */
+		}
+		if (s_idle_sleep_ms >= limit) {
+			sleep_enter();
+			return;
+		}
+	}
+	if (bs && s_screen == SCREEN_MAIN && s_idle_sleep_ms >= BSAVE_IDLE_MS) {
+		duty_start();
+		duty_tick((uint16_t)(bs * 100u), BSAVE_LISTEN_MS);
+	} else
+		duty_stop();
+}
+
 /* A PTT pin counts as changed only after PTT_STABLE_MS of the same reading (it bounced on a radio). */
 #define PTT_STABLE_MS 40u
 #define PTT_ARM_MS    1000u        /* both PTTs released this long after power-on before either works */
@@ -2046,7 +2245,7 @@ void APP_Tick(void)
 		}
 		light_wake();
 		s_tot_hit = false;
-		s_tx_why = tx_busy_locked() ? "NO TX: BUSY" : RADIO_TxRefusal();
+		s_tx_why = tx_busy_locked() ? "NO TX: BUSY" : tx_batt_locked() ? "NO TX: BATTERY LOW" : RADIO_TxRefusal();
 		s_tx_refused = s_tx_why || !RADIO_StartTx();
 		if (s_tx_refused)
 			RADIO_Beep(400, 150);
@@ -2097,14 +2296,15 @@ void APP_Tick(void)
 		uint16_t a = ADC_Read(ADC_CH_PA1, 1);
 		VoxAction_t v = VOX_Tick(a == 0xFFFFu ? 0 : (uint8_t)(a >> 2), gStock.raw[0x02], gStock.raw[0x20],
 		                         RADIO_State() == RADIO_TX, APP_TICK_MS);
-		if (v == VOX_START && !tx_busy_locked()) {
+		if (v == VOX_START && !tx_busy_locked() && !tx_batt_locked()) {
 			dw_end();
 			RADIO_StartTx();
 		} else if (v == VOX_STOP)
 			RADIO_EndTx();
 	}
 #endif
-	dw_tick(ptt || RADIO_MonitorOn() || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
+	if (!s_duty_on)
+		dw_tick(ptt || RADIO_MonitorOn() || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();
 	else
@@ -2119,8 +2319,25 @@ void APP_Tick(void)
 		s_batt_ticks = 0;
 		BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	}
+	{
+		/* under 5 %: "BATTERY LOW" and a low beep at once, then every minute (not while transmitting or asleep) */
+		static uint32_t warn_ms = 60000u;
+		if (BATTERY_Raw() && BATTERY_Percent() < 5) {
+			if ((warn_ms += APP_TICK_MS) >= 60000u && RADIO_State() != RADIO_TX && !s_asleep) {
+				warn_ms = 0;
+				note("BATTERY LOW", COLOR_TX);
+				RADIO_Beep(500, 300);
+			}
+		} else
+			warn_ms = 60000u;
+	}
 
 	k = key_event();
+	if (s_asleep && k != KEY_INVALID) {
+		sleep_wake();                      /* the key that wakes the radio does nothing else */
+		k = KEY_INVALID;
+		s_wait_release = true;
+	}
 	/* while transmitting, a held digit, * or # sends its DTMF pair (stock 0x01E5457E / 0x01E5072C) */
 	if (RADIO_State() == RADIO_TX && DTMFSEQ_Busy())
 		k = KEY_INVALID;                   /* keys wait while a PTT-ID is sent */
@@ -2200,7 +2417,17 @@ void APP_Tick(void)
 
 	eq_tick(ptt);
 
-	if (s_screen == SCREEN_MAIN) {
+	{
+		bool saving = false;
+#if SETTINGS_ENABLE_SAVE
+		saving = s_save_due;             /* a change still to be written: stay awake until it is */
+#endif
+		sleep_tick(ptt || s_key_held != KEY_INVALID || RADIO_State() != RADIO_RX || SCAN_Active() || s_tscan
+		           || s_entry_len || s_eot || s_tail_ms || saving);
+	}
+	if (s_asleep)
+		;                                  /* the panel is off: nothing drawn */
+	else if (s_screen == SCREEN_MAIN) {
 		draw_main();
 	} else if (s_redraw && s_screen == SCREEN_ABOUT)
 		draw_about();

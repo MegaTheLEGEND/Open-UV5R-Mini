@@ -91,7 +91,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.21 | Long-press EXIT restores the full VFO state | todo | |
 | 4.22 | PTT modes: Classic or OnePush (`SetPTT`) | todo | |
 | 4.23 | Time-out and end-of-transmission alerts: sound, visual, both (`SetTOT`, `SetEOT`) | partial | TOT ends TX with a message; alert choices todo |
-| 4.24 | Auto deep-sleep after a time (`SetOff`) | todo | needs the chip's sleep modes |
+| 4.24 | Auto deep-sleep after a time (`SetOff`) | have | MENU → SYSTEM → SLEEP, as F4HWN's: screen off, BK4819 asleep 3 s / listening 200 ms, wakes on a signal, key or PTT; PC-checked only (ROADMAP 4.9) |
 | 4.25 | Audio scope during RX and TX | todo | |
 | 4.26 | Clock on the screen | todo | ours, not Fusion's: ROADMAP 4.7 |
 

@@ -53,6 +53,7 @@ void BK4819_DtmfRxOff(void) { dtmf_on = 0; }
 int BK4819_DtmfTake(void) { int c = dtmf_code; dtmf_code = -1; return c; }
 bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
+void BK4819_Sleep(void) { reg30 = 0; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
 void BK4819_TxMute(bool on) { (void)on; }
 static uint8_t mic_gain = 0xFF;
@@ -129,6 +130,17 @@ int main(void)
 	rssi = 60;
 	ticks(30);
 	CHECK(RADIO_State() == RADIO_RX && !amp, "closes again");
+	/* sleep mode (app.c sleep_tick): the receiver asleep hears nothing; RADIO_Apply wakes it */
+	rssi = 200;
+	RADIO_RxSleep();
+	ticks(10);
+	CHECK(RADIO_RxAsleep() && reg30 == 0 && RADIO_State() == RADIO_RX && !amp && !RADIO_Carrier(),
+	      "asleep: receiver off, hears nothing");
+	at(14552000u);
+	ticks(5);
+	CHECK(!RADIO_RxAsleep() && reg30 == 0xBFF1 && RADIO_State() == RADIO_RX_OPEN, "awake again, opens on signal");
+	rssi = 60;
+	ticks(30);
 	gVfo.squelch = 0;
 	at(14552000u);
 	CHECK(RADIO_State() == RADIO_RX_OPEN && amp, "squelch 0 is open");
