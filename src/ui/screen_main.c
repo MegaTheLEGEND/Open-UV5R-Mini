@@ -37,6 +37,32 @@ char *UI_FormatFreq(char *b, uint32_t f)
 }
 
 /* ------------------------------------------------------------------------------------------- status bar */
+/* A tag: text in a filled pill, 9 pixels high, the corners rounded off; the value goes inside with its label
+ * ("CT 88.5"), so a tag reads as one thing (Sean, 2026-11-24: values outside the bubbles looked odd). Returns the x
+ * after it and a 3-pixel gap. */
+static uint8_t pill_on(uint8_t x, uint8_t y, const char *text, uint16_t fill, uint16_t around)
+{
+	uint8_t n = 0, w;
+
+	while (text[n])
+		n++;
+	w = (uint8_t)(6 * n + 3);
+	if (x + w > LCD_WIDTH)
+		return x;
+	ST7735S_FillRect(x, y, w, 9, fill);
+	UI_PrintString(text, (uint8_t)(x + 2), (uint8_t)(y + 1), COLOR_BG, fill, 1);
+	ST7735S_FillRect(x, y, 1, 1, around);
+	ST7735S_FillRect((uint8_t)(x + w - 1), y, 1, 1, around);
+	ST7735S_FillRect(x, (uint8_t)(y + 8), 1, 1, around);
+	ST7735S_FillRect((uint8_t)(x + w - 1), (uint8_t)(y + 8), 1, 1, around);
+	return (uint8_t)(x + w + 3);
+}
+
+static uint8_t pill(uint8_t x, uint8_t y, const char *text, uint16_t fill)
+{
+	return pill_on(x, y, text, fill, COLOR_BG);
+}
+
 static void flag_icon(const Icon_t *icon, uint8_t x, bool on, uint16_t color)
 {
 	if (on)
@@ -66,12 +92,20 @@ static void draw_status(const UiMain_t *v, bool full)
 
 	if (full) {
 		ST7735S_FillRect(0, 0, LCD_WIDTH, BAR_H, COLOR_BAR);
-		UI_DrawIcon(&ICON_STATUS_SQUELCH, 2, 1, COLOR_DIM, COLOR_BAR);   /* no volume: the radio has a knob */
 	}
-	if (full || v->squelch != o->squelch)
-		UI_PrintString(UI_FormatDec(b, v->squelch, 1), 17, 2, COLOR_TEXT, COLOR_BAR, 1);
-	if (full || v->dual_watch != o->dual_watch)
-		flag_icon(&ICON_STATUS_DUALWATCH, 51, v->dual_watch, COLOR_INFO);
+	/* no volume: the radio has a knob. Squelch and dual watch as tags with their value inside, as on the sides */
+	if (full || v->squelch != o->squelch) {
+		char t[5] = "SQ ";
+		t[3] = UI_FormatDec(b, v->squelch, 1)[0];
+		t[4] = 0;
+		pill_on(2, 1, t, COLOR_DIM, COLOR_BAR);
+	}
+	if (full || v->dual_watch != o->dual_watch) {
+		if (v->dual_watch)
+			pill_on(51, 1, "DW", COLOR_INFO, COLOR_BAR);
+		else
+			ST7735S_FillRect(51, 1, 15, 9, COLOR_BAR);
+	}
 	if (full || v->scan != o->scan || v->scan_hold != o->scan_hold)
 		flag_icon(&ICON_STATUS_SCAN, 68, v->scan, v->scan_hold ? COLOR_RX : COLOR_WARN);
 	if (full || v->lamp != o->lamp || v->strobe != o->strobe)
@@ -102,15 +136,7 @@ static void draw_meter(uint8_t y, int8_t lit, uint8_t state)
 	}
 }
 
-/* transmit power: three rising bars (3, 5, 7 pixels), one lit for low, all three for high */
-static void draw_power(uint8_t x, uint8_t y, bool high, bool active)
-{
-	for (int i = 0; i < 3; i++) {
-		uint8_t h = (uint8_t)(3 + 2 * i), bx = (uint8_t)(x + 3 * i);
-		ST7735S_FillRect(bx, y, 2, (uint8_t)(9 - h), COLOR_BG);
-		ST7735S_FillRect(bx, (uint8_t)(y + 9 - h), 2, h, i == 0 || high ? (active ? COLOR_WARN : COLOR_DIM) : COLOR_FAINT);
-	}
-}
+
 
 static uint16_t freq_color(const UiSide_t *s, bool active)
 {
@@ -127,20 +153,25 @@ static void draw_tags(const UiSide_t *s, uint8_t y, bool active)
 	uint8_t x = 2;
 
 	ST7735S_FillRect(0, y, LCD_WIDTH, 9, COLOR_BG);
-	UI_DrawIcon(s->am ? &ICON_MOD_AM : &ICON_MOD_FM, x, y, c, COLOR_BG);
-	x += 15;
-	UI_DrawIcon(s->narrow ? &ICON_BW_NARROW : &ICON_BW_WIDE, x, y, c, COLOR_BG);
-	x += 10;
-	draw_power(x, y, s->high_power, active);
-	x += 11;
-	if (s->shift) {
-		UI_DrawIcon(s->shift > 0 ? &ICON_SHIFT_PLUS : &ICON_SHIFT_MINUS, x, y, c, COLOR_BG);
-		x += 9;
-	}
+	x = pill(x, y, s->am ? "AM" : "FM", c);
+	x = pill(x, y, s->narrow ? "N" : "W", c);
+	x = pill(x, y, s->high_power ? "H" : "L", active && s->high_power ? COLOR_WARN : c);   /* power as a letter */
+	if (s->shift)
+		x = pill(x, y, s->shift > 0 ? "+" : "-", c);
 	if (s->tone_kind != UI_TONE_NONE) {
-		const Icon_t *t = s->tone_kind == UI_TONE_DCS ? &ICON_TONE_DCS : &ICON_TONE_CTCSS;
-		UI_DrawIcon(t, x, y, c, COLOR_BG);
-		UI_PrintString(s->tone, (uint8_t)(x + t->w + 2), (uint8_t)(y + 1), active ? COLOR_TEXT : COLOR_DIM, COLOR_BG, 1);
+		/* "CT 88.5"; a DCS code already says what it is ("D023N"), and so does a split "88.5/D023N" */
+		char t[18], *p = t;
+		const char *q = s->tone;
+		bool split = false;
+		for (const char *r = q; *r; r++)
+			split |= *r == '/';
+		if (s->tone_kind == UI_TONE_CTCSS && !split) {
+			*p++ = 'C'; *p++ = 'T'; *p++ = ' ';
+		}
+		while (*q && p < t + sizeof t - 1)
+			*p++ = *q++;
+		*p = 0;
+		pill(x, y, t, c);
 	}
 }
 

@@ -200,10 +200,14 @@ static void dtmf_tick(void)
 static UiMain_t s_view;
 static int8_t   s_meter_kept = -1;       /* the active side's meter while dual watch looks at the other side */
 
-static int8_t meter_bars(void)          /* RSSI to 0..7 bars: about -125 dBm and up, 9 dB a bar */
+/* RSSI to 0..7 bars: about -125 dBm and up, 9 dB a bar. Only while there is a signal (the chip's squelch result,
+ * RADIO_Carrier): on a radio (2026-11-24) the noise floor alone lit 2-3 bars, which read as a signal. */
+static int8_t meter_bars(void)
 {
 	int dbm = (int)RADIO_Rssi() / 2 - 160, n = (dbm + 125) / 9;
 
+	if (!RADIO_Carrier())
+		return 0;
 	return (int8_t)(n < 0 ? 0 : n > UI_METER_BARS ? UI_METER_BARS : n);
 }
 
