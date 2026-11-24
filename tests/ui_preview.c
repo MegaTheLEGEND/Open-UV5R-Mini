@@ -92,9 +92,9 @@ int main(int argc, char **argv)
 	v.side[0].state = UI_STATE_RX;
 	v.side[0].meter = 6;
 	v.dual_watch = v.lamp = v.locked = true;
-	side(&v.side[1], 43950000u, "CH-012 RPTR", UI_TONE_DCS, "D023N");
+	side(&v.side[1], 43950000u, "012 439.500", UI_TONE_DCS, "D023N");
 	v.side[1].shift = -1;
-	strcpy(v.side[1].big, "RPTR");
+	strcpy(v.side[1].big, "CITY RPTR 70");   /* too long for large: two small lines */
 	strcpy(v.bottom, "DTMF 123*#");
 	v.bottom_color = COLOR_WARN;
 	UI_MainDraw(&v, false);

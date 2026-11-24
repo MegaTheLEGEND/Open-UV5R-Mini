@@ -235,8 +235,33 @@ static void side_view(UiSide_t *u, uint8_t n, const Vfo_t *vf, bool mr, int ch, 
 		copy_text(p, name, (unsigned)(sizeof u->label - (unsigned)(p - u->label)));
 		if (dm == 2)
 			copy_text(u->big, u->label, 7);
-		else if (dm == 0 && name[0])
+		else if (dm == 0 && name[0]) {
+			/* the name is the big text, so the small line gives the number and frequency: "005 145.520" (MHz,
+			 * trailing zeros dropped down to 3 decimals; 12 characters at most) */
+			uint32_t f = vf->freq, frac = f % 100000u;
+			char *q = u->label;
+			const char *d2 = UI_FormatDec(b, (uint32_t)ch + 1, 3);
+			int dec = 5;
+			while (*d2)
+				*q++ = *d2++;
+			*q++ = ' ';
+			for (const char *m = put_num(t, (unsigned)(f / 100000u)), *s = t; s < m; s++)
+				*q++ = *s;
+			*q++ = '.';
+			while (dec > 3 && frac % 10u == 0) {
+				frac /= 10u;
+				dec--;
+			}
+			for (int i = dec - 1; i >= 0; i--) {
+				uint32_t p10 = 1;
+				for (int j = 0; j < i; j++)
+					p10 *= 10u;
+				if (q < u->label + sizeof u->label - 1)
+					*q++ = (char)('0' + frac / p10 % 10u);
+			}
+			*q = 0;
 			copy_text(u->big, name, sizeof u->big);
+		}
 	}
 	u->am = vf->mod == MOD_AM || (vf->mod == MOD_AUTO && vf->freq >= 10800000u && vf->freq < 13600000u);
 	u->narrow = vf->narrow || u->am;

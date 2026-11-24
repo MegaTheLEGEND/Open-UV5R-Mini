@@ -20,7 +20,8 @@ enum { UI_TONE_NONE = 0, UI_TONE_CTCSS = 1, UI_TONE_DCS = 2 };
 
 typedef struct {
 	uint32_t freq;          /* receive frequency, 10 Hz units */
-	char     big[10];       /* shown large instead of the frequency when set (channel name or number) */
+	char     big[13];       /* shown instead of the frequency when set (channel name or number): large up to 9
+	                         * characters, longer on two smaller lines */
 	char     label[13];     /* small text by the badge: channel name or "CH-012"; "" shows "VFO" */
 	char     tone[14];      /* tone text ("88.5", "D023N", "88.5/D023N"); "" when none */
 	uint8_t  tone_kind;     /* UI_TONE_* */

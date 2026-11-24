@@ -47,6 +47,8 @@ bool CHANNEL_Decode(const uint8_t rec[CHANNEL_SIZE], Channel_t *ch)
 	ch->scan = (rec[15] & 0x04u) != 0;
 	for (i = 0; i < 12 && rec[20 + i] && rec[20 + i] != 0xFF; i++)
 		ch->name[i] = (char)(rec[20 + i] >= 0x20 && rec[20 + i] < 0x7F ? rec[20 + i] : '?');
+	while (i && ch->name[i - 1] == ' ')   /* CHIRP pads names with spaces: an all-space name is no name */
+		i--;
 	ch->name[i] = 0;
 	return true;
 }

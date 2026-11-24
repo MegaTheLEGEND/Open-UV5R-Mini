@@ -175,14 +175,37 @@ static void draw_side(const UiMain_t *v, uint8_t n, bool full)
 			UI_PrintString(v->entry, 10, (uint8_t)(y + 14), COLOR_WARN, COLOR_BG, 2);
 	} else if (full || typed || active != was || s->freq != o->freq || differ(s->big, o->big) || s->state != o->state) {
 		const char *t = s->big[0] ? s->big : UI_FormatFreq(b, s->freq);
-		char p[10];
-		unsigned i = 0;
-		for (; i < 9 && t[i]; i++)
-			p[i] = t[i];
-		for (; i < 9; i++)
-			p[i] = ' ';
-		p[9] = 0;
-		UI_PrintString(p, 10, (uint8_t)(y + 14), freq_color(s, active), COLOR_BG, 2);
+		unsigned len = 0;
+		while (t[len])
+			len++;
+		if (len <= 9) {                         /* large, 9 characters */
+			char p[10];
+			unsigned i = 0;
+			for (; i < 9 && t[i]; i++)
+				p[i] = t[i];
+			for (; i < 9; i++)
+				p[i] = ' ';
+			p[9] = 0;
+			UI_PrintString(p, 10, (uint8_t)(y + 14), freq_color(s, active), COLOR_BG, 2);
+		} else {
+			/* too long for large: two lines of small text, split at the space nearest the middle (dropped), or
+			 * half way through a name with no space */
+			char l1[13], l2[13];
+			unsigned cut = (len + 1) / 2, skip = 0, i;
+			for (unsigned d = 0; d <= len / 2; d++) {
+				if (cut >= d && cut - d > 0 && t[cut - d] == ' ') { cut -= d; skip = 1; break; }
+				if (cut + d < len && t[cut + d] == ' ') { cut += d; skip = 1; break; }
+			}
+			for (i = 0; i < cut && i < 12; i++)
+				l1[i] = t[i];
+			l1[i] = 0;
+			for (i = 0; cut + skip + i < len && i < 12; i++)
+				l2[i] = t[cut + skip + i];
+			l2[i] = 0;
+			ST7735S_FillRect(10, (uint8_t)(y + 14), 108, 14, COLOR_BG);
+			UI_PrintString(l1, 10, (uint8_t)(y + 14), freq_color(s, active), COLOR_BG, 1);
+			UI_PrintString(l2, 10, (uint8_t)(y + 22), freq_color(s, active), COLOR_BG, 1);
+		}
 	}
 	if (full || active != was || s->am != o->am || s->narrow != o->narrow || s->high_power != o->high_power
 	    || s->shift != o->shift || s->tone_kind != o->tone_kind || differ(s->tone, o->tone))
