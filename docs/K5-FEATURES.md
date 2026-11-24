@@ -84,13 +84,13 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.14 | Menu index shown while editing | have | NN/MM in the corner |
 | 4.15 | Reordered, renamed menu entries | have | sections CHANNEL, SCAN, TRANSMIT, SYSTEM, numbered on across them; a typed number jumps to its item |
 | 4.16 | Navigation layout per radio model (`SetNav`) | n/a | one keypad here |
-| 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | partial | # held locks keys; PTT always works |
+| 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | have | # held locks keys; MENU → SYSTEM → LOCK PTT makes the lock hold PTT too; PC-checked only |
 | 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); # held locks; no F layer yet [4.3] |
-| 4.19 | F+UP / F+DOWN squelch, saved; F+F1 / F+F2 step | todo | |
+| 4.19 | F+UP / F+DOWN squelch, saved; F+F1 / F+F2 step | partial | no F key here: SQUELCH + and SQUELCH - as `=` key actions (press, double, hold); step keys todo |
 | 4.20 | Quick actions: RX mode, main VFO only, wide/narrow, 1750, mute, audio profile, max power, offset removal | partial | `*` toggles wide/narrow; the rest todo |
 | 4.21 | Long-press EXIT restores the full VFO state | todo | |
 | 4.22 | PTT modes: Classic or OnePush (`SetPTT`) | todo | |
-| 4.23 | Time-out and end-of-transmission alerts: sound, visual, both (`SetTOT`, `SetEOT`) | partial | TOT ends TX with a message; alert choices todo |
+| 4.23 | Time-out and end-of-transmission alerts: sound, visual, both (`SetTOT`, `SetEOT`) | partial | the last 10 s before the TX time-out: "TX ENDS IN 9S" and the red LED blinking (no beep: it would go on the air); EOT alert todo; PC-checked only |
 | 4.24 | Auto deep-sleep after a time (`SetOff`) | have | MENU → SYSTEM → SLEEP, as F4HWN's: screen off, BK4819 asleep 3 s / listening 200 ms, wakes on a signal, key or PTT; PC-checked only (ROADMAP 4.9) |
 | 4.25 | Audio scope during RX and TX | todo | |
 | 4.26 | Clock on the screen | todo | ours, not Fusion's: ROADMAP 4.7 |

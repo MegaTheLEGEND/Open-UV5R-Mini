@@ -64,6 +64,8 @@ static bool     s_xf_ok;                 /* external flash answered */
 static bool     s_ptt_down, s_tx_refused;
 static KEY_Code_t s_key_held;           /* the key down now (key_event; defined there) */
 static uint32_t s_trx_ms;                /* how long the radio has been transmitting, or receiving with squelch open */
+static uint8_t  s_tot_left_s;            /* seconds before the TX time-out ends this transmission, in the last 10 */
+static bool     s_lock_ptt;              /* the key lock also locks PTT (MENU -> LOCK PTT) */
 static bool     s_boot_eq;               /* switched on with = held */
 static bool     s_duty_on;               /* the receiver's duty cycle is running (battery save or sleep) */
 static uint8_t  s_batt_show;             /* 0 icon, 1 percent, 2 volts; saved in gStock.ext[EXT_BATT] */
@@ -387,6 +389,15 @@ static void main_view(UiMain_t *v)
 			*p++ = *q++;
 		copy_text(p, s_tscan_last ? TONE_Format(b, s_tscan_last) : "...", 8);
 		v->bottom_color = COLOR_WARN;
+	} else if (RADIO_State() == RADIO_TX && s_tot_left_s) {
+		char *p = v->bottom;
+		const char *q = "TX ENDS IN ";
+		while (*q)
+			*p++ = *q++;
+		p = put_num(p, s_tot_left_s);
+		*p++ = 'S';
+		*p = 0;
+		v->bottom_color = COLOR_TX;
 	} else if ((RADIO_State() == RADIO_TX || RADIO_State() == RADIO_RX_OPEN) && s_trx_ms >= 1000u && !s_dtmf_len) {
 		/* how long this transmission or reception has gone on: "TX 0:42" */
 		uint32_t t = s_trx_ms / 1000u;
@@ -467,19 +478,21 @@ static const SetItem_t SET_ITEMS[] = {
 #define M_EQ_PRESS (M_BATT + 4)         /* what the = key does: one press, two presses, held (our own bytes) */
 #define M_EQ_DBL   (M_BATT + 5)
 #define M_EQ_HOLD  (M_BATT + 6)
+#define M_LOCKPTT  (M_BATT + 7)         /* the key lock locks PTT too */
 #if KEYTEST_ENABLE
-#define M_KEYTEST  (M_EQ_HOLD + 1)
+#define M_KEYTEST  (M_LOCKPTT + 1)
 #define M_ABOUT    (M_KEYTEST + 1)
 #else
-#define M_ABOUT    (M_EQ_HOLD + 1)      /* no KEY TEST in this build (features.mk ENABLE_KEYTEST) */
+#define M_ABOUT    (M_LOCKPTT + 1)      /* no KEY TEST in this build (features.mk ENABLE_KEYTEST) */
 #endif
 
 /* = key actions (K5 features 1.13 monitor, 4.18 assignable keys). MONITOR held: open while = is held; MONITOR on a
  * press: on until pressed again. While transmitting, = held always sends 1750 Hz. */
 enum { KA_NONE, KA_MONITOR, KA_SCAN, KA_AB, KA_VM, KA_BW, KA_POWER, KA_LAMP, KA_DW, KA_LOCK, KA_SPECTRUM, KA_METER,
-       KA_COUNT };
+       KA_SQL_UP, KA_SQL_DOWN, KA_COUNT };
 static const char *const L_KEYACT[KA_COUNT] = { "NONE", "MONITOR", "SCAN", "A/B", "VFO/MR", "W/N", "POWER",
-                                                "LAMP", "DUAL WATCH", "KEY LOCK", "SPECTRUM", "SIG METER" };
+                                                "LAMP", "DUAL WATCH", "KEY LOCK", "SPECTRUM", "SIG METER",
+                                                "SQUELCH +", "SQUELCH -" };
 static uint8_t s_eq_act[3] = { KA_NONE, KA_NONE, KA_MONITOR };   /* press, double press, hold */
 static const char *const L_BATT[] = { "ICON", "PERCENT", "VOLTS" };
 /* Sleep, after F4HWN's (SetOff; Sean, 2026-11-24): after this long with no key, signal or transmit (sleep_tick). */
@@ -513,8 +526,8 @@ static const uint8_t SEC_CH[] = { M_FREQ, M_CHNAME, M_RXTONE, M_TXTONE, M_SHIFT,
                                   M_STEP, M_SQL, M_SCANADD, M_CHSAVE, M_CHDEL };
 static const uint8_t SEC_SCAN[] = { M_AB, M_MEM, M_DW, M_SCAN, M_SCANMODE, M_TSCAN, M_TSCANSAVE };
 static const uint8_t SEC_TX[] = { SI(2), SI(3), SI(4), SI(5), SI(6), SI(7), SI(8), SI(9), SI(10), SI(11), SI(12) };
-static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP, M_SLEEPNOW, SI(13), SI(14),
-                                   M_EQ_PRESS, M_EQ_DBL, M_EQ_HOLD,
+static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP, M_SLEEPNOW, SI(13), M_LOCKPTT,
+                                   SI(14), M_EQ_PRESS, M_EQ_DBL, M_EQ_HOLD,
 #if KEYTEST_ENABLE
                                    M_KEYTEST,
 #endif
@@ -621,6 +634,7 @@ static const char *menu_name(int i)
 	case M_BATT:    return "BATTERY";
 	case M_SLEEP:   return "SLEEP";
 	case M_SLEEPNOW: return "SLEEP NOW";
+	case M_LOCKPTT: return "LOCK PTT";
 	case M_BSAVE:   return "BAT SAVE";
 	case M_EQ_PRESS: return "= PRESS";
 	case M_EQ_DBL:  return "= DOUBLE";
@@ -776,6 +790,7 @@ static const char *menu_value(int i, char *b)
 	case M_BATT:    return L_BATT[s_batt_show < 3 ? s_batt_show : 0];
 	case M_SLEEP:   return L_SLEEP[s_sleep_set < SLEEP_N ? s_sleep_set : SLEEP_DEFAULT];
 	case M_SLEEPNOW: return "PRESS MENU";
+	case M_LOCKPTT: return s_lock_ptt ? "ON" : "OFF";
 	case M_BSAVE:   return L_BSAVE[s_bsave < 4 ? s_bsave : 0];
 	case M_CHNAME:
 		if (s_menu_edit)
@@ -856,6 +871,9 @@ static void menu_change(int i, int dir)
 		return;
 	case M_BSAVE:
 		s_bsave = (uint8_t)((s_bsave + 4 + dir) % 4);
+		return;
+	case M_LOCKPTT:
+		s_lock_ptt = !s_lock_ptt;
 		return;
 	case M_CHNAME: {                     /* the character at the cursor, through NAME_CHARS */
 		int n = (int)sizeof NAME_CHARS - 1, c = 0;
@@ -1663,7 +1681,7 @@ enum {
 	EXT_MOD_A = 6,                   /* Modulation_t (A at 6, B at 7) */
 	EXT_TXLOCK = 8,                  /* TxLock_t + 1 (radio/txlock.h); 0 = not set */
 	EXT_REGION = 9,                  /* Region_t + 1; 0 = not set */
-	EXT_BATT = 10,                   /* battery on the status bar: 0 icon, 1 percent, 2 volts */
+	EXT_BATT = 10,                   /* bits 0-1 battery on the status bar: 0 icon, 1 percent, 2 volts; bit 4 LOCK PTT */
 	EXT_EQ = 11,                     /* = key actions + 1 (press 11, double 12, hold 13); 0 = the default */
 	EXT_SLEEP = 14,                  /* sleep time index + 1 (L_SLEEP); 0 = the default */
 	EXT_BSAVE = 15,                  /* battery save ratio + 1 (L_BSAVE); 0 = from stock's on/off byte */
@@ -1692,8 +1710,9 @@ static void start_from_stock(void)
 	/* stored + 1, so the 0 of a log saved before these bytes existed means "not set"; bad values fall back to HAM */
 	if (ext_ok() && gStock.ext[EXT_TXLOCK] && gStock.ext[EXT_REGION])
 		TXLOCK_Set((TxLock_t)(gStock.ext[EXT_TXLOCK] - 1u), (Region_t)(gStock.ext[EXT_REGION] - 1u));
-	if (ext_ok() && gStock.ext[EXT_BATT] <= 2)
-		s_batt_show = gStock.ext[EXT_BATT];
+	if (ext_ok() && (gStock.ext[EXT_BATT] & 3u) <= 2)
+		s_batt_show = gStock.ext[EXT_BATT] & 3u;
+	s_lock_ptt = ext_ok() && (gStock.ext[EXT_BATT] & 0x10u);
 	if (ext_ok() && gStock.ext[EXT_SLEEP] && gStock.ext[EXT_SLEEP] <= SLEEP_N)
 		s_sleep_set = (uint8_t)(gStock.ext[EXT_SLEEP] - 1u);
 	if (ext_ok() && gStock.ext[EXT_BSAVE] && gStock.ext[EXT_BSAVE] <= 4)
@@ -1845,7 +1864,7 @@ static void save_now(void)
 	gStock.ext[EXT_VOLUME] = gVfo.volume;
 	gStock.ext[EXT_TXLOCK] = (uint8_t)(TXLOCK_Mode() + 1u);
 	gStock.ext[EXT_REGION] = (uint8_t)(TXLOCK_Region() + 1u);
-	gStock.ext[EXT_BATT] = s_batt_show;
+	gStock.ext[EXT_BATT] = (uint8_t)(s_batt_show | (s_lock_ptt ? 0x10u : 0));
 	gStock.ext[EXT_SLEEP] = (uint8_t)(s_sleep_set + 1u);
 	gStock.ext[EXT_BSAVE] = (uint8_t)(s_bsave + 1u);
 	gStock.raw[SET_POWER_SAVE] = s_bsave != 0;    /* stock's Save Mode as on/off, as CHIRP shows it */
@@ -2012,7 +2031,13 @@ static void tot_tick(void)
 		s_tx_ms = 0;
 		return;
 	}
-	if (tot && tot <= 12 && (s_tx_ms += APP_TICK_MS) >= 15000u * tot) {
+	s_tot_left_s = 0;
+	if (tot && tot <= 12 && (s_tx_ms += APP_TICK_MS) + 10000u >= 15000u * tot && s_tx_ms < 15000u * tot) {
+		/* the last 10 s (K5 feature 4.23, visual): "TX ENDS 9S" and the red LED blinking */
+		s_tot_left_s = (uint8_t)((15000u * tot - s_tx_ms + 999u) / 1000u);
+		IO_LedTx((s_tx_ms / 250u) % 2u == 0);
+	}
+	if (tot && tot <= 12 && s_tx_ms >= 15000u * tot) {
 		RADIO_EndTx();
 		s_tot_hit = s_tx_refused = true;
 		s_tx_why = "TX TIME OUT";
@@ -2046,6 +2071,17 @@ static void key_action(uint8_t a)
 		gStock.raw[SET_KEY_LOCK] = 1;
 		note("KEYS LOCKED", COLOR_WARN);
 		break;
+	case KA_SQL_UP:
+	case KA_SQL_DOWN: {                  /* squelch one step, shown on the bottom line (K5 feature 4.19) */
+		static char t[12] = "SQUELCH ";
+		if (a == KA_SQL_UP ? gVfo.squelch < 9 : gVfo.squelch > 0)
+			gVfo.squelch = (uint8_t)(a == KA_SQL_UP ? gVfo.squelch + 1u : gVfo.squelch - 1u);
+		RADIO_Apply();
+		t[8] = (char)('0' + gVfo.squelch);
+		t[9] = 0;
+		note(t, COLOR_INFO);
+		break;
+	}
 	case KA_SPECTRUM:                    /* the app, if this build has it */
 #if APP_SPECTRUM_ENABLE
 		app_open(&APP_SPECTRUM);
@@ -2331,6 +2367,14 @@ void APP_Tick(void)
 			s_ptt_arm_ms = 0;
 		else if ((s_ptt_arm_ms += APP_TICK_MS) >= PTT_ARM_MS)
 			s_ptt_armed = true;
+		ptt_a = ptt_b = false;
+	}
+	/* LOCK PTT on and the keys locked: PTT does nothing (said once a press) */
+	if (s_lock_ptt && gStock.raw[SET_KEY_LOCK] && !s_ptt_down) {
+		static bool said;
+		if ((ptt_a || ptt_b) && !said)
+			note("LOCKED: HOLD #", COLOR_WARN);
+		said = ptt_a || ptt_b;
 		ptt_a = ptt_b = false;
 	}
 	ptt = ptt_a || ptt_b;

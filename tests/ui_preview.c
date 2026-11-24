@@ -135,11 +135,11 @@ int main(int argc, char **argv)
 	 * as the app has them (ENABLE_KEYTEST on). */
 	{
 		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "APPS", "SYSTEM", "ABOUT" };
-		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-37", "38-50", 0 };
+		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-37", "38-51", 0 };
 		static const char *const CH[] = { "SHIFT", "OFFSET", "TX POWER", "BANDWIDTH", "MODULATION", "STEP",
 		                                  "SQUELCH" };
-		static const char *const SYS[] = { "AUTO LOCK", "MENU EXIT", "= PRESS", "= DOUBLE", "= HOLD", "KEY TEST",
-		                                   "REGION", "TX LOCK" };
+		static const char *const SYS[] = { "AUTO LOCK", "LOCK PTT", "MENU EXIT", "= PRESS", "= DOUBLE", "= HOLD",
+		                                   "KEY TEST", "REGION", "TX LOCK" };
 		UiMenu_t m;
 		memset(&m, 0, sizeof m);
 		m.title = "MENU";
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
 			m.name[r] = CH[r];
 			m.num[r] = (uint8_t)(m.top + r + 1);
 		}
-		strcpy(m.corner, "11/50");
+		strcpy(m.corner, "11/51");
 		m.value = "3";
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu_channel.ppm", dir);
@@ -181,7 +181,7 @@ int main(int argc, char **argv)
 				m.num[r] = (uint8_t)(r + 1);
 			}
 		}
-		strcpy(m.corner, "02/50");
+		strcpy(m.corner, "02/51");
 		m.value = "CITY RPTR   ";
 		m.edit = true;
 		m.cursor = 5;
@@ -191,16 +191,16 @@ int main(int argc, char **argv)
 
 		memset(&m, 0, sizeof m);
 		m.title = "SYSTEM";
-		m.count = 15;
-		m.sel = 13;                                 /* REGION, item 51 */
+		m.count = 16;
+		m.sel = 14;                                 /* REGION, item 52 */
 		m.top = UI_MenuTop(m.sel);
 		m.cursor = -1;
 		for (int r = 0; r < UI_MENU_ROWS; r++) {
 			m.name[r] = SYS[m.top + r - 7];
 			m.num[r] = (uint8_t)(38 + m.top + r);
-			m.hidden[r] = m.top + r >= 13;
+			m.hidden[r] = m.top + r >= 14;
 		}
-		strcpy(m.corner, "51/52");
+		strcpy(m.corner, "52/53");
 		m.corner_warn = true;
 		m.value = "US";
 		m.edit = true;
