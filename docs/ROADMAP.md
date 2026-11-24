@@ -2,6 +2,9 @@
 
 What still has to be written before the C build can replace stock v0.27 on a radio. Status as of 2026-11-21.
 
+Beyond stock: every feature of the UV-K5 / UV-K1 custom firmware (F4HWN Fusion), with our status and a suggested
+order, is listed in [K5-FEATURES.md](K5-FEATURES.md).
+
 ## Now: top priority
 
 1. **Cable update mode (1.4, 1.6): works on a radio at 9600** (2026-11-22, one radio): our firmware installed
