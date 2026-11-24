@@ -39,6 +39,7 @@ typedef struct {
 	bool     dual_watch, scan, scan_hold, lamp, strobe, warning, locked;
 	int8_t   battery;       /* 0..4 bars, -1 unknown */
 	bool     battery_low, battery_hide;
+	char     battery_text[5];   /* "84%" or "4.1V" shown instead of the battery icon; "" = the icon */
 	char     bottom[22];
 	uint16_t bottom_color;
 } UiMain_t;

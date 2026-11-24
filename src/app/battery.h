@@ -18,5 +18,7 @@ uint8_t BATTERY_Level(void);               /* 0..6 thresholds passed; 0xFF witho
 /* Below the second threshold: stock makes its battery icon blink there (levels 0 and 1; stock codes 4 and 5,
  * 0x01E4F0B6). */
 bool    BATTERY_Low(void);
+uint16_t BATTERY_Millivolts(void);         /* smoothed, 0 if none */
+uint8_t BATTERY_Percent(void);            /* 0..100 from the calibrated thresholds (battery.c) */
 
 #endif

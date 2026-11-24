@@ -76,8 +76,15 @@ static void draw_battery(const UiMain_t *v)
 	const uint8_t x = 109;
 	uint16_t c = v->battery_low ? COLOR_TX : COLOR_RX;
 
-	if (v->battery_hide) {
-		ST7735S_FillRect(x, 1, ICON_STATUS_BATTERY.w, ICON_STATUS_BATTERY.h, COLOR_BAR);
+	ST7735S_FillRect(98, 1, (uint8_t)(LCD_WIDTH - 98), 9, COLOR_BAR);   /* the text is wider than the icon */
+	if (v->battery_hide)
+		return;
+	if (v->battery_text[0]) {               /* percent or volts, right-aligned */
+		uint8_t n = 0;
+		while (v->battery_text[n])
+			n++;
+		UI_PrintString(v->battery_text, (uint8_t)(LCD_WIDTH - 1 - 6 * n), 2, v->battery_low ? COLOR_TX : COLOR_TEXT,
+		               COLOR_BAR, 1);
 		return;
 	}
 	UI_DrawIcon(&ICON_STATUS_BATTERY, x, 1, v->battery_low ? COLOR_TX : COLOR_DIM, COLOR_BAR);
@@ -102,19 +109,21 @@ static void draw_status(const UiMain_t *v, bool full)
 	}
 	if (full || v->dual_watch != o->dual_watch) {
 		if (v->dual_watch)
-			pill_on(51, 1, "DW", COLOR_INFO, COLOR_BAR);
+			pill_on(33, 1, "DW", COLOR_INFO, COLOR_BAR);
 		else
-			ST7735S_FillRect(51, 1, 15, 9, COLOR_BAR);
+			ST7735S_FillRect(33, 1, 15, 9, COLOR_BAR);
 	}
+	/* the icons sit left of x 98 so a battery percentage ("100%", from x 103) has room */
 	if (full || v->scan != o->scan || v->scan_hold != o->scan_hold)
-		flag_icon(&ICON_STATUS_SCAN, 68, v->scan, v->scan_hold ? COLOR_RX : COLOR_WARN);
+		flag_icon(&ICON_STATUS_SCAN, 52, v->scan, v->scan_hold ? COLOR_RX : COLOR_WARN);
 	if (full || v->lamp != o->lamp || v->strobe != o->strobe)
-		flag_icon(&ICON_STATUS_LAMP, 80, v->lamp, v->strobe ? COLOR_TX : COLOR_WARN);
+		flag_icon(&ICON_STATUS_LAMP, 64, v->lamp, v->strobe ? COLOR_TX : COLOR_WARN);
 	if (full || v->warning != o->warning)
-		flag_icon(&ICON_STATUS_WARNING, 92, v->warning, COLOR_TX);
+		flag_icon(&ICON_STATUS_WARNING, 76, v->warning, COLOR_TX);
 	if (full || v->locked != o->locked)
-		flag_icon(&ICON_STATUS_LOCK, 102, v->locked, COLOR_WARN);
-	if (full || v->battery != o->battery || v->battery_low != o->battery_low || v->battery_hide != o->battery_hide)
+		flag_icon(&ICON_STATUS_LOCK, 88, v->locked, COLOR_WARN);
+	if (full || v->battery != o->battery || v->battery_low != o->battery_low || v->battery_hide != o->battery_hide
+	    || differ(v->battery_text, o->battery_text))
 		draw_battery(v);
 }
 

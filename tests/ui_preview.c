@@ -92,7 +92,8 @@ int main(int argc, char **argv)
 	/* receiving on A, dual watch and lamp on, then B in channel mode with DCS and a shift */
 	v.side[0].state = UI_STATE_RX;
 	v.side[0].meter = 6;
-	v.dual_watch = v.lamp = v.locked = true;
+	v.dual_watch = v.lamp = v.locked = v.scan = v.warning = true;
+	strcpy(v.battery_text, "100%");               /* MENU -> BATTERY: PERCENT; every status icon on */
 	side(&v.side[1], 43950000u, "012 439.500", UI_TONE_DCS, "D023N");
 	v.side[1].shift = -1;
 	strcpy(v.side[1].big, "CITY RPTR 70");   /* too long for large: two small lines */
