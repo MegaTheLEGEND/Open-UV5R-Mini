@@ -46,7 +46,19 @@ typedef struct {
 	AppsResult_t (*tick)(bool full);     /* every APP_TICK_MS; full = draw everything */
 	void         (*leave)(void);
 	bool         ptt_tunes;              /* PTT transmits on gAppsTune (the spectrum's centre), on the selected side */
+	bool         ptt_stays;              /* PTT transmits on the selected side and the app stays open */
 } AppDef_t;
+
+/* app.c's services for the apps: the selected side, changed as the main screen's keys would (channel mode with the
+ * channel's tones and shift, or the VFO), so PTT transmits on what the app shows */
+bool        APP_ChannelMode(void);
+int         APP_Channel(void);              /* 0-based, -1 in VFO mode */
+const char *APP_ChannelName(void);          /* "" if none */
+void        APP_SetChannelMode(bool mr);
+void        APP_Step(int dir);              /* next / previous channel, or one frequency step */
+bool        APP_TuneChannel(int n);         /* false: an empty slot */
+bool        APP_TuneFreq(uint32_t f);       /* VFO mode; false: outside 18-660 MHz */
+const char *APP_TxRefused(void);            /* why the last PTT was refused, or 0 */
 
 /* Set by app.c for the apps to read */
 extern bool     gAppsFlashOk;            /* the external flash answered (channels can be read) */

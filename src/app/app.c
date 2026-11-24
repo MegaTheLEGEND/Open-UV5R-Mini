@@ -1315,6 +1315,48 @@ static void draw_about(void)
 
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
 static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
+
+/* ---- for the apps (app/apps.h): the selected side, as the main screen's keys change it */
+bool        APP_ChannelMode(void) { return s_mr; }
+int         APP_Channel(void) { return s_mr ? s_ch : -1; }
+const char *APP_ChannelName(void) { return s_ch_name; }
+
+void APP_SetChannelMode(bool mr)
+{
+	if (mr != s_mr)
+		menu_change(M_MEM, 0);
+	RADIO_Apply();
+}
+
+void APP_Step(int dir)                   /* the next channel, or a frequency step */
+{
+	if (s_mr)
+		channel_show(CHANNEL_Next(s_ch, dir));
+	else
+		freq_step(dir);
+}
+
+bool APP_TuneChannel(int n)              /* 0-based; false if the slot is empty */
+{
+	if (!s_xf_ok || n < 0 || n >= (int)CHANNEL_COUNT || CHANNEL_Next(n - 1, +1) != n)
+		return false;
+	s_mr = true;
+	channel_show(n);
+	return true;
+}
+
+bool APP_TuneFreq(uint32_t f)            /* VFO mode; false outside the receiver's range */
+{
+	if (f < FREQ_MIN || f > FREQ_MAX)
+		return false;
+	if (s_mr)
+		menu_change(M_MEM, 0);
+	vfo_retune(f);
+	RADIO_Apply();
+	return true;
+}
+
+const char *APP_TxRefused(void) { return s_tx_refused ? (s_tx_why ? s_tx_why : "NO TX HERE") : 0; }
 static bool s_app_from_menu;             /* opened from the menu: EXIT goes back there, else to the main screen */
 static bool s_ptt_here;                  /* this PTT press transmits on the selected side (it left the spectrum) */
 
@@ -2381,7 +2423,9 @@ void APP_Tick(void)
 		ptt_a = ptt_b = false;
 	}
 	ptt = ptt_a || ptt_b;
-	if (ptt && s_screen == SCREEN_APP) { /* PTT leaves an app (the spectrum has the receiver) */
+	if (ptt && s_screen == SCREEN_APP && s_app && s_app->ptt_stays)
+		s_ptt_here = true;               /* the signal meter: transmit on its side, the screen stays */
+	else if (ptt && s_screen == SCREEN_APP) { /* PTT leaves an app (the spectrum has the receiver) */
 		const AppDef_t *a = s_app;
 		s_app = 0;
 		if (a)

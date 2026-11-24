@@ -63,6 +63,10 @@ bool         RADIO_RxAsleep(void);
 void         RADIO_ProbeBegin(void);
 uint16_t     RADIO_ProbeRssi(uint32_t freq, uint16_t settle_us);
 void         RADIO_ProbeEnd(void);
+/* Spectrum listening: the receiver parked on f with the audio on (wide, no sub-audio, squelch open), gVfo left
+ * alone; 0 mutes it again. RADIO_ProbeLevel reads the RSSI there (raw, as RADIO_Rssi). */
+void         RADIO_ProbeListen(uint32_t freq);
+uint16_t     RADIO_ProbeLevel(void);
 bool         RADIO_MonitorOn(void);
 
 /* Tones sent while transmitting (stock sub_01E510A2): code 0-15 = DTMF 0-9, A, B, C, D, *, #; 17-20 = one tone of

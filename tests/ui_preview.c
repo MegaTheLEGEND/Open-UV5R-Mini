@@ -228,7 +228,8 @@ int main(int argc, char **argv)
 		/* signal meter: a fox getting closer */
 		static UiMeter_t m;
 		memset(&m, 0, sizeof m);
-		strcpy(m.freq, "146.56500");
+		strcpy(m.left, "MR 012");
+		strcpy(m.right, "FOX HUNT");
 		m.dbm = -87;
 		m.peak_dbm = -79;
 		strcpy(m.sunits, "S9");

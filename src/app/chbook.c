@@ -181,5 +181,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_CHANNELS = { "CHANNELS", enter, key, tick, leave, false };
+const AppDef_t APP_CHANNELS = { "CHANNELS", enter, key, tick, leave, false, false };
 #endif

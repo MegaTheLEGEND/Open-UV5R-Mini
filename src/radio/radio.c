@@ -198,16 +198,20 @@ void RADIO_ProbeBegin(void)
 	s_probe = true;
 }
 
+static Band_t s_probe_band = (Band_t)0xFF;   /* the front end ProbeRssi last set */
+static bool   s_listen;                      /* RADIO_ProbeListen: parked with the audio on */
+
 uint16_t RADIO_ProbeRssi(uint32_t f, uint16_t settle_us)
 {
-	static Band_t last = (Band_t)0xFF;
 	Band_t b = band_of(f);
 
 	if (!s_probe)
 		return 0;
-	if (b != last) {
+	if (s_listen)
+		RADIO_ProbeListen(0);
+	if (b != s_probe_band) {
 		front_end(b, false);
-		last = b;
+		s_probe_band = b;
 	}
 	BK4819_SetFrequency(f);
 	BK4819_RxOn();
@@ -219,11 +223,52 @@ uint16_t RADIO_ProbeRssi(uint32_t f, uint16_t settle_us)
 	return BK4819_GetRSSI();
 }
 
+/* Parked on f to hear it (Sean, 2026-11-24: a station tuned on the spectrum was never heard, as the sweep keeps the
+ * audio off). Wide filter, sub-audio off, the audio path opened as RADIO_Monitor does; AM in the airband when the
+ * VFO's modulation is AUTO. Broadcast FM (75 kHz deviation) is wider than the BK4819's widest filter, so it is heard
+ * loud and distorted; the AC695N's own FM receiver (ROADMAP 3.9) is what plays it properly. */
+void RADIO_ProbeListen(uint32_t f)
+{
+	bool am;
+
+	if (!s_probe)
+		return;
+	if (f == 0) {
+		if (s_listen) {
+			s_listen = false;
+			BK4819_SetAF(BK4819_AF_MUTE);
+			IO_Amp(AUDIO_RX, false);
+			IO_LedRx(false);
+		}
+		return;
+	}
+	am = gVfo.mod == MOD_AM || (gVfo.mod == MOD_AUTO && band_of(f) == BAND_AIR);
+	s_probe_band = band_of(f);
+	front_end(s_probe_band, false);
+	BK4819_SetFrequency(f);
+	BK4819_SetFilterBandwidth(am);
+	BK4819_SetVolume(gVfo.volume);
+	BK4819_CssOff();
+	BK4819_RxOn();
+	s_rx_asleep = false;
+	s_listen = true;
+	BK4819_SetAF(am ? BK4819_AF_AM : BK4819_AF_FM);
+	IO_Amp(AUDIO_RX, true);
+	IO_LedRx(true);
+}
+
+uint16_t RADIO_ProbeLevel(void)
+{
+	return s_listen ? BK4819_GetRSSI() : 0;
+}
+
 void RADIO_ProbeEnd(void)
 {
 	if (!s_probe)
 		return;
+	RADIO_ProbeListen(0);
 	s_probe = false;
+	s_probe_band = (Band_t)0xFF;
 	RADIO_Apply();
 }
 
@@ -398,7 +443,8 @@ bool RADIO_StartTx(void)
 	audio(false);
 	BK4819_DtmfRxOff();
 	s_rx_asleep = false;
-	s_probe = false;               /* the TX set-up writes REG_37 again (BK4819_TxOn) */
+	s_probe = s_listen = false;    /* the TX set-up writes REG_37 again (BK4819_TxOn) */
+	s_probe_band = (Band_t)0xFF;
 	s_state = RADIO_TX;
 	BK4819_SetFrequency(tx_freq());
 	BK4819_SetFilterBandwidth(gVfo.narrow);

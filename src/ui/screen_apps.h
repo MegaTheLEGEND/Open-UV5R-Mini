@@ -8,11 +8,11 @@
  *   y 110-127 the peak: frequency and level, or "FROZEN"
  *
  * Signal meter (the fox hunt):
- *   y 0-10    title bar: "SIGNAL" and the frequency
+ *   y 0-10    title bar: the mode ("MR 005", "VFO") and the channel's name (or the frequency in VFO mode)
  *   y 14-45   the level, large ("-87"), with "dBm", and the S-units ("S7", "S9+20")
  *   y 48-57   a bar from -130 to -40 dBm; the peak as a tick
  *   y 60-111  history: one column a sample, newest at the right
- *   y 116-127 the peak level, and the tick sound on or off
+ *   y 116-127 the peak level and the tick sound; the digits being typed; why transmit was refused
  *
  * Info page (system info): a title and up to 9 label / value rows. */
 #ifndef UI_SCREEN_APPS_H
@@ -34,7 +34,10 @@ void UI_SpectrumBar(uint8_t i, uint8_t h, bool peak);
 #define UI_METER_HIST 124
 
 typedef struct {
-	char    freq[10];                    /* "145.52000" */
+	char    left[8];                     /* "MR 005", "VFO" */
+	char    right[13];                   /* the channel's name, or "145.52000" */
+	char    bottom[22];                  /* typed digits or a TX refusal; "" = the peak line */
+	bool    tx;                          /* transmitting: "TX" instead of the level */
 	int16_t dbm;                         /* now */
 	int16_t peak_dbm;
 	char    sunits[7];                   /* "S9+20" */

@@ -61,7 +61,7 @@ this radio (reason given). ROADMAP rows in brackets.
 
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
-| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | partial | MENU → APPS → SPECTRUM (or an `=` key action): 64 steps round the VFO, digits tune, step `*`/`#`, UP/DOWN move, `=` freezes, MENU tunes to the peak, PTT transmits on its centre; bars seen on a radio; channel names and saved settings todo; PC-checked only |
+| 3.1 | Spectrum view (F+5) with channel names, freeze, persistent settings | partial | MENU → APPS → SPECTRUM (or an `=` key action): 64 steps round the VFO, digits tune, step `*`/`#`, UP/DOWN move, `=` stops the sweep and listens on the centre, MENU tunes to the peak, PTT transmits on its centre; bars seen on a radio; channel names and saved settings todo; PC-checked only |
 | 3.2 | Restore the spectrum at start-up | todo | |
 
 ## Screen and controls
@@ -125,7 +125,7 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 | # | App | Status | Needs |
 | --- | --- | --- | --- |
 | 7.1 | Broadcast FM | partial | ours: the AC695N's own FM receiver [3.9] |
-| 7.2 | Fox Hunt (S-meter, history graph, attenuation, Geiger audio) | partial | MENU → APPS → SIGNAL METER: dBm, S-units, peak, history, tick sound; attenuation todo; PC-checked only |
+| 7.2 | Fox Hunt (S-meter, history graph, attenuation, Geiger audio) | partial | MENU → APPS → SIGNAL METER: on the selected side, the channel's name in the title; VM channel / VFO, UP/DOWN, digits tune; PTT transmits with the meter open; dBm, S-units, peak, history, tick sound; attenuation todo; PC-checked only |
 | 7.3 | Beacon (Morse ID, timed TX, safe READY screen) | todo | CW keying through the BK4819; TX lock applies |
 | 7.4 | Signal Finder, Spectrum3D | todo | spectrum sweep (3.1) |
 | 7.5 | ToneCall | todo | tone generator (have) |

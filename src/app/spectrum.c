@@ -5,7 +5,9 @@
  * every tick, so a sweep of 64 takes about 0.15 s and keys still answer. The audio is off while it runs.
  *
  * Keys: digits tune the centre as on the main screen (6 digits, MHz then kHz; MENU takes fewer, the rest 0; EXIT
- * drops them); UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; = freezes;
+ * drops them); UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; = stops the
+ * sweep and listens on the centre (RADIO_ProbeListen: the audio on, the centre bar live; = again sweeps; Sean,
+ * 2026-11-24, a station tuned here was never heard);
  * MENU tunes the VFO to the marked peak and goes back to the main screen; EXIT goes back. PTT (A or B) closes it and
  * transmits on the centre frequency on the selected side (app.c; Sean, 2026-11-24).
  *
@@ -26,7 +28,7 @@ static uint8_t  s_step;                  /* index into RADIO_Steps */
 static uint16_t s_rssi[UI_SPECTRUM_N];   /* raw: dBm = raw / 2 - 160 */
 static uint8_t  s_pos;                   /* the next column to measure */
 static uint8_t  s_peak;                  /* the strongest column of the last full sweep */
-static bool     s_frozen, s_swept;
+static bool     s_frozen, s_swept;      /* s_frozen: listening on the centre, the sweep stopped */
 static bool     s_has_peak;              /* the strongest column stands out of the noise */
 static uint32_t s_khz;                   /* digits typed for a new centre */
 static uint8_t  s_typed;
@@ -111,8 +113,12 @@ static void draw_peak(void)
 		UI_SpectrumPeak(t, true);
 		return;
 	}
-	if (s_frozen) {
-		UI_SpectrumPeak("FROZEN  =: RUN", true);
+	if (s_frozen) {                      /* "LISTEN 100.10000" */
+		const char *q = "LISTEN ";
+		while (*q)
+			*p++ = *q++;
+		APPS_FormatMhz(p, s_centre);
+		UI_SpectrumPeak(t, true);
 		return;
 	}
 	if (!s_swept) {
@@ -140,6 +146,8 @@ static void restart(void)
 	s_swept = false;
 	s_has_peak = false;
 	gAppsTune = s_centre;                /* PTT transmits here (app.c) */
+	if (s_frozen)
+		RADIO_ProbeListen(s_centre);     /* listening follows the centre */
 }
 
 static void enter(void)
@@ -207,6 +215,7 @@ static AppsResult_t key(KEY_Code_t k)
 		s_step++;
 	else if (k == KEY_EQUALS) {
 		s_frozen = !s_frozen;
+		RADIO_ProbeListen(s_frozen ? s_centre : 0);
 		draw_peak();
 		return APPS_STAY;
 	} else
@@ -232,8 +241,15 @@ static AppsResult_t tick(bool full)
 		draw_frame();
 		draw_peak();
 	}
-	if (s_frozen)
+	if (s_frozen) {                      /* listening: the centre column shows the level there */
+		uint8_t c = UI_SPECTRUM_N / 2;
+		uint16_t r = RADIO_ProbeLevel();
+		if (r) {
+			s_rssi[c] = r;
+			UI_SpectrumBar(c, height_of(r), s_has_peak && c == s_peak);
+		}
 		return APPS_STAY;
+	}
 	for (unsigned n = 0; n < SPEC_PER_TICK; n++) {
 		uint8_t i = s_pos;
 		bool was_peak = s_has_peak && i == s_peak;
@@ -266,5 +282,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave, true };
+const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave, true, false };
 #endif

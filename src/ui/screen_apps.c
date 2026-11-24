@@ -57,6 +57,13 @@ void UI_SpectrumBar(uint8_t i, uint8_t h, bool peak)
 /* ------------------------------------------------------------------------------------------- signal meter */
 static UiMeter_t s_meter_shown;
 
+static int differ(const char *a, const char *b)
+{
+	while (*a && *a == *b)
+		a++, b++;
+	return *a != *b;
+}
+
 static uint8_t meter_x(int16_t dbm)                /* -130..-40 dBm across 4..124 */
 {
 	int v = dbm < -130 ? -130 : dbm > -40 ? -40 : dbm;
@@ -70,12 +77,13 @@ void UI_MeterDraw(const UiMeter_t *m, bool full)
 
 	if (full) {
 		ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BG);
-		title_bar("SIGNAL", m->freq);
 		UI_PrintString("DBM", 104, 20, COLOR_DIM, COLOR_BG, 1);
 		ST7735S_FillRect(0, 59, LCD_WIDTH, 1, COLOR_BAR);
 		ST7735S_FillRect(0, 112, LCD_WIDTH, 1, COLOR_BAR);
 	}
-	if (full || m->dbm != o->dbm || m->open != o->open) {
+	if (full || differ(m->left, o->left) || differ(m->right, o->right))
+		title_bar(m->left, m->right);
+	if (full || m->dbm != o->dbm || m->open != o->open || m->tx != o->tx) {
 		/* the level, large: "-87" (scale 3, 18 px a character) */
 		char *p = b;
 		int v = m->dbm;
@@ -89,7 +97,10 @@ void UI_MeterDraw(const UiMeter_t *m, bool full)
 		*p++ = (char)('0' + v % 10);
 		*p = 0;
 		ST7735S_FillRect(4, 16, 96, 24, COLOR_BG);
-		UI_PrintString(b, 4, 16, m->open ? COLOR_RX : COLOR_TEXT, COLOR_BG, 3);
+		if (m->tx)
+			UI_PrintString("TX", 4, 16, COLOR_TX, COLOR_BG, 3);
+		else
+			UI_PrintString(b, 4, 16, m->open ? COLOR_RX : COLOR_TEXT, COLOR_BG, 3);
 	}
 	if (full || m->sunits[0] != o->sunits[0] || m->sunits[1] != o->sunits[1] || m->sunits[3] != o->sunits[3]
 	    || m->sunits[4] != o->sunits[4])
@@ -113,7 +124,10 @@ void UI_MeterDraw(const UiMeter_t *m, bool full)
 				ST7735S_FillRect(x, (uint8_t)(111 - h), 1, h, COLOR_ACCENT);
 		}
 	}
-	if (full || m->peak_dbm != o->peak_dbm || m->tick_sound != o->tick_sound) {
+	if (m->bottom[0]) {
+		if (full || differ(m->bottom, o->bottom))
+			UI_PrintPadded(m->bottom, 2, 116, COLOR_WARN, COLOR_BG, 21);
+	} else if (full || o->bottom[0] || m->peak_dbm != o->peak_dbm || m->tick_sound != o->tick_sound) {
 		char t[22], *p = t;
 		const char *q = "PEAK ";
 		int v = m->peak_dbm < 0 ? -m->peak_dbm : m->peak_dbm;
