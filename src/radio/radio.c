@@ -180,9 +180,11 @@ void RADIO_RxSleep(void)
 bool RADIO_RxAsleep(void) { return s_rx_asleep; }
 
 /* Probe, for the spectrum app: the audio muted and the squelch left alone while the receiver is moved from
- * frequency to frequency and its RSSI read. The way the UV-K5 spectrum does it: set the frequency, turn the receive
- * path off and on again (REG_30, BK4819_RxOn) so the VCO re-calibrates, wait, read REG_67. RADIO_ProbeEnd tunes
- * back to gVfo. */
+ * frequency to frequency and its RSSI read. As F4HWN's spectrum (its app/spectrum.c SetF and GetRssi): set the
+ * frequency, REG_30 off and on again so the VCO re-calibrates, wait (its default 3.2 ms), wait while REG_63's low
+ * byte (a glitch level) is 200 or more, then read REG_67 twice and keep the second (the AGC may still be moving).
+ * On a radio (2026-11-24) our first version (1.5 ms, one read) read about 0 everywhere. RADIO_ProbeEnd tunes back
+ * to gVfo. */
 void RADIO_ProbeBegin(void)
 {
 	if (s_state == RADIO_TX)
@@ -211,6 +213,9 @@ uint16_t RADIO_ProbeRssi(uint32_t f, uint16_t settle_us)
 	BK4819_RxOn();
 	s_rx_asleep = false;
 	SYSTEM_DelayUs(settle_us);
+	for (unsigned guard = 50; guard && (BK4819_ReadRegister(0x63) & 0xFFu) >= 200u; guard--)
+		SYSTEM_DelayUs(1);
+	(void)BK4819_GetRSSI();
 	return BK4819_GetRSSI();
 }
 

@@ -4,19 +4,21 @@
  * (RADIO_ProbeRssi: tune, VCO re-calibration, SPEC_SETTLE_US, RSSI) and the level drawn as a bar. A few are measured
  * every tick, so a sweep of 64 takes about 0.15 s and keys still answer. The audio is off while it runs.
  *
- * Keys: UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; 5 freezes; MENU tunes
+ * Keys: UP/DOWN move the centre a quarter of the span; * and # make the step smaller / larger; 1 and 3 the wait
+ * at each step; 5 freezes; MENU tunes
  * the VFO to the strongest frequency and goes back to the main screen; EXIT goes back to the menu. PTT closes it
  * (app.c).
  *
- * Not tried on a radio yet: the settle time is a guess (the UV-K5 spectrum waits a few hundred us to a few ms). */
+ * 1 and 3 make the wait at each step shorter / longer (0.4 to 10 ms, shown in the title bar with the step); the
+ * first version waited 1.5 ms and read about 0 everywhere on a radio (2026-11-24); now 3.2 ms as F4HWN. */
 #include "app/apps.h"
 #if APP_SPECTRUM_ENABLE
 #include "app/keys.h"
 #include "radio/radio.h"
 #include "ui/screen_apps.h"
 
-#define SPEC_SETTLE_US   1500u
-#define SPEC_PER_TICK    6u
+#define SPEC_SETTLE_US   3200u           /* F4HWN's default scan delay; 1 and 3 change it on the radio */
+#define SPEC_PER_TICK    3u
 #define SPEC_DBM_MIN   (-130)
 #define SPEC_DBM_MAX    (-50)
 
@@ -26,6 +28,7 @@ static uint16_t s_rssi[UI_SPECTRUM_N];   /* raw: dBm = raw / 2 - 160 */
 static uint8_t  s_pos;                   /* the next column to measure */
 static uint8_t  s_peak;                  /* the strongest column of the last full sweep */
 static bool     s_frozen, s_swept;
+static uint16_t s_settle = SPEC_SETTLE_US;
 
 static uint32_t freq_at(unsigned i)
 {
@@ -62,10 +65,22 @@ static void step_text(char *b, uint16_t s)        /* "12.5K", "6.25K", "100K" */
 
 static void draw_frame(void)
 {
-	char st[8], l[10], c[10], r[10];
+	char st[16], l[10], c[10], r[10];
 	uint32_t half = (uint32_t)RADIO_Steps[s_step] * (UI_SPECTRUM_N / 2);   /* 10 Hz */
 
 	step_text(st, RADIO_Steps[s_step]);
+	{                                    /* "12.5K 3.2MS": the step and the wait at each step */
+		char *p = st;
+		while (*p)
+			p++;
+		*p++ = ' ';
+		p = APPS_PutInt(p, s_settle / 1000u);
+		*p++ = '.';
+		*p++ = (char)('0' + s_settle / 100u % 10u);
+		*p++ = 'M';
+		*p++ = 'S';
+		*p = 0;
+	}
 	APPS_FormatMhz(c, s_centre);
 	/* the edges as offsets from the centre: "-400K" / "+400K", or "-1.6M" above 999 kHz */
 	l[0] = '-';
@@ -151,6 +166,10 @@ static AppsResult_t key(KEY_Code_t k)
 		s_step--;
 	else if (k == KEY_HASH && s_step + 1u < RADIO_StepCount)
 		s_step++;
+	else if (k == KEY_1 && s_settle > 400u)
+		s_settle = (uint16_t)(s_settle - (s_settle > 2000u ? 800u : 400u));
+	else if (k == KEY_3 && s_settle < 10000u)
+		s_settle = (uint16_t)(s_settle + (s_settle >= 2000u ? 800u : 400u));
 	else if (k == KEY_5) {
 		s_frozen = !s_frozen;
 		draw_peak();
@@ -174,7 +193,7 @@ static AppsResult_t tick(bool full)
 	for (unsigned n = 0; n < SPEC_PER_TICK; n++) {
 		uint8_t i = s_pos;
 		bool was_peak = s_swept && i == s_peak;
-		s_rssi[i] = RADIO_ProbeRssi(freq_at(i), SPEC_SETTLE_US);
+		s_rssi[i] = RADIO_ProbeRssi(freq_at(i), s_settle);
 		UI_SpectrumBar(i, height_of(s_rssi[i]), was_peak);
 		if (++s_pos >= UI_SPECTRUM_N) {   /* a sweep done: mark its peak */
 			uint8_t old = s_peak;

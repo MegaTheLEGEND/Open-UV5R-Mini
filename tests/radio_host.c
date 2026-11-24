@@ -55,6 +55,7 @@ bool BK4819_CssHeard(BK4819_Tone_t k) { return (css_heard_mask >> k) & 1u; }
 void BK4819_RxOn(void) { reg30 = 0xBFF1; }
 void BK4819_Sleep(void) { reg30 = 0; }
 void SYSTEM_DelayUs(uint32_t us) { (void)us; }
+uint16_t BK4819_ReadRegister(uint8_t r) { (void)r; return 0; }
 void BK4819_TxOn(void) { reg30 = 0xC1FE; }
 void BK4819_TxMute(bool on) { (void)on; }
 static uint8_t mic_gain = 0xFF;

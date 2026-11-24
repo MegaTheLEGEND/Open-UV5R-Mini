@@ -212,7 +212,7 @@ int main(int argc, char **argv)
 	/* the apps (src/ui/screen_apps.c), with made-up readings */
 	{
 		/* spectrum: noise, a strong carrier left of centre, a weaker one right */
-		UI_SpectrumFrame("12.5K", "-400K", "145.520", "+400K");
+		UI_SpectrumFrame("12.5K 3.2MS", "-400K", "145.520", "+400K");
 		for (int i = 0; i < UI_SPECTRUM_N; i++) {
 			int h = 6 + (i * 7919) % 9;
 			if (i >= 20 && i <= 22)
