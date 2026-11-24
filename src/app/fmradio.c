@@ -6,7 +6,11 @@
  * MENU takes it early); = searches up to the next station; * and # volume; EXIT goes back. PTT closes it (the BK4819
  * has the speaker again) as for the other apps. The BK4819's receiver is held quiet while FM plays (RADIO_Probe*).
  *
- * The three dim lines are for the first tries on a radio (Sean, 2026-11-24): S = how far the start got (9 = all),
+ * It does not start by itself (Sean's first try, 2026-11-24, restarted the radio during the start): the screen first
+ * shows how far the last start got (breadcrumbs that survive a restart, fmrx.h), then MENU starts the FM radio, 1 the
+ * FM receiver alone (no sound), 2 the DAC alone with a 1 kHz tone.
+ *
+ * Once running, the three dim lines are (Sean, 2026-11-24): S = how far the start got (9 = all),
  * CK = the clock registers 0x1E0008 / 0x1E000C, H = heap bytes, A = library asserts; IRQ/s should be about 1172 and
  * OUT/s about 48000 when the CPU keeps up. Not tried on a radio yet. */
 #include "app/apps.h"
@@ -28,7 +32,8 @@ static bool     s_seek;
 static uint32_t s_seek_from;
 static uint16_t s_ms, s_msg_ms;
 static uint32_t s_last_irqs, s_last_out;
-static bool     s_ok;
+static bool     s_ok, s_started;
+static uint32_t s_mode;
 
 static char *put_hex(char *p, uint32_t v, int digits)
 {
@@ -149,6 +154,56 @@ static void diag(void)
 	APPS_PutInt(p, (int)(st.asserts > 99u ? 99u : st.asserts));
 }
 
+/* the breadcrumbs of the last start, before this one: "LAST 57 G4 M3", "IRQS 0 EXC 0", "PC 01E0ABCD 01E0AB00" */
+static void last_try(void)
+{
+	char *p;
+
+	if (gFmCrumb.magic != FMRX_CRUMB_MAGIC) {
+		copy(s_f.diag[0], "NO EARLIER TRY", sizeof s_f.diag[0]);
+		return;
+	}
+	p = s_f.diag[0];
+	copy(p, gFmCrumb.step ? "LAST " : "LAST OK ", 9);
+	while (*p)
+		p++;
+	p = APPS_PutInt(p, (int)gFmCrumb.step);
+	*p++ = ' '; *p++ = 'G';
+	p = APPS_PutInt(p, (int)gFmCrumb.glue);
+	*p++ = ' '; *p++ = 'M';
+	APPS_PutInt(p, (int)gFmCrumb.mode);
+
+	p = s_f.diag[1];
+	copy(p, "IRQS ", 6);
+	p = APPS_PutInt(p + 5, (int)(gFmCrumb.irqs > 999999u ? 999999u : gFmCrumb.irqs));
+	*p++ = ' '; *p++ = 'E'; *p++ = 'X'; *p++ = 'C'; *p++ = ' ';
+	APPS_PutInt(p, (int)gFmCrumb.exc);
+
+	p = s_f.diag[2];
+	*p++ = 'P'; *p++ = 'C'; *p++ = ' ';
+	p = put_hex(p, gFmCrumb.exc_pc, 8);
+	*p++ = ' ';
+	put_hex(p, gFmCrumb.exc_rets, 8);
+}
+
+static void start(uint32_t mode)
+{
+	s_mode = mode;
+	s_started = true;
+	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
+	UI_FmDraw(&s_f, false);
+	FMRX_SetVolume(s_vol);
+	s_ok = FMRX_Open(s_khz, mode);
+	diag();
+	if (!s_ok)
+		say("FM DID NOT START", true);
+	else if (!(mode & FMRX_RX))
+		copy(s_f.bottom, "1 KHZ TONE */#:VOL", sizeof s_f.bottom);
+	else
+		hint();
+	UI_FmDraw(&s_f, false);
+}
+
 static void level(void)
 {
 	int r = FMRX_Rssi();
@@ -165,17 +220,13 @@ static void enter(void)
 	s_last_irqs = s_last_out = 0;
 	s_f = (UiFm_t){ 0 };
 	s_f.vol = s_vol;
+	s_ok = s_started = false;
 	freq_text();
-	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
+	last_try();
+	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE", sizeof s_f.bottom);
+	s_f.bottom_warn = true;
 	UI_FmDraw(&s_f, true);
 	RADIO_ProbeBegin();                  /* the BK4819 quiet: no squelch, no audio */
-	FMRX_SetVolume(s_vol);
-	s_ok = FMRX_Open(s_khz);
-	diag();
-	if (s_ok)
-		hint();
-	else
-		say("FM DID NOT START", true);
 }
 
 static void leave(void)
@@ -188,6 +239,19 @@ static AppsResult_t key(KEY_Code_t k)
 {
 	int d = KEY_Digit(k);
 
+	if (!s_started) {                    /* the start screen */
+		if (k == KEY_ACT_EXIT)
+			return APPS_EXIT;
+		if (k == KEY_ACT_MENU)
+			start(FMRX_DAC | FMRX_RX);
+		else if (k == KEY_1)
+			start(FMRX_RX);
+		else if (k == KEY_2)
+			start(FMRX_DAC);
+		return APPS_STAY;
+	}
+	if (!(s_mode & FMRX_RX) && d >= 0)
+		d = -1;                          /* tone test: no tuning */
 	if (d >= 0) {
 		s_seek = false;
 		s_typed_v = s_typed ? s_typed_v * 10u + (uint32_t)d : (uint32_t)d;
@@ -226,6 +290,13 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
+	if (!s_started) {
+		if (full)
+			UI_FmDraw(&s_f, true);
+		return APPS_STAY;
+	}
+	if (s_ok && !(s_mode & FMRX_RX))
+		FMRX_ToneFill();
 	if (s_ok && s_seek) {                /* one step a tick, stop on a station or after the whole band */
 		uint32_t f = s_khz + FM_SEEK_STEP > FMRX_MAX_KHZ ? FMRX_MIN_KHZ : s_khz + FM_SEEK_STEP;
 		s_khz = f;

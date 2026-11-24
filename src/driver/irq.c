@@ -42,6 +42,12 @@ void IRQ_Request(uint8_t n, uint8_t priority, void (*h)(void))
 	IRQ_Restore(was);
 }
 
+void IRQ_SetVector(uint8_t n, void (*h)(void))
+{
+	if (n < IRQ_COUNT && h)
+		IRQ_TABLE[n] = (uint32_t)(uintptr_t)h;
+}
+
 void IRQ_Free(uint8_t n)
 {
 	uint32_t was;

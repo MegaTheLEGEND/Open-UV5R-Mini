@@ -34,6 +34,8 @@ void IRQ_Init(void);
 /* Install handler h for interrupt n with priority 0-7 and turn it on. */
 void IRQ_Request(uint8_t n, uint8_t priority, void (*h)(void));
 void IRQ_Free(uint8_t n);
+/* Only the table entry (for the core exceptions, vectors 0-2, which have no IPCON switch to set). */
+void IRQ_SetVector(uint8_t n, void (*h)(void));
 /* The core's global enable (ICFG bits 8-9). */
 void IRQ_GlobalOn(void);
 void IRQ_GlobalOff(void);

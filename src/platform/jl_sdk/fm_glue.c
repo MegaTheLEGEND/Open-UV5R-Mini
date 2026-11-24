@@ -20,6 +20,10 @@
 #include "bsp/ac695n.h"
 #include "driver/irq.h"
 #include "driver/system.h"
+#include "platform/jl_sdk/fmrx.h"
+
+/* the last call JieLi's code made into this file, for the breadcrumbs (fmrx.h) */
+#define GLUE(id) (gFmCrumb.glue = (id))
 
 /* ------------------------------------------------------------------------------------------- memory */
 #define HEAP_SIZE 0x6000u                /* 24 KB: the FM receiver takes about 10.2 KB, the DAC driver a little */
@@ -48,6 +52,7 @@ void *malloc(size_t n)
 {
 	uint8_t *p = s_heap;
 
+	GLUE(1);
 	if (!s_heap_ready)
 		heap_init();
 	n = (n + 7u) & ~(size_t)7u;
@@ -124,6 +129,7 @@ void __local_irq_enable(void) { local_irq_enable(); }
 void request_irq(uint8_t n, uint8_t priority, void (*h)(void), uint8_t cpu)
 {
 	(void)cpu;
+	GLUE(1000u + n);
 	if (n == IRQ_AUDIO) {
 		gFmDacIrqHandler = h;
 		return;
@@ -195,6 +201,7 @@ uint32_t adc_sample(uint32_t ch)
 {
 	uint32_t con = 0x6u | 0xF000u | 1u << 3 | 1u << 6 | (ch & 0xFu) << 8;   /* clock /96, start delay, no irq */
 
+	GLUE(3);
 	if ((ch & 0xFFFFu) == 0xFu)
 		adc_mux(ch);
 	ADC_CON = con;
@@ -218,16 +225,18 @@ uint32_t adc_value_to_voltage(uint32_t adc_vbg, uint32_t adc_ch_val)
 /* ------------------------------------------------------------------------------------------- delays */
 void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a time */
 {
-	if (n >= 100u)                       /* the FM calibration runs long: keep the watchdog fed */
+	if (n >= 100u) {                     /* the FM calibration runs long: keep the watchdog fed */
+		GLUE(4);
 		SYSTEM_WatchdogClear();
+	}
 	while (n--)
 		__asm__ volatile("nop");
 }
 
-void delay_2ms(uint32_t n) { SYSTEM_DelayMs(2u * n); }
+void delay_2ms(uint32_t n) { GLUE(5); SYSTEM_DelayMs(2u * n); }
 void udelay(uint32_t us) { SYSTEM_DelayUs(us); }
 void mdelay(uint32_t ms) { SYSTEM_DelayMs(ms); }
-void os_time_dly(uint32_t ticks) { SYSTEM_DelayMs(10u * ticks); }
+void os_time_dly(uint32_t ticks) { GLUE(6); SYSTEM_DelayMs(10u * ticks); }
 
 /* ------------------------------------------------------------------------------------------- logs, asserts */
 int config_asser = 0;                    /* JieLi's asserts off */
@@ -240,10 +249,10 @@ int printf(const char *f, ...) { (void)f; return 0; }
 int puts(const char *s) { (void)s; return 0; }
 int putchar(int c) { return c; }
 void log_print(int level, const char *tag, const char *fmt, ...) { (void)level; (void)tag; (void)fmt; }
-void cpu_assert_debug(void) { gFmAsserts++; }
+void cpu_assert_debug(void) { GLUE(7); gFmAsserts++; }
 /* JieLi's libraries reset the chip when an allocation fails; we count it and carry on (the FM screen shows it) */
-void p33_soft_reset(void) { gFmResets++; }
-void cpu_reset(void) { gFmResets++; }
+void p33_soft_reset(void) { GLUE(8); gFmResets++; }
+void cpu_reset(void) { GLUE(9); gFmResets++; }
 
 /* the FM library asks whether a station scan is running (it then reads cached levels): never, here */
 int get_fm_scan_status(void) { return 0; }

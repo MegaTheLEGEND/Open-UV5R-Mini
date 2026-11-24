@@ -31,7 +31,26 @@ typedef struct {
 	uint8_t  step;           /* where FMRX_Open got to (0 = not opened, 9 = all done) */
 } FmrxStats_t;
 
-bool     FMRX_Open(uint32_t khz);       /* receiver and DAC on, speaker amp on */
+/* Breadcrumbs for the first tries on a radio: kept in RAM that start-up does not clear (.ram2), so after a reset
+ * the FM screen can show how far the last start got. step: where FMRX_Open was (codes in fmrx.c); glue: the last
+ * call JieLi's code made into ours (fm_glue.c); exc: an exception (vector 0-2) and the address it happened at. */
+#define FMRX_CRUMB_MAGIC 0x464D3031u      /* "FM01" */
+typedef struct {
+	uint32_t magic;
+	uint32_t step;
+	uint32_t glue;
+	uint32_t irqs;           /* FM interrupts seen */
+	uint32_t exc;            /* 0 none, else vector + 1 */
+	uint32_t exc_pc;         /* reti: where it happened */
+	uint32_t exc_rets;       /* rets: who called that function */
+	uint32_t mode;
+} FmrxCrumb_t;
+extern volatile FmrxCrumb_t gFmCrumb;
+
+#define FMRX_DAC 1u              /* the DAC and speaker */
+#define FMRX_RX  2u              /* the FM receiver */
+bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the radio */
+void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
 void     FMRX_Close(void);
 bool     FMRX_IsOpen(void);
 bool     FMRX_Tune(uint32_t khz);       /* true: the library thinks a station is there */

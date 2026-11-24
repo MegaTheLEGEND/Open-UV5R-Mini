@@ -57,6 +57,35 @@ static uint8_t  s_vol = 10;
 static int32_t  s_prev;
 static uint32_t s_phase;
 static volatile FmrxStats_t s_st;
+static uint32_t s_mode;
+volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
+
+static void crumb(uint32_t step)
+{
+	gFmCrumb.step = step;
+	__asm__ volatile("csync");
+}
+
+/* an exception while FM runs: note where, then wait for the watchdog to restart the radio */
+#ifdef __PI32V2__
+#define EXC_HANDLER(n)                                                                  \
+	static IRQ_HANDLER void exc##n(void)                                                \
+	{                                                                                   \
+		uint32_t pc, rs;                                                                \
+		__asm__ volatile("%0 = reti" : "=r"(pc));                                       \
+		__asm__ volatile("%0 = rets" : "=r"(rs));                                       \
+		gFmCrumb.exc = (n) + 1u;                                                        \
+		gFmCrumb.exc_pc = pc;                                                           \
+		gFmCrumb.exc_rets = rs;                                                         \
+		for (;;)                                                                        \
+			;                                                                           \
+	}
+#else
+#define EXC_HANDLER(n) static void exc##n(void) { gFmCrumb.exc = (n) + 1u; }
+#endif
+EXC_HANDLER(0)
+EXC_HANDLER(1)
+EXC_HANDLER(2)
 
 #define DAC ((struct audio_dac_hdl *)s_dac_hdl)
 
@@ -97,6 +126,7 @@ void fm_sample_output_handler(int16_t *buf, int len)
 	uint16_t peak = 0;
 
 	s_st.irqs++;
+	gFmCrumb.irqs++;
 	s_st.frames += frames;
 	for (uint32_t f = 0; f < frames; f++) {
 		int32_t x = ((int32_t)buf[2 * f] + (int32_t)buf[2 * f + 1]) / 2;
@@ -131,27 +161,40 @@ static bool dac_open(void)
 		s_dac_hdl[i] = 0;
 	for (unsigned i = 0; i < DAC_POINTS; i++)
 		s_dac_buf[i] = 0;
+	crumb(50);
 	audio_dac_init(DAC, DAC_PD);
 	s_st.step = 5;
+	crumb(51);
 	if (!s_trimmed) {                    /* stock keeps its trim in the settings area; we trim once per power-on */
 		audio_dac_do_trim(DAC, &s_trim, 0);
 		s_trimmed = true;
 	}
+	crumb(52);
 	audio_dac_set_trim_value(DAC, &s_trim);
 	s_st.step = 6;
+	crumb(53);
 	audio_dac_set_buff(DAC, s_dac_buf, (int)sizeof s_dac_buf);
+	crumb(54);
 	audio_dac_set_sample_rate(DAC, DAC_RATE);
+	crumb(55);
 	audio_dac_start(DAC);
+	crumb(56);
 	audio_dac_ch_analog_gain_set(DAC, 0xF, 28);
 	audio_dac_ch_digital_gain_set(DAC, 0xF, 16384);
 	s_st.step = 7;
+	crumb(57);
 	return true;
 }
 
-bool FMRX_Open(uint32_t khz)
+bool FMRX_Open(uint32_t khz, uint32_t mode)
 {
 	if (s_open)
 		return true;
+	gFmCrumb.magic = FMRX_CRUMB_MAGIC;
+	gFmCrumb.irqs = gFmCrumb.exc = gFmCrumb.exc_pc = gFmCrumb.exc_rets = gFmCrumb.glue = 0;
+	gFmCrumb.mode = mode;
+	s_mode = mode;
+	crumb(10);
 	s_st = (FmrxStats_t){ 0 };
 	s_prev = 0;
 	s_phase = 0;
@@ -161,22 +204,38 @@ bool FMRX_Open(uint32_t khz)
 	for (unsigned i = 0; i < sizeof fm_adc_dat; i++)
 		fm_adc_dat[i] = 0;
 	IRQ_Init();
+	IRQ_SetVector(0, exc0);              /* the core's exceptions go through the same table (JieLi's hwi.h) */
+	IRQ_SetVector(1, exc1);
+	IRQ_SetVector(2, exc2);
 	s_st.step = 1;
-	if (!dac_open())
+	crumb(20);
+	if ((mode & FMRX_DAC) && !dac_open())
 		return false;
-	IO_Amp(AUDIO_FM, true);
+	if (mode & FMRX_DAC)
+		IO_Amp(AUDIO_FM, true);
+	s_open = true;
+	if (!(mode & FMRX_RX)) {
+		s_st.step = 9;
+		crumb(99);
+		return true;
+	}
 	/* as stock's FM open: memory, then four settings (as stock passes them), then the receiver */
+	crumb(60);
 	fm_inside_mem_init();
+	crumb(61);
 	fm_inside_io_ctrl(4, -1, -67, 2, 8);
 	fm_inside_io_ctrl(5, 8750, 10800, 100);
 	fm_inside_io_ctrl(0, 400, 600, 2, 3);
 	fm_inside_io_ctrl(1, 34, 34, 1);
 	s_st.step = 8;
+	crumb(70);
 	IRQ_GlobalOn();
+	crumb(71);
 	fm_inside_on();
-	s_open = true;
+	crumb(80);
 	FMRX_Tune(khz);
 	s_st.step = 9;
+	crumb(99);
 	return true;
 }
 
@@ -185,27 +244,57 @@ void FMRX_Close(void)
 	if (!s_open)
 		return;
 	s_open = false;
-	fm_inside_off();
+	crumb(100);
+	if (s_mode & FMRX_RX)
+		fm_inside_off();
 	IRQ_GlobalOff();
 	IRQ_Init();
-	audio_dac_stop(DAC);
-	audio_dac_close(DAC);
+	crumb(101);
+	if (s_mode & FMRX_DAC) {
+		audio_dac_stop(DAC);
+		audio_dac_close(DAC);
+	}
 	IO_Amp(AUDIO_FM, false);
 	FMGLUE_HeapReset();
 	s_st.step = 0;
+	crumb(0);                            /* closed cleanly */
 }
 
 bool FMRX_IsOpen(void) { return s_open; }
 
+/* DAC test: a 1 kHz tone, 48 samples a cycle, at the volume set, written as the DAC takes it */
+void FMRX_ToneFill(void)
+{
+	static const int16_t SINE[12] = { 0, 8192, 14189, 16384, 14189, 8192, 0, -8192, -14189, -16384, -14189, -8192 };
+	static uint8_t ph, sub;
+	int16_t b[48];
+	int32_t vol = (int32_t)s_vol * (int32_t)s_vol;
+
+	if (!s_open || (s_mode & FMRX_RX) || !(s_mode & FMRX_DAC))
+		return;
+	for (int k = 0; k < 12; k++) {       /* up to 576 samples (12 ms) a call */
+		if ((DAC_SWN & 0xFFFFu) < 48u)
+			break;
+		for (int i = 0; i < 48; i++) {
+			b[i] = (int16_t)(SINE[ph] * vol / 225);
+			if (++sub == 4u) {           /* 12 steps of 4 samples: 48 a cycle, 1 kHz at 48 kHz */
+				sub = 0;
+				ph = (uint8_t)(ph + 1u == 12u ? 0u : ph + 1u);
+			}
+		}
+		dac_put(b, 48);
+	}
+}
+
 bool FMRX_Tune(uint32_t khz)
 {
-	if (!s_open || khz < FMRX_MIN_KHZ || khz > FMRX_MAX_KHZ)
+	if (!s_open || !(s_mode & FMRX_RX) || khz < FMRX_MIN_KHZ || khz > FMRX_MAX_KHZ)
 		return false;
 	return fm_inside_freq_set(khz) != 0;
 }
 
-int FMRX_Rssi(void) { return s_open ? fm_inside_rssi_read() : 0; }
-bool FMRX_Stereo(void) { return s_open && fm_inside_st_read() != 0; }
+int FMRX_Rssi(void) { return s_open && (s_mode & FMRX_RX) ? fm_inside_rssi_read() : 0; }
+bool FMRX_Stereo(void) { return s_open && (s_mode & FMRX_RX) && fm_inside_st_read() != 0; }
 void FMRX_SetVolume(uint8_t v) { s_vol = v > 15 ? 15 : v; }
 
 void FMRX_Stats(FmrxStats_t *s)
