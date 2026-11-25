@@ -274,8 +274,6 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	s_st = (FmrxStats_t){ 0 };
 	s_prev = 0;
 	s_phase = 0;
-	if (mode & FMRX_FAST)
-		clock_fast();
 	s_st.sys_div = REG32(0x001E0008u);
 	s_st.clk_con0 = REG32(0x001E000Cu);
 	FMGLUE_HeapReset();
@@ -297,6 +295,11 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 		crumb(99);
 		return true;
 	}
+	/* the faster clock only now: at 96 MHz JieLi's DAC trim did not finish (Sean's ninth try, 2026-11-25: still in
+	 * dac_channel_trim after a long wait), at 48 MHz it does */
+	if (mode & FMRX_FAST)
+		clock_fast();
+	s_st.sys_div = REG32(0x001E0008u);
 	/* as stock's FM open: memory, then four settings (as stock passes them), then the receiver */
 	crumb(60);
 	fm_inside_mem_init();
