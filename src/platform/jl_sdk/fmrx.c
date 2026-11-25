@@ -261,21 +261,30 @@ uint32_t FMRX_SysMHz(void)
 	return pll[c & 3u] / ((2u * (d & 3u) + 1u) << (d >> 2)) / ((CLK_SYS_DIV & 0xFFu) + 1u);
 }
 
-/* Twice the CPU clock: halve the PLL divider, and first double the LSB and flash dividers so the peripherals (UART,
- * screen SPI, flash) keep their speed. Runs from RAM with interrupts off, as the flash clock changes under it. */
+/* The FM clock, as stock sets it. Stock's own FM open, run in the emulator (emu/fm_trace.py, 2026-11-25), calls
+ * clk_set("sys") with: CLK_CON0 0x1E000C = 0x102 (CPU on the 24 MHz crystal while switching), CLK_CON2 = 0x53 then
+ * 0x63 (the 480 MHz PLL output / 4 = 120 MHz), SYS_DIV = 3, the flash clock (mask ROM), SYS_DIV = 0x200 (LSB / 3 =
+ * 40 MHz), CLK_CON0 = 0x1C2 (back on the PLL). So stock runs FM at 120 MHz, not 96 (our 96 MHz left the main code
+ * no time on Sean's radio, 2026-11-25: FM hissed, keys and the power switch went dead). We do the same, but keep the
+ * flash below its present speed with the flash divider (/ 3 = 40 MHz) instead of the ROM call. PLL_CON1 0x1E0044
+ * bit 24 (480 MHz output on) is set first in case the bootloader left it off. Runs from RAM with interrupts off. */
+#define CLK_CON0    REG32(0x001E000Cu)
+#define PLL_CON1_   REG32(0x001E0044u)
 __attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t div, uint32_t con2)
 {
-	uint32_t was = IRQ_Save();
+	uint32_t was = IRQ_Save(), con0 = CLK_CON0;
 
-	if (con2 != CLK_CON2 && ((con2 >> 2) & 0xFu) < ((CLK_CON2 >> 2) & 0xFu)) {   /* faster: dividers first */
-		CLK_SYS_DIV = div;
-		__asm__ volatile("csync");
-		CLK_CON2 = con2;
-	} else {                                                                      /* slower: clock first */
-		CLK_CON2 = con2;
-		__asm__ volatile("csync");
-		CLK_SYS_DIV = div;
-	}
+	CLK_CON0 = (con0 & ~(7u << 6)) | 4u << 6;   /* CPU on the crystal */
+	__asm__ volatile("csync");
+	for (volatile uint32_t i = 0; i < 100u; i++)
+		;
+	CLK_CON2 = con2;
+	__asm__ volatile("csync");
+	CLK_SYS_DIV = div;
+	__asm__ volatile("csync");
+	for (volatile uint32_t i = 0; i < 100u; i++)
+		;
+	CLK_CON0 = con0;                         /* back on the PLL */
 	__asm__ volatile("csync");
 	for (volatile uint32_t i = 0; i < 1000u; i++)
 		;
@@ -284,14 +293,16 @@ __attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t
 
 static void clock_fast(void)
 {
-	uint32_t d = (CLK_CON2 >> 2) & 0xFu, div = CLK_SYS_DIV;
-
-	s_old_div = div;
+	s_old_div = CLK_SYS_DIV;
 	s_old_con2 = CLK_CON2;
-	if ((d >> 2) == 0u || (div & 0xFFu) != 0u || (div & (7u << 8)) != 0u || (div & (7u << 12)) != 0u)
-		return;                          /* not the set-up seen on the radio: leave it */
-	div |= 1u << 8 | 1u << 12;           /* LSB and flash: / 2 */
-	clock_set(div, (CLK_CON2 & ~(0xFu << 2)) | (d - 4u) << 2);
+	if (((CLK_CON0 >> 6) & 7u) != 7u || (s_old_div & 0xFFu) != 0u)
+		return;                          /* not on the PLL as seen on the radio: leave it */
+	if (!(PLL_CON1_ & 1u << 24)) {
+		PLL_CON1_ |= 1u << 24;
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+	}
+	clock_set((s_old_div & ~(7u << 8 | 7u << 12)) | 2u << 8 | 2u << 12, (s_old_con2 & ~0x3Fu) | 3u | 8u << 2);
 	s_fast = true;
 }
 
