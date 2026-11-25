@@ -30,6 +30,8 @@ typedef struct {
 	uint32_t clk_con0;
 	uint32_t adc_calls;      /* ADC conversions the FM calibration asked for, and how many never finished */
 	uint32_t adc_timeouts;
+	uint32_t irq_hz;         /* FM interrupts a second, timed by the crystal (timer 3, 24 MHz) */
+	uint32_t main_pct;       /* CPU time left for everything else, % (a fixed loop timed with and without interrupts) */
 	uint8_t  step;           /* where FMRX_Open got to (0 = not opened, 9 = all done) */
 } FmrxStats_t;
 

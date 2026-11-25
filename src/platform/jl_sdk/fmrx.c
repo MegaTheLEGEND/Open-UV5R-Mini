@@ -56,6 +56,40 @@ static bool     s_trimmed, s_open;
 static uint8_t  s_vol = 10;
 static int32_t  s_prev;
 static uint32_t s_phase;
+
+/* ------------------------------------------------------------------------------------------- timing */
+/* Timer 3 (JieLi's JL_TIMER3, 0x1E0700: CON, CNT, PRD) counting the 24 MHz crystal, wrapping every 65536 counts
+ * (2.7 ms): CON bit 0 = count, bit 3 = crystal clock, bit 14 = clear pending (SDK handshake_timer.c). Sean's twelfth
+ * try (2026-11-25): FM played (hiss) but keys and the power switch went dead, so how much time the FM interrupt
+ * takes is measured, not guessed. */
+#define T3_CON REG32(0x001E0700u)
+#define T3_CNT REG32(0x001E0704u)
+#define T3_PRD REG32(0x001E0708u)
+static volatile uint32_t s_per_sum, s_per_n;
+static uint16_t s_per_last;
+static bool     s_per_ok;
+static uint32_t s_loop_base;             /* ticks for the test loop with interrupts off */
+
+static void timer_start(void)
+{
+	T3_CON = 1u << 14;
+	T3_CNT = 0;
+	T3_PRD = 0xFFFFu;
+	T3_CON = 1u << 0 | 1u << 3;
+	s_per_ok = false;
+	s_per_sum = s_per_n = 0;
+}
+
+static inline uint16_t t_now(void) { return (uint16_t)T3_CNT; }
+
+__attribute__((noinline)) static uint32_t test_loop(void)    /* about 0.3 ms at 96 MHz with nothing else */
+{
+	uint16_t t0 = t_now();
+
+	for (volatile uint32_t i = 0; i < 4000u; i++)
+		;
+	return (uint16_t)(t_now() - t0);
+}
 static volatile FmrxStats_t s_st;
 static uint32_t s_mode;
 volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
@@ -141,6 +175,15 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	{
+		uint16_t t = t_now();
+		if (s_per_ok) {
+			s_per_sum += (uint16_t)(t - s_per_last);
+			s_per_n++;
+		}
+		s_per_last = t;
+		s_per_ok = true;
+	}
 	s_st.frames += frames;
 	for (uint32_t f = 0; f < frames; f++) {
 		int32_t x = ((int32_t)buf[2 * f] + (int32_t)buf[2 * f + 1]) / 2;
@@ -298,6 +341,12 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	if (mode & FMRX_FAST)
 		clock_fast();
 	s_st.sys_div = REG32(0x001E0008u);
+	timer_start();
+	{
+		uint32_t was = IRQ_Save();
+		s_loop_base = test_loop();
+		IRQ_Restore(was);
+	}
 	/* as stock's FM open: memory, then four settings (as stock passes them), then the receiver */
 	crumb(60);
 	fm_inside_mem_init();
@@ -384,4 +433,11 @@ void FMRX_Stats(FmrxStats_t *s)
 	s->asserts = gFmAsserts + gFmResets;
 	s->adc_calls = gFmAdcCalls;
 	s->adc_timeouts = gFmAdcTimeouts;
+	if (s_open && (s_mode & FMRX_RX)) {
+		uint32_t sum = s_per_sum, n = s_per_n, t;
+		s_per_sum = s_per_n = 0;
+		s->irq_hz = sum ? (uint32_t)(24000000ull * n / sum) : 0;
+		t = test_loop();
+		s->main_pct = t ? s_loop_base * 100u / t : 0;
+	}
 }

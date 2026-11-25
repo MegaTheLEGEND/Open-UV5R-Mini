@@ -144,11 +144,14 @@ static void diag(void)
 	*p++ = '/';
 	APPS_PutInt(p, (int)(st.adc_calls > 999u ? 999u : st.adc_calls));
 
-	p = s_f.diag[1];                     /* "IRQ/S 1172 PK 12034" */
+	(void)irqs;
+	p = s_f.diag[1];                     /* "IRQ/S 1172 FREE 45%": real rate, CPU left for the rest */
 	copy(p, "IRQ/S ", 7);
-	p = APPS_PutInt(p + 6, (int)irqs);
-	*p++ = ' '; *p++ = 'P'; *p++ = 'K'; *p++ = ' ';
-	APPS_PutInt(p, st.peak);
+	p = APPS_PutInt(p + 6, (int)st.irq_hz);
+	copy(p, " FREE ", 7);
+	p = APPS_PutInt(p + 6, (int)st.main_pct);
+	*p++ = '%';
+	*p = 0;
 
 	p = s_f.diag[2];                     /* "OUT/S 48000 DR 0 A0" */
 	copy(p, "OUT/S ", 7);
