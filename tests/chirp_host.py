@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 r"""Run CHIRP's own, unchanged UV-5R Mini driver against our programming mode (src/app/program.c) on the PC.
 
-    python tests/chirp_host.py [--chirp PATH_TO_CHIRP_CHECKOUT]
+    python tests/chirp_host.py [--chirp PATH_TO_CHIRP_CHECKOUT] [--link cable|bt|all]
 
 Needs a checkout of CHIRP (git clone https://github.com/kk7ds/chirp; default: ../chirp next to this repo, or
 E:/chirp-ref/chirp) and a host gcc. The external flash starts as your radio's dump (firmware/backups/external-*.bin,
 git-ignored) if there is one, else empty with seeded settings. Checks: download matches the flash; a channel edited
 in CHIRP and uploaded lands in flash; a second download returns exactly what was uploaded; an unchanged upload erases
 nothing; nothing at or past 0xB000 (calibration 0xF000, fonts) changes.
+
+Links (default all): "cable" is the open build (no PROGRAM_BT) over the fake UART; "bt" is the Bluetooth edition's
+build (PROGRAM_BT=1), CHIRP talking over the Bluetooth queue (PROGRAM_BtReceive in, BT_Send out), and the cable must
+stay silent; "cable-bt" is that same build over the cable.
 """
 import argparse
 import ctypes
@@ -22,13 +26,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLASH = 0x200000
 
 
-def build():
+def build(link):
+    """One library per link, so each run starts from a fresh state (and Windows keeps a loaded DLL locked)."""
+    bt = link != 'cable'
     out = os.path.join(ROOT, 'build', 'host')
     os.makedirs(out, exist_ok=True)
-    dll = os.path.join(out, 'chirp_host' + ('.dll' if os.name == 'nt' else '.so'))
+    dll = os.path.join(out, 'chirp_host_' + link.replace('-', '_') + ('.dll' if os.name == 'nt' else '.so'))
     src = os.path.join(ROOT, 'src')
     subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-shared', '-fPIC',
-                    '-DPROGRAM_HOST_TEST', '-DCHANNELS_HOST_TEST', '-DSETTINGS_ENABLE_SAVE=1', '-I', src,
+                    '-DPROGRAM_HOST_TEST', '-DCHANNELS_HOST_TEST', '-DSETTINGS_ENABLE_SAVE=1',
+                    '-DPROGRAM_BT=%d' % bt, '-I', src,
                     os.path.join(ROOT, 'tests', 'chirp_host.c'), os.path.join(src, 'app', 'program.c'),
                     os.path.join(src, 'store', 'settings.c'), os.path.join(src, 'radio', 'tones.c'), '-o', dll],
                    check=True)
@@ -39,11 +46,12 @@ class Pipe:
     """What CHIRP's driver sees as the serial port."""
     port = 'TEST'
 
-    def __init__(self, lib):
+    def __init__(self, lib, bt):
         self.lib, self.timeout, self.buf = lib, 1.5, b''
+        self.feed = lib.test_feed_bt if bt else lib.test_feed
 
     def write(self, data):
-        self.lib.test_feed(bytes(data), len(data))
+        self.feed(bytes(data), len(data))
 
     def read(self, n):
         end = time.monotonic() + self.timeout
@@ -60,22 +68,11 @@ class Pipe:
         pass
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    here = [os.path.join(os.path.dirname(ROOT), 'chirp'), 'E:/chirp-ref/chirp']
-    ap.add_argument('--chirp', default=next((p for p in here if os.path.isdir(p)), here[0]))
-    a = ap.parse_args()
-    if not os.path.isdir(os.path.join(a.chirp, 'chirp', 'drivers')):
-        sys.exit('no CHIRP checkout at %s (git clone https://github.com/kk7ds/chirp)' % a.chirp)
-    sys.path.insert(0, a.chirp)
-    import builtins
-    builtins._ = lambda s: s                              # CHIRP's gettext, as its app installs it
-    from chirp import chirp_common, platform               # noqa: E402
-    from chirp.drivers import baofeng_uv17Pro as drv      # noqa: E402
-    plat = platform.get_platform()
-    plat.is_ble_serial = lambda s: False                  # a USB cable, not Bluetooth
-
-    lib = build()
+def run(drv, link):
+    """The whole check list over one link; returns the names of the failed checks."""
+    bt = link != 'cable'
+    print('--- link: %s (%s build)' % (link, 'Bluetooth edition, PROGRAM_BT=1' if bt else 'open'))
+    lib = build(link)
     lib.test_flash.restype = ctypes.POINTER(ctypes.c_uint8 * FLASH)
     flash = lib.test_flash().contents
     dumps = sorted(glob.glob(os.path.join(ROOT, 'firmware', 'backups', 'external-*.bin')))
@@ -114,7 +111,7 @@ def main():
             fails.append(name)
 
     def download():
-        r = drv.UV5RMini(Pipe(lib))
+        r = drv.UV5RMini(Pipe(lib, link == 'bt'))
         r.status_fn = lambda s: None
         r.sync_in()
         return r
@@ -158,7 +155,31 @@ def main():
     r2.sync_out()
     wait_session(4)
     check('unchanged upload erases nothing', lib.test_count(0) == e0, '%d erases' % (lib.test_count(0) - e0))
+    if link == 'bt':
+        check('nothing sent on the cable', lib.test_count(4) == 0, '%d UART sends' % lib.test_count(4))
     stop.set()
+    return ['%s: %s' % (link, f) for f in fails]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    here = [os.path.join(os.path.dirname(ROOT), 'chirp'), 'E:/chirp-ref/chirp']
+    ap.add_argument('--chirp', default=next((p for p in here if os.path.isdir(p)), here[0]))
+    ap.add_argument('--link', choices=['cable', 'bt', 'cable-bt', 'all'], default='all')
+    a = ap.parse_args()
+    if not os.path.isdir(os.path.join(a.chirp, 'chirp', 'drivers')):
+        sys.exit('no CHIRP checkout at %s (git clone https://github.com/kk7ds/chirp)' % a.chirp)
+    sys.path.insert(0, a.chirp)
+    import builtins
+    builtins._ = lambda s: s                              # CHIRP's gettext, as its app installs it
+    from chirp import chirp_common, platform               # noqa: E402,F401
+    from chirp.drivers import baofeng_uv17Pro as drv      # noqa: E402
+    plat = platform.get_platform()
+    plat.is_ble_serial = lambda s: False                  # a serial port (cable, or a Bluetooth SPP COM port)
+
+    fails = []
+    for link in (['cable', 'bt', 'cable-bt'] if a.link == 'all' else [a.link]):
+        fails += run(drv, link)
     print('ALL OK' if not fails else 'FAILED: %s' % ', '.join(fails))
     return 1 if fails else 0
 

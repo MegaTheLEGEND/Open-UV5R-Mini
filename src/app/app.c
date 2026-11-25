@@ -2515,7 +2515,11 @@ void APP_Init(void)
 	if (s_xf_ok)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 #endif
+#if PROGRAM_ENABLE && PROGRAM_BT
+	BT_Init(PROGRAM_BtReceive);  /* CHIRP over Bluetooth SPP (Bluetooth edition) */
+#else
 	BT_Init(0);
+#endif
 	/* The radio's own power-on picture while the beeps' audio starts (Sean, 2026-11-27; ROADMAP 4.8). After
 	 * PROGRAM_Init, which starts the LCD again (its pin check) and so cleared a picture drawn before it. */
 	bool splash_on = s_xf_ok && splash();

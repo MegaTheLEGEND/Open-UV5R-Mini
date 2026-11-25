@@ -17,14 +17,25 @@
 #define PROGRAM_SCREEN_TEST 0
 #endif
 
+/* The same programming over Bluetooth SPP ("Wireless Cps"): only in the Bluetooth edition, whose SDK build sets it
+ * (docs/BLUETOOTH.md). The open build has no Bluetooth, so 0. */
+#ifndef PROGRAM_BT
+#define PROGRAM_BT 0
+#endif
+
 enum { PROGRAM_IDLE, PROGRAM_DONE_READ, PROGRAM_DONE_WRITTEN };
+
+#if PROGRAM_BT
+/* Bytes received over Bluetooth SPP. Give this to BT_Init; it only queues them (any task), PROGRAM_Poll reads them. */
+void PROGRAM_BtReceive(const uint8_t *data, uint16_t len);
+#endif
 
 /* Set up the cable UART at 115200 (call once at start-up). */
 void PROGRAM_Init(void);
 
-/* Call every main-loop tick. When the programming software says hello, this runs the whole session (blocking, with
- * the PROGRAM screen) and returns how it ended: PROGRAM_DONE_WRITTEN means the channels or settings changed and the
- * app must reload them. */
+/* Call every main-loop tick. When the programming software says hello (on the cable, or with PROGRAM_BT over
+ * Bluetooth), this runs the whole session on that link (blocking, with the PROGRAM screen) and returns how it ended:
+ * PROGRAM_DONE_WRITTEN means the channels or settings changed and the app must reload them. */
 int  PROGRAM_Poll(void);
 /* the same with bytes already read from the cable (the debug monitor reads them first, app/monitor.h) */
 int  PROGRAM_PollBytes(const uint8_t *b, int got);

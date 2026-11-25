@@ -19,19 +19,34 @@
  * settings live in stock's two logs (store/settings.h), so 0x8000 and 0x9000 read and write the current slot.
  * Nothing else is written; the external-flash driver refuses anything past 0xAFFF anyway (calibration at 0xF000).
  *
- * PC test: tests/chirp_host.py runs CHIRP's own driver against this file (PROGRAM_HOST_TEST stubs the hardware).
+ * Two links (PROGRAM_BT, the Bluetooth edition only): the same protocol also comes over Bluetooth SPP, as stock's
+ * "Wireless Cps" (docs/BLUETOOTH.md). The SPP glue hands received bytes to PROGRAM_BtReceive, which queues them; the
+ * hello is looked for on each link on its own, the session runs on the link it came from, and every reply goes back
+ * over that link (stock: one reply function, sub_01E4CA10, picks SPP or the UART by a "link is Bluetooth" flag).
+ * Without PROGRAM_BT (the open build) only the cable is read, exactly as before.
+ *
+ * PC test: tests/chirp_host.py runs CHIRP's own driver against this file (PROGRAM_HOST_TEST stubs the hardware),
+ * over the cable and, built with PROGRAM_BT, over the Bluetooth queue.
  */
 #include <stdbool.h>
 #include "app/program.h"
 #include "driver/uart.h"
 #include "driver/extflash.h"
 #include "store/settings.h"
+#if PROGRAM_BT
+#include "bt/bt.h"
+#endif
 #ifndef PROGRAM_HOST_TEST
 #include "driver/system.h"
 #include "driver/st7735s.h"
 #include "ui/helper.h"
 #include "ui/theme.h"
 #define WATCHDOG()  SYSTEM_WatchdogClear()
+/* Waiting for Bluetooth bytes: the SDK build passes its OS delay (-DPROGRAM_WAIT_MS=...) so the Bluetooth task runs
+ * meanwhile; SYSTEM_DelayMs would spin. */
+#ifndef PROGRAM_WAIT_MS
+#define PROGRAM_WAIT_MS(ms) SYSTEM_DelayMs(ms)
+#endif
 static void screen(const char *what)
 {
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
@@ -40,8 +55,10 @@ static void screen(const char *what)
 }
 #else
 void program_test_screen(const char *what);
+void program_test_wait_ms(uint32_t ms);
 #define WATCHDOG()  ((void)0)
 #define screen(w)   program_test_screen(w)
+#define PROGRAM_WAIT_MS(ms) program_test_wait_ms(ms)
 #endif
 
 #define IDLE_END_MS 3000u
@@ -57,7 +74,9 @@ static const uint8_t IDENT[16] = { 'P', 'R', 'O', 'G', 'R', 'A', 'M', 'C', 'O', 
 static const uint8_t KEY[4] = { 'C', 'O', ' ', '7' };
 #define SEND_LEN 25u                 /* "SEND!" and 20 more bytes */
 
-static uint8_t  s_window[16];
+enum { LINK_UART, LINK_BT };
+static uint8_t  s_link;              /* the link the current session came over; replies go back on it */
+static uint8_t  s_window[16];        /* the last 16 bytes from the cable, for the hello */
 static uint8_t  s_in[4 + 0x80];
 static uint32_t s_in_n;
 static uint8_t  s_sec[SECTOR];
@@ -288,9 +307,63 @@ static bool write_block(uint32_t a, const uint8_t *d, uint32_t n)
 #endif
 }
 
+/* ------------------------------------------------------------------------------------------- the two links */
+#if PROGRAM_BT
+/* Bytes from Bluetooth, queued by PROGRAM_BtReceive (the Bluetooth stack's task) and taken here (the radio task):
+ * one writer, one reader, so the two counters need no lock. Stock stages 1100 bytes; CHIRP waits for each reply,
+ * so the longest it sends at once is one write (4 + 0x40 bytes). When full, the rest is dropped. */
+#define BT_Q 1024u
+static volatile uint8_t  s_bt_q[BT_Q];
+static volatile uint32_t s_bt_w, s_bt_r;
+static uint8_t           s_bt_window[16];
+
+void PROGRAM_BtReceive(const uint8_t *data, uint16_t len)
+{
+	uint32_t w = s_bt_w;
+
+	for (uint16_t i = 0; i < len && w - s_bt_r < BT_Q; i++)
+		s_bt_q[w++ % BT_Q] = data[i];
+	s_bt_w = w;
+}
+
+static int bt_take(uint8_t *b, int max)
+{
+	uint32_t r = s_bt_r;
+	int n = 0;
+
+	while (n < max && r != s_bt_w)
+		b[n++] = s_bt_q[r++ % BT_Q];
+	s_bt_r = r;
+	return n;
+}
+#endif
+
+/* Up to max bytes from the session's link, waiting up to timeout_ms for the first; 0 = none came. */
+static int link_receive(uint8_t *b, int max, uint32_t timeout_ms)
+{
+#if PROGRAM_BT
+	if (s_link == LINK_BT)
+		for (;;) {
+			int n = bt_take(b, max);
+			uint32_t step = timeout_ms < 10u ? timeout_ms : 10u;
+			if (n || !timeout_ms)
+				return n;
+			PROGRAM_WAIT_MS(step);
+			timeout_ms -= step;
+		}
+#endif
+	return UART_Receive(b, max, timeout_ms);
+}
+
 /* ------------------------------------------------------------------------------------------- replies */
 static void send(const uint8_t *p, uint32_t n)
 {
+#if PROGRAM_BT
+	if (s_link == LINK_BT) {
+		BT_Send(p, (uint16_t)n);
+		return;
+	}
+#endif
 	UART_Send(p, n);
 }
 
@@ -377,13 +450,13 @@ static int session(void)
 {
 	uint32_t idle = 0;
 
-	screen("CHIRP");
+	screen(s_link == LINK_BT ? "CHIRP BT" : "CHIRP");
 	s_failed = s_written = s_sec_dirty = false;
 	s_sec_addr = -1;
 	s_in_n = 0;
 	for (;;) {
 		uint8_t b[64];
-		int got = UART_Receive(b, sizeof b, 50);
+		int got = link_receive(b, sizeof b, 50);
 
 		WATCHDOG();
 		if (got <= 0) {
@@ -416,11 +489,43 @@ end:
 	return s_written ? PROGRAM_DONE_WRITTEN : PROGRAM_DONE_READ;
 }
 
+/* Slide the bytes through a link's 16-byte window; true when it holds the hello (the window is then cleared). */
+static bool hello(uint8_t *window, const uint8_t *b, int got)
+{
+	for (int i = 0; i < got; i++) {
+		for (int j = 0; j < 15; j++)
+			window[j] = window[j + 1];
+		window[15] = b[i];
+		bool match = true;
+		for (int j = 0; j < 16; j++)
+			if (window[j] != IDENT[j])
+				match = false;
+		if (match) {
+			for (int j = 0; j < 16; j++)
+				window[j] = 0;
+			return true;
+		}
+	}
+	return false;
+}
+
+static int start(uint8_t link)
+{
+	s_link = link;
+	ack(true);
+	return session();
+}
+
 int PROGRAM_Poll(void)
 {
 	uint8_t b[32];
 	int got;
 
+#if PROGRAM_BT
+	got = bt_take(b, sizeof b);          /* Bluetooth does not use the cable's pins: read even when they clash */
+	if (hello(s_bt_window, b, got))
+		return start(LINK_BT);
+#endif
 	if (s_off)
 		return PROGRAM_IDLE;
 	got = UART_Receive(b, sizeof b, 0);
@@ -445,20 +550,7 @@ int PROGRAM_PollBytes(const uint8_t *b, int got)
 		}
 	}
 #endif
-	for (int i = 0; i < got; i++) {
-		for (int j = 0; j < 15; j++)
-			s_window[j] = s_window[j + 1];
-		s_window[15] = b[i];
-		bool match = true;
-		for (int j = 0; j < 16; j++)
-			if (s_window[j] != IDENT[j])
-				match = false;
-		if (match) {
-			for (int j = 0; j < 16; j++)
-				s_window[j] = 0;
-			ack(true);
-			return session();
-		}
-	}
+	if (hello(s_window, b, got))
+		return start(LINK_UART);
 	return PROGRAM_IDLE;
 }
