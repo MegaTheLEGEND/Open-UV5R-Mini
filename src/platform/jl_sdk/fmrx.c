@@ -99,6 +99,9 @@ void (*gFmBeat)(void);
 void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
 static uint32_t s_stall_d, s_stall_n;
+static uint32_t s_g_sum, s_h_sum, s_gh_n;
+static uint16_t s_out_last;
+uint32_t gFmP_us, gFmG_us, gFmH_us;
 
 static void crumb(uint32_t step)
 {
@@ -187,8 +190,19 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 			s_stall_d = gFmDelays;
 			s_stall_n = 0;
 		} else if (++s_stall_n % 600u == 0u && gFmStall) {
+			uint32_t n = s_per_n, gh = s_gh_n;
+			gFmP_us = n ? s_per_sum / n / 24u : 0;
+			gFmG_us = gh ? s_g_sum / gh / 24u : 0;
+			gFmH_us = gh ? s_h_sum / gh / 24u : 0;
+			s_per_sum = s_per_n = 0;
+			s_g_sum = s_h_sum = s_gh_n = 0;
 			gFmStall(pc, gFmCrumb.irqs, gFmDelays);
+			s_out_last = t_now();        /* the drawing is not counted */
+			s_per_ok = false;
+			return;
 		}
+		if (s_per_ok)
+			s_g_sum += (uint16_t)(t_now() - s_out_last);
 	}
 	{
 		uint16_t t = t_now();
@@ -225,6 +239,12 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 	if (n)
 		dac_put(out, n);
 	s_st.peak = peak;
+	{
+		uint16_t t = t_now();
+		s_h_sum += (uint16_t)(t - s_per_last);
+		s_gh_n++;
+		s_out_last = t;
+	}
 }
 
 static bool dac_open(void)

@@ -72,6 +72,12 @@ extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
  * address is kept in the breadcrumbs (exc_rets, the second PC number) at every interrupt, so it survives a restart.
  * Sean's thirteenth try (2026-11-25): at 120 MHz the start still stopped right after the FM block is turned on. */
 extern void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
+/* With it, timed on the crystal, in microseconds, averaged since the last call: P = time between FM interrupts,
+ * G = from the end of our handler to the start of the next (JieLi's demodulator and the interrupt's way in and
+ * out, plus whatever main code ran), H = our handler. If P is far below 853 us the interrupt comes too often; if
+ * G + H is about P the interrupt itself takes all the time (Sean's fifteenth try, 2026-11-25: the radio clocks set
+ * as stock, 120 MHz, and the main code still stalled once FM ran). */
+extern uint32_t gFmP_us, gFmG_us, gFmH_us;
 extern uint32_t gFmClkCon1Was;           /* CLK_CON1 as the bootloader left it, before FMRX_Open set its radio clocks */
 
 #define FMRX_DAC 1u              /* the DAC and speaker */

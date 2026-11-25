@@ -265,6 +265,14 @@ static void stall_show(uint32_t main_pc, uint32_t irqs, uint32_t delays)
 	*p++ = ' '; *p++ = 'D';
 	APPS_PutInt(p, (int)(delays > 99999u ? 99999u : delays));
 	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
+	p = b;                               /* "P853 G700 H40": us between interrupts, demodulator gap, our handler */
+	*p++ = 'P';
+	p = APPS_PutInt(p, (int)(gFmP_us > 99999u ? 99999u : gFmP_us));
+	*p++ = ' '; *p++ = 'G';
+	p = APPS_PutInt(p, (int)(gFmG_us > 99999u ? 99999u : gFmG_us));
+	*p++ = ' '; *p++ = 'H';
+	APPS_PutInt(p, (int)(gFmH_us > 99999u ? 99999u : gFmH_us));
+	UI_PrintPadded(b, 2, 116, COLOR_WARN, COLOR_BG, 21);
 }
 
 static void start(uint32_t mode)
