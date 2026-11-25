@@ -83,7 +83,7 @@ everything that uses a changed switch is rebuilt.
 | `ENABLE_APP_CHANNELS` | 1 | MENU → APPS → CHANNELS, the channel book (`src/app/chbook.c`) |
 | `ENABLE_APP_SYSINFO` | 1 | MENU → APPS → SYSTEM INFO (`src/app/sysinfo.c`) |
 | `ENABLE_APP_SNAKE` | 1 | MENU → APPS → SNAKE (`src/app/snake.c`). With every app off the APPS section goes from the menu |
-| `ENABLE_APP_FM` | 1 | MENU → APPS → FM RADIO (`src/app/fmradio.c`). Needs JieLi's FM and DAC libraries from their public SDK: clone [fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK), then `sh tools/sdk/fm_libs.sh <clone>` from the repo root (copies `cpu.a`, `media.a` into `build/sdk/`). Without them the build leaves FM out with a warning. With them the image contains JieLi's closed library code (Apache-2.0; docs/THIRD-PARTY.md) |
+| `ENABLE_APP_FM` | 0 | MENU → APPS → FM RADIO (`src/app/fmradio.c`). **Off by default: does not work on a radio yet** (the FM interrupt comes about 3.5 times too often and the radio freezes; ROADMAP 3.9). Needs JieLi's FM and DAC libraries from their public SDK: clone [fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK), then `sh tools/sdk/fm_libs.sh <clone>` from the repo root (copies `cpu.a`, `media.a` into `build/sdk/`). Without them the build leaves FM out with a warning. With them the image contains JieLi's closed library code (Apache-2.0; docs/THIRD-PARTY.md) |
 | `ENABLE_LCD_SPI` | 1 | screen and external flash through SPI1 hardware with DMA (checks itself at power-on, else bit-banged); 0 = always bit-banged |
 | `ENABLE_SCREEN_TEST` | 0 | start-up check of the CHIRP cable set-up (labels on the screen) |
 
