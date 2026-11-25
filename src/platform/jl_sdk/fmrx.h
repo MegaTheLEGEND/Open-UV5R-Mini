@@ -3,7 +3,7 @@
  *
  * JieLi's FM library (fm_inside, from the public BR23 SDK, linked from build/sdk/; docs/THIRD-PARTY.md) does the
  * radio part: calibration, tuning, and the demodulation in its interrupt (43), which hands us 32 stereo frames at
- * 37.5 kHz every 0.85 ms. We turn them to mono, resample to 48 kHz and write them into the DAC's buffer; JieLi's DAC
+ * 41.7 kHz every 0.77 ms. We turn them to mono, resample to 48 kHz and write them into the DAC's buffer; JieLi's DAC
  * driver (audio_dac) only sets the DAC up (power, trim, rate). Board settings for the DAC are stock's own (read from
  * the stock app in the emulator, 2026-11-24): right channel only, DAC LDO level 2, VCMO on.
  *
@@ -19,8 +19,8 @@
 #define FMRX_MAX_KHZ 108000u
 
 typedef struct {
-	uint32_t irqs;           /* FM interrupts so far (about 1172 a second when running) */
-	uint32_t frames;         /* 37.5 kHz frames received */
+	uint32_t irqs;           /* FM interrupts so far (about 1302 a second when running) */
+	uint32_t frames;         /* 41.7 kHz frames received */
 	uint32_t dac_out;        /* 48 kHz samples written to the DAC */
 	uint32_t dac_drop;       /* samples dropped: the DAC buffer was full */
 	uint16_t peak;           /* largest sample in the last FM buffer, before the volume */

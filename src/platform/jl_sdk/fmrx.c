@@ -51,7 +51,7 @@ static const uint32_t DAC_PD[3] = { 0, 0, 0x00068321u };
 
 #define DAC_RATE     48000
 #define DAC_POINTS   1024u               /* mono samples in the DAC's ring: 21 ms */
-#define FM_RATE      37500u
+#define FM_RATE      41667u           /* JieLi SDK audio_dec.c: FM output rate */
 #define STEP_Q16     ((uint32_t)((FM_RATE * 65536ull) / DAC_RATE))   /* 0.78125 */
 
 static uint32_t s_dac_hdl[256] __attribute__((aligned(8)));   /* JieLi's audio_dac_hdl: about 300 bytes */
@@ -262,8 +262,8 @@ __attribute__((section(".ramfunc.fm"))) static void dac_put(const int16_t *d, ui
 	s_st.dac_drop += n;
 }
 
-/* Called by JieLi's FM interrupt with the demodulated audio: len bytes of interleaved 16-bit left/right at 37.5 kHz
- * (32 frames). Mono, volume, and 37.5 -> 48 kHz by straight-line interpolation. */
+/* Called by JieLi's FM interrupt with the demodulated audio: len bytes of interleaved 16-bit left/right at 41.7 kHz
+ * (32 frames). Mono, volume, and 41.7 -> 48 kHz by straight-line interpolation. */
 __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *buf, int len)
 {
 	int16_t out[48];
@@ -491,26 +491,6 @@ static uint32_t pend_period_us(uint32_t *toggles)
 	return n > 1 ? sum / (n - 1u) / 24u : 0;
 }
 
-/* Stock's Bluetooth start-up (sub_01E0173E, run in the emulator, 2026-11-25) sets the wireless block and the radio
- * analog block's first eight registers before FM is ever used; our firmware never did (all read 0 on Sean's
- * radio). Values as stock writes them (facts, from the trace). */
-__attribute__((unused)) static void wl_base_as_stock(void)
-{
-	volatile uint32_t *wl = (volatile uint32_t *)0x001F1800u, *ana = (volatile uint32_t *)0x001E1900u;
-
-	*wl = 0x00000080u;
-	*wl = 0x000C0080u;
-	*wl = 0x000C0081u;
-	ana[0] = 0x00448725u;
-	ana[1] = 0x0C1C0000u;
-	ana[2] = 0x0F717A80u;
-	ana[3] = 0x3A3A4B25u;
-	ana[4] = 0x00000219u;
-	ana[5] = 0x08B60BCEu;
-	ana[6] = 0x1FFFF4E0u;
-	ana[7] = 0x00000000u;
-}
-
 extern void (*gFmIsr)(void);
 
 extern void (*gFmIsr)(void);
@@ -518,9 +498,6 @@ extern uint8_t fm_adc_dat[];
 
 /* One register bit flipped, the FM interrupt period measured, the register put back. Logged as
  * "FMLOG bit <addr> <bit> <period_us> <toggles>". */
-static uint32_t s_base_p;
-static bool s_found;
-static uint32_t s_found_addr, s_found_val;
 
 /* The FM block's start, in the order and with the values stock's FM open and JieLi's library write them
  * (emu/fm_trace.py, emu/fm_ours.py), for when a tried bit has stopped it. */
@@ -546,115 +523,41 @@ static void fm_block_restart(void)
 	REG32(0x001F1700u) = 0x4019u;
 }
 
-static void try_val(uint32_t addr, uint32_t val, uint32_t tag)
+/* Restart the FM block after JieLi's fm_inside_on, the stock way. Found by a bit scan on Sean's radio
+ * (2026-11-25): after fm_inside_on its buffer interrupt came every 94 us (853 thought, 768 by JieLi's 41 667 Hz
+ * output rate: 32 frames a call); stopped (0x1F1700 bit 0) and started again in stock's order (fm_block_restart) it
+ * came every 758 us. HF_CON1 0x1F1714 bit 13 read 1 before and 0 after. */
+static void rate_fix(void)
 {
-	volatile uint32_t *r = (volatile uint32_t *)(uintptr_t)addr;
-	uint32_t old = *r, tg, p;
+	uint32_t was = IRQ_Save(), tg, p0, p;
 
-	if (s_found)
-		return;
-	*r = val;
+	IRQ_Free(43);
+	s_sv_adc = REG32(0x001F1708u);
+	s_sv_adc1 = REG32(0x001F170Cu);
+	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
+	p0 = pend_period_us(&tg);
+	REG32(0x001F1700u) &= ~1u;
+	for (volatile uint32_t i = 0; i < 20000u; i++)
+		;
+	fm_block_restart();
 	for (volatile uint32_t i = 0; i < 20000u; i++)
 		;
 	SYSTEM_WatchdogClear();
 	p = pend_period_us(&tg);
-	if (p >= 700u && p <= 1000u) {
-		s_found = true;
-		s_found_addr = addr;
-		s_found_val = val;
-	} else {
-		*r = old;
-		for (volatile uint32_t i = 0; i < 5000u; i++)
-			;
-		if (pend_period_us(0) == 0) {            /* stopped: start it again as stock does */
-			*r = old;
-			fm_block_restart();
-			for (volatile uint32_t i = 0; i < 20000u; i++)
-				;
-			ls("FMLOG restart ");
-			ld(pend_period_us(0));
-			lend();
-		}
-	}
-	if (p + p / 10u < s_base_p || p > s_base_p + s_base_p / 10u || s_found) {   /* only the ones that change it */
-		ls("FMLOG bit ");
-		lh(addr);
-		lc(' ');
-		ld(tag);
-		lc(' ');
-		ld(p);
-		lc(' ');
-		ld(tg);
-		lend();
-	}
-}
-
-static void try_bits(uint32_t addr, uint32_t mask)
-{
-	for (uint32_t b = 0; b < 32u; b++)
-		if (mask & 1u << b) {
-			uint32_t v = *(volatile uint32_t *)(uintptr_t)addr;
-			try_val(addr, v ^ 1u << b, b);
-		}
-}
-
-/* Sean's logs of 2026-11-25: the FM block's buffer fills every 94 us (853 wanted), in proportion to the clock picked
- * in CLK_CON1 bits 22-23; the FM block's register writes are the same as stock's (emu/fm_trace.py against
- * emu/fm_ours.py), and stock's own demodulator (sub_01E6E89E, 512 samples a call, ~23 000 instructions) could not
- * keep up with 94 us at 120 MHz either, so something stock sets elsewhere slows the FM block down. This tries every
- * bit of the FM block's registers and the safe bits of CLK_CON1 / CLK_CON2 (not the CPU, flash or UART clocks),
- * one at a time, logs the ones that change the period, and keeps the first that gives 700-1000 us. */
-static bool rate_fix(void)
-{
-	uint32_t was = IRQ_Save(), tg;
-
-	IRQ_Free(43);
-	s_found = false;
-	s_sv_adc = REG32(0x001F1708u);
-	s_sv_adc1 = REG32(0x001F170Cu);
-	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
-	s_base_p = pend_period_us(&tg);
-	ls("FMLOG scan base ");
-	ld(s_base_p);
-	ls(" toggles ");
-	ld(tg);
+	ls("FMLOG restart before ");
+	ld(p0);
+	ls(" after ");
+	ld(p);
+	ls(" hf ");
+	lh(REG32(0x001F1714u));
+	ls(" con ");
+	lh(REG32(0x001F1700u));
 	lend();
-	try_bits(0x001F1700u, 0xFFFFFFFFu);
-	try_bits(0x001F1708u, 0xFFFFFFFFu);
-	try_bits(0x001F170Cu, 0xFFFFFFFFu);
-	try_bits(0x001F1710u, 0xFFFFFFFFu);
-	try_bits(0x001F1714u, 0xFFFFFFBFu);
-	try_bits(0x001F171Cu, 0xFFFFFFFFu);
-	/* CLK_CON1: not the UART (10-11), flash (17, 28-29) */
-	try_bits(0x001E0010u, 0xCFFDF3FFu);
-	/* CLK_CON2: not the CPU clock (0-5) or bits 8-11 (UART/USB on some JieLi chips) */
-	try_bits(0x001E0014u, 0x3FFFF0C0u);
-	/* CLK_CON2 bits 12-17 (FM PLL select and divider in JieLi's headers), every value */
-	{
-		uint32_t c2 = *(volatile uint32_t *)0x001E0014u;
-		for (uint32_t v = 0; v < 64u; v++)
-			try_val(0x001E0014u, (c2 & ~(0x3Fu << 12)) | v << 12, 100u + v);
-	}
-	/* the FM analog registers stock's FM open writes (WLA_CON18-27) */
-	for (uint32_t a = 0x001E1948u; a <= 0x001E196Cu; a += 4u)
-		try_bits(a, 0xFFFFFFFFu);
-	ls("FMLOG scan ");
-	if (s_found) {
-		ls("found ");
-		lh(s_found_addr);
-		lc(' ');
-		lh(s_found_val);
-	} else {
-		ls("none");
-	}
-	lend();
-	if (s_found && gFmIsr) {
-		s_too_fast = false;
-		s_chk_n = s_chk_sum = 0;
+	s_too_fast = false;
+	s_chk_n = s_chk_sum = 0;
+	if (gFmIsr)
 		IRQ_Request(43, 0, gFmIsr);
-	}
 	IRQ_Restore(was);
-	return s_found;
 }
 
 bool FMRX_Open(uint32_t khz, uint32_t mode)
@@ -831,5 +734,18 @@ void FMRX_Stats(FmrxStats_t *s)
 		s->irq_hz = sum ? (uint32_t)(24000000ull * n / sum) : 0;
 		t = test_loop();
 		s->main_pct = t ? s_loop_base * 100u / t : 0;
+		ls("FMLOG run irqs ");
+		ld(s->irqs);
+		ls(" hz ");
+		ld(s->irq_hz);
+		ls(" main% ");
+		ld(s->main_pct);
+		ls(" out ");
+		ld(s->dac_out);
+		ls(" drop ");
+		ld(s->dac_drop);
+		ls(" peak ");
+		ld(s->peak);
+		lend();
 	}
 }

@@ -11,7 +11,7 @@
  * FM receiver alone (no sound), 2 the DAC alone with a 1 kHz tone.
  *
  * Once running, the three dim lines are (Sean, 2026-11-24): S = how far the start got (9 = all),
- * CK = the clock registers 0x1E0008 / 0x1E000C, H = heap bytes, A = library asserts; IRQ/s should be about 1172 and
+ * CK = the clock registers 0x1E0008 / 0x1E000C, H = heap bytes, A = library asserts; IRQ/s should be about 1302 and
  * OUT/s about 48000 when the CPU keeps up. Not tried on a radio yet. */
 #include "app/apps.h"
 #if APP_FM_ENABLE
@@ -145,7 +145,7 @@ static void diag(void)
 	APPS_PutInt(p, (int)(st.adc_calls > 999u ? 999u : st.adc_calls));
 
 	(void)irqs;
-	p = s_f.diag[1];                     /* "IRQ/S 1172 FREE 45%": real rate, CPU left for the rest */
+	p = s_f.diag[1];                     /* "IRQ/S 1302 FREE 45%": real rate, CPU left for the rest */
 	copy(p, "IRQ/S ", 7);
 	p = APPS_PutInt(p + 6, (int)st.irq_hz);
 	copy(p, " FREE ", 7);
