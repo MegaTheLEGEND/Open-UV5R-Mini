@@ -268,15 +268,16 @@ uint32_t adc_value_to_voltage(uint32_t adc_vbg, uint32_t adc_ch_val)
 /* ------------------------------------------------------------------------------------------- delays */
 void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a time */
 {
-	if (n >= 100u) {                     /* the FM calibration runs long: keep the watchdog fed */
-		GLUE(4);
-		SYSTEM_WatchdogClear();
-	}
+	/* the watchdog fed on every call: JieLi's DAC trim makes up to about 22 000 calls of delay(10) in a row
+	 * (dac_channel_trim's last search, 2048 steps of 11), seconds with no longer delay, and the radio restarted in
+	 * it (Sean's eleventh try, 2026-11-25: LAST 51 G4) */
+	GLUE(4);
+	SYSTEM_WatchdogClear();
 	gFmDelays++;
 	gFmDelayFrom = (uint32_t)(uintptr_t)__builtin_return_address(0);
 	/* the screen line costs about as much as a short delay: every call only once the receiver starts (step 71),
 	 * else the DAC trim's thousands of delays took minutes (Sean's tenth try, 2026-11-25) */
-	if (gFmBeat && (gFmCrumb.step >= 71u || (gFmDelays & 63u) == 0u))
+	if (gFmBeat && (gFmCrumb.step >= 71u || (gFmDelays & 1023u) == 0u))
 		gFmBeat();
 	while (n--)
 		__asm__ volatile("nop");

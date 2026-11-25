@@ -56,7 +56,7 @@ extern void (*gFmTrace)(uint32_t step, uint32_t glue);
 /* Heartbeat during a slow-motion start, with no wait: at every ADC call after the first two and every 16th delay
  * call, so a start that hangs shows whether the calibration is still measuring (ADC count climbing) or looping
  * somewhere else (only the delay count climbing). Sean's fifth try, 2026-11-24: it stopped at "71 G3023". */
-extern void (*gFmBeat)(void);         /* also from the FM interrupt, every 64th (Sean's seventh try, 2026-11-24:
+extern void (*gFmBeat)(void);         /* not from the FM interrupt any more (it drew on the screen while the main code did), was every 64th (Sean's seventh try, 2026-11-24:
                                          * the start stopped right after fm_hw_init turns the FM block on, at
                                          * 0x01E0DEDC in that build, so: does its interrupt take all the time?) */
 extern uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays;
