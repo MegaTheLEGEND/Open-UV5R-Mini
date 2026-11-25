@@ -102,6 +102,11 @@ EXC_HANDLER(2)
  * write; writing SWN hands the samples over */
 __attribute__((section(".ramfunc.fm"))) static void dac_put(const int16_t *d, uint32_t n)
 {
+	if (!(s_mode & FMRX_DAC)) {          /* receiver alone: the DAC's buffer address is not ours (Sean's eighth try,
+	                                      * 2026-11-25: an exception writing through it, EXC 1 at 0x02001610) */
+		s_st.dac_drop += n;
+		return;
+	}
 	while (n) {
 		uint32_t room = DAC_SWN & 0xFFFFu, swp = DAC_SWP & 0xFFFFu, len = DAC_LEN & 0xFFFFu, k;
 		int16_t *w;
