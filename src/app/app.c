@@ -2021,7 +2021,11 @@ void APP_Init(void)
 	if (s_xf_ok)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 #endif
+#if PROGRAM_ENABLE && PROGRAM_BT
+	BT_Init(PROGRAM_BtReceive);  /* CHIRP over Bluetooth SPP (Bluetooth edition) */
+#else
 	BT_Init(0);
+#endif
 	go(SCREEN_MAIN);
 	if (hidden_menu) {
 		s_menu_hidden = true;
