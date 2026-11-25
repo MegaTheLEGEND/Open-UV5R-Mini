@@ -42,11 +42,7 @@
 #include "ui/helper.h"
 #include "ui/theme.h"
 #define WATCHDOG()  SYSTEM_WatchdogClear()
-/* Waiting for Bluetooth bytes: the SDK build passes its OS delay (-DPROGRAM_WAIT_MS=...) so the Bluetooth task runs
- * meanwhile; SYSTEM_DelayMs would spin. */
-#ifndef PROGRAM_WAIT_MS
-#define PROGRAM_WAIT_MS(ms) SYSTEM_DelayMs(ms)
-#endif
+#define PROGRAM_WAIT_MS(ms) BT_WaitMs(ms) /* waiting for Bluetooth bytes: the OS delay, so the stack runs meanwhile */
 static void screen(const char *what)
 {
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);

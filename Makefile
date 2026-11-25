@@ -17,33 +17,12 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/app/program.c src/app/version.c src/update/update.c src/update/update_radio.c \
-       src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
-       src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c src/driver/spi1.c \
-       src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
-       src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
-       src/ui/screen_apps.c
-ASM := src/start.S src/update/handover.S
-
+# The sources, and which ones each feature switch leaves out: sources.mk, shared with the Bluetooth edition's build
+# inside JieLi's SDK (tools/sdk/open_uv5r.mk).
 include features.mk
-ifeq ($(ENABLE_KEYTEST),0)
-SRC := $(filter-out src/app/keytest.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SPECTRUM),0)
-SRC := $(filter-out src/app/spectrum.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_METER),0)
-SRC := $(filter-out src/app/meter.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_CHANNELS),0)
-SRC := $(filter-out src/app/chbook.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SYSINFO),0)
-SRC := $(filter-out src/app/sysinfo.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SNAKE),0)
-SRC := $(filter-out src/app/snake.c,$(SRC))
-endif
+include sources.mk
+SRC := $(FW_SRC)
+ASM := $(FW_ASM)
 
 CFLAGS := --target=pi32v2 -Os -ffreestanding -fno-builtin -ffunction-sections -fdata-sections \
           -std=c11 -Wall -Wextra -Isrc $(FEATURE_FLAGS)

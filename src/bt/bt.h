@@ -19,5 +19,6 @@ bool BT_IsAvailable(void);   /* false in the open build */
 void BT_Init(BT_ReceiveHandler_t on_receive);
 bool BT_IsConnected(void);
 int  BT_Send(const uint8_t *data, uint16_t len); /* 0 on success */
+void BT_WaitMs(uint32_t ms); /* wait while the Bluetooth stack runs (the SDK's OS delay; a plain delay without it) */
 
 #endif

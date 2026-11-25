@@ -2,15 +2,19 @@
 # Build an application of JieLi's fw-AC63_BT_SDK for the AC695N (BR23) with the open pi32v2-llvm toolchain, through
 # pi32v2-isa's drop-in and this repo's small C library. Linux or WSL. See tools/sdk/README.md.
 #
-#   tools/sdk/build_sdk.sh SDK_DIR DROPIN_DIR [TARGET]       (TARGET default: ac635n_spp_and_le)
+#   tools/sdk/build_sdk.sh [--radio] SDK_DIR DROPIN_DIR [TARGET]       (TARGET default: ac635n_spp_and_le)
 #
+# --radio     also put our radio code in, as a task of the app, with CHIRP over Bluetooth (tools/sdk/add_radio.sh;
+#             ac635n_spp_and_le only). Without it the SDK's own demo app is built.
 # SDK_DIR     a clone of https://github.com/Jieli-Tech/fw-AC63_BT_SDK with Unix line endings
 #             (git -c core.autocrlf=false clone ...). It is changed in place: see "SDK fixes" below.
 # DROPIN_DIR  the output of pi32v2-isa's tools/dropin/make_dropin.sh
 #
 # The log is SDK_DIR/build-TARGET.log.
 set -eu
-[ $# -ge 2 ] || { sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+radio=0
+[ "${1:-}" = --radio ] && { radio=1; shift; }
+[ $# -ge 2 ] || { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 sdk=$(cd "$1" && pwd)
 dropin=$(cd "$2" && pwd)
 target=${3:-ac635n_spp_and_le}
@@ -56,6 +60,11 @@ done
 # PI32V2_DROPIN_LDFLAGS (added at the end of the ld.lld command).
 export PI32V2_DROPIN_LDFLAGS="${PI32V2_DROPIN_LDFLAGS:-} -mllvm=-pi32v2-large-program=true \
 --wrap=exception_analyze $dropin/pi32v2/lib/libopenuv5r_sdkfix.a"
+
+if [ $radio = 1 ]; then
+  [ "$target" = ac635n_spp_and_le ] || { echo "--radio: only ac635n_spp_and_le" >&2; exit 2; }
+  sh "$here/add_radio.sh" "$sdk"
+fi
 
 ulimit -n 8192 2>/dev/null || true
 cd "$sdk"
