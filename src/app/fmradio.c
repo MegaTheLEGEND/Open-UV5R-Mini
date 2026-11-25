@@ -265,6 +265,26 @@ static void stall_show(uint32_t main_pc, uint32_t irqs, uint32_t delays)
 	*p++ = ' '; *p++ = 'D';
 	APPS_PutInt(p, (int)(delays > 99999u ? 99999u : delays));
 	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
+	p = b;                               /* clock registers: CLK_CON1, CLK_CON2 */
+	copy(p, "C1 ", 4);
+	p = put_hex(p + 3, *(volatile uint32_t *)0x001E0010u, 8);
+	copy(p, " C2 ", 5);
+	put_hex(p + 4, *(volatile uint32_t *)0x001E0014u, 5);
+	UI_PrintPadded(b, 2, 66, COLOR_WARN, COLOR_BG, 21);
+	p = b;                               /* PLL_CON, PLL_CON1 */
+	copy(p, "PL ", 4);
+	p = put_hex(p + 3, *(volatile uint32_t *)0x001E0040u, 8);
+	*p++ = ' ';
+	put_hex(p, *(volatile uint32_t *)0x001E0044u, 8);
+	UI_PrintPadded(b, 2, 76, COLOR_WARN, COLOR_BG, 21);
+	p = b;                               /* loop ticks at the boot clock / at the FM clock, and CLK_CON1 at boot */
+	*p++ = 'L';
+	p = APPS_PutInt(p, (int)gFmLoop48);
+	*p++ = '/';
+	p = APPS_PutInt(p, (int)gFmLoopFast);
+	*p++ = ' ';
+	put_hex(p, gFmClkCon1Was, 8);
+	UI_PrintPadded(b, 2, 86, COLOR_WARN, COLOR_BG, 21);
 	p = b;                               /* "P853 G700 H40": us between interrupts, demodulator gap, our handler */
 	*p++ = 'P';
 	p = APPS_PutInt(p, (int)(gFmP_us > 99999u ? 99999u : gFmP_us));

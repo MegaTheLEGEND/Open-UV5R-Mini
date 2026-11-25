@@ -102,6 +102,7 @@ static uint32_t s_stall_d, s_stall_n;
 static uint32_t s_g_sum, s_h_sum, s_gh_n;
 static uint16_t s_out_last;
 uint32_t gFmP_us, gFmG_us, gFmH_us;
+uint32_t gFmLoop48, gFmLoopFast;
 
 static void crumb(uint32_t step)
 {
@@ -394,6 +395,12 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	CLK_CON1 &= ~(3u << 14 | 3u << 18 | 3u << 20);
 	/* the faster clock only now: at 96 MHz JieLi's DAC trim did not finish (Sean's ninth try, 2026-11-25: still in
 	 * dac_channel_trim after a long wait), at 48 MHz it does */
+	{
+		timer_start();
+		uint32_t was = IRQ_Save();
+		gFmLoop48 = test_loop();
+		IRQ_Restore(was);
+	}
 	if (mode & FMRX_FAST)
 		clock_fast();
 	s_st.sys_div = REG32(0x001E0008u);
@@ -401,6 +408,7 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	{
 		uint32_t was = IRQ_Save();
 		s_loop_base = test_loop();
+		gFmLoopFast = s_loop_base;
 		IRQ_Restore(was);
 	}
 	/* as stock's FM open: memory, then four settings (as stock passes them), then the receiver */

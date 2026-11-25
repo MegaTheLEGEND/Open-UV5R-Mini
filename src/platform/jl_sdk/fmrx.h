@@ -78,6 +78,10 @@ extern void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
  * G + H is about P the interrupt itself takes all the time (Sean's fifteenth try, 2026-11-25: the radio clocks set
  * as stock, 120 MHz, and the main code still stalled once FM ran). */
 extern uint32_t gFmP_us, gFmG_us, gFmH_us;
+/* Sean's sixteenth try (2026-11-25): P 240 G 229 H 10, so the FM interrupt comes 3.55 times too often (853 us
+ * expected) and takes all the time. Its sample clock is wrong: the clock and PLL registers are shown with it now,
+ * and the CPU's real speed (a fixed loop timed on the crystal before and after the clock change, crystal ticks). */
+extern uint32_t gFmLoop48, gFmLoopFast;
 extern uint32_t gFmClkCon1Was;           /* CLK_CON1 as the bootloader left it, before FMRX_Open set its radio clocks */
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
