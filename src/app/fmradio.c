@@ -221,6 +221,15 @@ static void beat(void)
 	*p++ = ' '; *p++ = 'R';
 	put_hex(p, gFmDelayFrom, 6);
 	UI_PrintPadded(b, 2, 116, COLOR_WARN, COLOR_BG, 21);
+
+	p = b;                               /* "ISR 64 CK0200/01C2": FM interrupts so far, clock registers */
+	*p++ = 'I'; *p++ = 'S'; *p++ = 'R'; *p++ = ' ';
+	p = APPS_PutInt(p, (int)(gFmCrumb.irqs > 999999u ? 999999u : gFmCrumb.irqs));
+	*p++ = ' '; *p++ = 'C'; *p++ = 'K';
+	p = put_hex(p, *(volatile uint32_t *)0x001E0008u, 4);
+	*p++ = '/';
+	put_hex(p, *(volatile uint32_t *)0x001E000Cu, 4);
+	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
 }
 
 /* an exception during the start: "EXC 1 PC 01E0ABCD" and "RETS 01E0ABCD" above the heartbeat (fmrx.h gFmExc) */

@@ -136,6 +136,8 @@ void fm_sample_output_handler(int16_t *buf, int len)
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	if (gFmBeat && (gFmCrumb.irqs & 63u) == 1u)   /* slow-motion start: the interrupt runs too (fmrx.h) */
+		gFmBeat();
 	s_st.frames += frames;
 	for (uint32_t f = 0; f < frames; f++) {
 		int32_t x = ((int32_t)buf[2 * f] + (int32_t)buf[2 * f + 1]) / 2;
