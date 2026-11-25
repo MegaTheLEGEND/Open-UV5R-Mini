@@ -31,7 +31,7 @@ extern int  audio_dac_ch_digital_gain_set(struct audio_dac_hdl *dac, uint8_t ch,
 
 extern void FMGLUE_HeapReset(void);
 extern uint8_t fm_adc_dat[4096];        /* JieLi's FM sample buffer (section .fm_mem, in our .ram2: not cleared) */
-extern uint32_t gFmHeapPeak, gFmAsserts, gFmResets;
+extern uint32_t gFmHeapPeak, gFmAsserts, gFmResets, gFmAdcCalls, gFmAdcTimeouts;
 
 /* DAC registers (JieLi's public br23.h: JL_AUDIO at 0x1E2F00, every field a 32-bit slot) */
 #define DAC_CON REG32(0x001E2F00u)
@@ -306,4 +306,6 @@ void FMRX_Stats(FmrxStats_t *s)
 	*s = s_st;
 	s->heap_peak = gFmHeapPeak;
 	s->asserts = gFmAsserts + gFmResets;
+	s->adc_calls = gFmAdcCalls;
+	s->adc_timeouts = gFmAdcTimeouts;
 }

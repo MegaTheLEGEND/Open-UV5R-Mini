@@ -132,15 +132,17 @@ static void diag(void)
 	s_last_irqs = st.irqs;
 	s_last_out = st.dac_out;
 
-	p = s_f.diag[0];                     /* "S9 CK0200/01C2 H10264" */
+	p = s_f.diag[0];                     /* "S9 CK0200/01C2 T0/40": ADC time-outs / calls */
 	*p++ = 'S';
 	*p++ = (char)('0' + st.step % 10u);
 	*p++ = ' '; *p++ = 'C'; *p++ = 'K';
 	p = put_hex(p, st.sys_div, 4);
 	*p++ = '/';
 	p = put_hex(p, st.clk_con0, 4);
-	*p++ = ' '; *p++ = 'H';
-	APPS_PutInt(p, (int)st.heap_peak);
+	*p++ = ' '; *p++ = 'T';
+	p = APPS_PutInt(p, (int)(st.adc_timeouts > 99u ? 99u : st.adc_timeouts));
+	*p++ = '/';
+	APPS_PutInt(p, (int)(st.adc_calls > 999u ? 999u : st.adc_calls));
 
 	p = s_f.diag[1];                     /* "IRQ/S 1172 PK 12034" */
 	copy(p, "IRQ/S ", 7);

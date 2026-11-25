@@ -28,6 +28,8 @@ typedef struct {
 	uint32_t asserts;        /* JieLi library asserts / reset requests (counted, not acted on) */
 	uint32_t sys_div;        /* clock registers, to see the CPU speed: 0x1E0008, 0x1E000C */
 	uint32_t clk_con0;
+	uint32_t adc_calls;      /* ADC conversions the FM calibration asked for, and how many never finished */
+	uint32_t adc_timeouts;
 	uint8_t  step;           /* where FMRX_Open got to (0 = not opened, 9 = all done) */
 } FmrxStats_t;
 
