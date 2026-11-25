@@ -64,9 +64,26 @@ Steps:
 | SPP glue (`src/platform/jl_sdk/bt_spp.c`) | written against the SDK's `spp_user.h`; not compiled yet |
 | OS task glue (`src/platform/jl_sdk/radio_task.c`) | written against the SDK's `os_api.h`; not compiled yet |
 | Key-test app | shows the Bluetooth state and echoes received bytes back (loopback test) |
-| Wireless CPS protocol | unknown; needs the stock firmware's CPS handler reverse-engineered or a capture from the stock app |
+| Wireless CPS protocol | **the cable programming protocol over SPP** (stock code read 2026-11-26, below); our `src/app/program.c` already speaks it |
 | BR23 SDK build with open tools | `tools/sdk/build_sdk.sh`: `ac635n_spp_and_le` links (`sdk.elf`, `app.bin`); no `.ufw`, not run (2026-11-24) |
 | SDK integration script | not written; steps above are manual |
+
+## Stock's Wireless CPS, read from its code (2026-11-26)
+
+Facts from the stock app (NRF V0.27), not tried with a phone or PC yet.
+
+| What | Stock | Where |
+| --- | --- | --- |
+| Services it advertises (SDP records) | SPP (UUID `0x1101`) on RFCOMM channel 2, name `JL_SPP`; Device ID (`0x1200`: vendor `0x05D6` JieLi, product `0x000A`, version `0x0240`); AVRCP (`0x110E`, `0x110F`, `0x110C`) | data at `0x01E0AEC4`-`0x01E0B0CC` |
+| Bytes received over Bluetooth | a callback with the event number in its second argument (events 6-35); **event 34 = data**: the bytes are copied into the same command buffer the cable uses (RAM `0x198C0`+3553, length at +3548) and checked for `PROGRAMCOLORPROU` (`sub_01E3DFF0`), then programming mode starts as for the cable (state bytes +2781 = 8, +2782 = 1) and the flag at +2876 is set to 1 ("link is Bluetooth") | `0x01E41DD6` (data path `0x01E41EC8`) |
+| Bytes received on the cable | UART events `URF` / `URT` (`0x55524600` / `0x55525400`: buffer full, time-out) read up to 2048 bytes into `0x18134`, then `sub_01E4C940` appends them (1100-byte staging buffer at +8008); the main loop moves them into the command buffer only while the flag at +2876 is 0 | `0x01E54F60`, `sub_01E52FAE` |
+| Replies | one function for both: `sub_01E4CA10(data, len)` sends over Bluetooth (`sub_01E3DECE(34, data, len, 0)`, after a ready check `sub_01E3DFCC`) when +2876 is set, else to the UART | `0x01E4CA10` |
+| The protocol itself | the same command handler as the cable (`sub_01E4CCDA`): "PROGRAMCOLORPROU", "F", "M", reads, writes, "E" | as `src/app/program.c` |
+
+So for Wireless CPS the Bluetooth edition needs only: SPP named like stock's, its data handed to `program.c`'s
+receive side, and `program.c`'s replies sent back over SPP instead of the UART (`src/platform/jl_sdk/bt_spp.c`).
+The command number 34 in `sub_01E3DECE` does not match the public SDK's `USER_CTRL_SPP_SEND_DATA` (127), so stock
+was built from a different SDK version; our build uses the public SDK's own call.
 
 ## What Bluetooth could do on this radio (2026-11-24)
 
