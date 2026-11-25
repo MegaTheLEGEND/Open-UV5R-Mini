@@ -204,7 +204,8 @@ static void crumb(uint32_t step)
 		gFmTrace(step, gFmCrumb.glue);
 }
 
-/* an exception while FM runs: note where, then wait for the watchdog to restart the radio */
+static void exc_log(uint32_t n, uint32_t pc, uint32_t rs);
+/* an exception while FM runs: note where (screen and cable), then wait for the watchdog to restart the radio */
 #ifdef __PI32V2__
 #define EXC_HANDLER(n)                                                                  \
 	static IRQ_HANDLER void exc##n(void)                                                \
@@ -215,6 +216,7 @@ static void crumb(uint32_t step)
 		gFmCrumb.exc = (n) + 1u;                                                        \
 		gFmCrumb.exc_pc = pc;                                                           \
 		gFmCrumb.exc_rets = rs;                                                         \
+		exc_log((n), pc, rs);                                                           \
 		if (gFmExc)                                                                     \
 			gFmExc((n), pc, rs);                                                        \
 		for (;;)                                                                        \
@@ -266,6 +268,20 @@ static void ls(const char *s);
 static void ld(uint32_t v);
 static void lh(uint32_t v);
 static void lend(void);
+static void exc_log(uint32_t n, uint32_t pc, uint32_t rs)
+{
+	ls("FMLOG EXC ");
+	ld(n);
+	ls(" pc ");
+	lh(pc);
+	ls(" rets ");
+	lh(rs);
+	ls(" irqs ");
+	ld(gFmCrumb.irqs);
+	lend();
+}
+
+static uint32_t s_isr_log = 99;
 static void stall_log(uint32_t pc)
 {
 	ls("FMLOG stall main ");
@@ -294,6 +310,22 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	if (s_isr_log < 3u) {                /* the first calls after the FM block restart, on the cable */
+		uint32_t pc = 0;
+#ifdef __PI32V2__
+		__asm__ volatile("%0 = reti" : "=r"(pc));
+#endif
+		s_isr_log++;
+		ls("FMLOG isr ");
+		ld(s_isr_log);
+		ls(" main ");
+		lh(pc);
+		ls(" hf ");
+		lh(REG32(0x001F1714u));
+		ls(" len ");
+		ld((uint32_t)len);
+		lend();
+	}
 	{                                    /* the safety check: 64 interrupts averaging under 600 us = stop */
 		uint16_t t = t_now();
 		if (s_chk_n)
@@ -622,9 +654,20 @@ static void rate_fix(void)
 	lend();
 	s_too_fast = false;
 	s_chk_n = s_chk_sum = 0;
+	ls("FMLOG irq on, handler ");
+	lh((uint32_t)(uintptr_t)gFmIsr);
+	lend();
+	s_isr_log = 0;
 	if (gFmIsr)
 		IRQ_Request(43, 0, gFmIsr);
+	ls("FMLOG requested, ipcon5 ");
+	lh(REG32(0x0010F114u));
+	ls(" ipnd1 ");
+	lh(REG32(0x0010F184u));
+	lend();
 	IRQ_Restore(was);
+	ls("FMLOG restored");
+	lend();
 	{
 		uint32_t i0 = gFmCrumb.irqs;
 		timer_start();
