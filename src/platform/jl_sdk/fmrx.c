@@ -326,7 +326,9 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 			s_per_sum = s_per_n = 0;
 			s_g_sum = s_h_sum = s_gh_n = 0;
 			stall_log(pc);
-			gFmStall(pc, gFmCrumb.irqs, gFmDelays);
+			/* no drawing from here any more: the main loop does not call the library's delay(), so this fired every
+			 * 0.45 s while FM ran normally, and drawing the screen inside the interrupt can collide with the main
+			 * code's own screen transfer and leave it waiting for ever (the freeze suspected 2026-11-26) */
 			s_out_last = t_now();        /* the drawing is not counted */
 			s_per_ok = false;
 			return;
