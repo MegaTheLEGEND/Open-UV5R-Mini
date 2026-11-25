@@ -50,9 +50,12 @@ static void heap_init(void)
 }
 
 /* everything allocated is given back at once (FMRX_Close: the libraries keep pointers we can't track) */
-void FMGLUE_HeapReset(void)
+static uint32_t s_adc_calls;
+
+void FMGLUE_HeapReset(void)              /* at every FM start */
 {
 	heap_init();
+	s_adc_calls = 0;
 }
 
 void *malloc(size_t n)
@@ -204,16 +207,39 @@ static void adc_mux(uint32_t ch)
 	}
 }
 
+/* The library polls the done bit with no time limit and interrupts off, so a conversion that never ends hangs the
+ * start until the watchdog restarts the radio (Sean's third try, 2026-11-24: the last step shown was "71 G3", the
+ * first ADC call of the FM calibration). So we wait for it here with a limit first, and show each part on the
+ * screen during a slow-motion start: G3n0 entry, G3n1 mux set, G3n2 started, G3n3 done, G3n4 timed out (n = call
+ * number, 1-9). After a time-out we start a conversion on the battery channel (6, known to work), so the library's
+ * own wait ends; its calibration value is then wrong, but the start goes on and the screen says how far. */
+uint32_t gFmAdcTimeouts;
+
 uint32_t adc_sample(uint32_t ch)
 {
 	uint32_t con = 0x6u | 0xF000u | 1u << 3 | 1u << 6 | (ch & 0xFu) << 8;   /* clock /96, start delay, no irq */
+	uint32_t id = 3000u + (s_adc_calls < 9u ? ++s_adc_calls : 9u) * 10u;
+	uint32_t n;
 
-	glue_show(3);
+	glue_show(id);
 	if ((ch & 0xFFFFu) == 0xFu)
 		adc_mux(ch);
+	glue_show(id + 1u);
 	ADC_CON = con;
 	ADC_CON |= 1u << 4;                                       /* on */
 	ADC_CON |= 1u << 6;                                       /* start */
+	glue_show(id + 2u);
+	for (n = 0; n < 200000u && !(ADC_CON & 0x80u); n++)
+		;
+	if (ADC_CON & 0x80u) {
+		glue_show(id + 3u);
+		return 0;
+	}
+	gFmAdcTimeouts++;
+	glue_show(id + 4u);
+	ADC_CON = 0xF04Eu | 6u << 8;                              /* battery channel, as driver/adc.c */
+	ADC_CON |= 0x10u;
+	ADC_CON |= 0x40u;
 	return 0;
 }
 
