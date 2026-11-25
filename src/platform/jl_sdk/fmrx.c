@@ -494,7 +494,7 @@ static uint32_t pend_period_us(uint32_t *toggles)
 /* Stock's Bluetooth start-up (sub_01E0173E, run in the emulator, 2026-11-25) sets the wireless block and the radio
  * analog block's first eight registers before FM is ever used; our firmware never did (all read 0 on Sean's
  * radio). Values as stock writes them (facts, from the trace). */
-static void wl_base_as_stock(void)
+__attribute__((unused)) static void wl_base_as_stock(void)
 {
 	volatile uint32_t *wl = (volatile uint32_t *)0x001F1800u, *ana = (volatile uint32_t *)0x001E1900u;
 
@@ -513,64 +513,109 @@ static void wl_base_as_stock(void)
 
 extern void (*gFmIsr)(void);
 
-/* Log the interrupt period, then try the differences from stock one by one until the period is right (700-1000 us)
- * and keep that one; if none is, put everything back (the guard then switches FM off). Sean's log of 2026-11-25:
- * the FM block's buffer fills about 9 times too fast, in proportion to the clock picked in CLK_CON1 bits 22-23
- * (PLL 96 MHz / HSB / LSB), so the hardware's own decimation is not working as on stock. */
+extern void (*gFmIsr)(void);
+
+/* One register bit flipped, the FM interrupt period measured, the register put back. Logged as
+ * "FMLOG bit <addr> <bit> <period_us> <toggles>". */
+static uint32_t s_base_p;
+static bool s_found;
+static uint32_t s_found_addr, s_found_val;
+
+static void try_val(uint32_t addr, uint32_t val, uint32_t tag)
+{
+	volatile uint32_t *r = (volatile uint32_t *)(uintptr_t)addr;
+	uint32_t old = *r, tg, p;
+
+	if (s_found)
+		return;
+	*r = val;
+	for (volatile uint32_t i = 0; i < 20000u; i++)
+		;
+	SYSTEM_WatchdogClear();
+	p = pend_period_us(&tg);
+	if (p >= 700u && p <= 1000u) {
+		s_found = true;
+		s_found_addr = addr;
+		s_found_val = val;
+	} else {
+		*r = old;
+	}
+	if (p + p / 10u < s_base_p || p > s_base_p + s_base_p / 10u || s_found) {   /* only the ones that change it */
+		ls("FMLOG bit ");
+		lh(addr);
+		lc(' ');
+		ld(tag);
+		lc(' ');
+		ld(p);
+		lc(' ');
+		ld(tg);
+		lend();
+	}
+}
+
+static void try_bits(uint32_t addr, uint32_t mask)
+{
+	for (uint32_t b = 0; b < 32u; b++)
+		if (mask & 1u << b) {
+			uint32_t v = *(volatile uint32_t *)(uintptr_t)addr;
+			try_val(addr, v ^ 1u << b, b);
+		}
+}
+
+/* Sean's logs of 2026-11-25: the FM block's buffer fills every 94 us (853 wanted), in proportion to the clock picked
+ * in CLK_CON1 bits 22-23; the FM block's register writes are the same as stock's (emu/fm_trace.py against
+ * emu/fm_ours.py), and stock's own demodulator (sub_01E6E89E, 512 samples a call, ~23 000 instructions) could not
+ * keep up with 94 us at 120 MHz either, so something stock sets elsewhere slows the FM block down. This tries every
+ * bit of the FM block's registers and the safe bits of CLK_CON1 / CLK_CON2 (not the CPU, flash or UART clocks),
+ * one at a time, logs the ones that change the period, and keeps the first that gives 700-1000 us. */
 static bool rate_fix(void)
 {
-	volatile uint32_t *con1 = (volatile uint32_t *)0x001E0010u, *adc = (volatile uint32_t *)0x001F1708u;
-	volatile uint32_t *wl = (volatile uint32_t *)0x001F1800u, *ana = (volatile uint32_t *)0x001E1900u;
-	uint32_t was = IRQ_Save(), c1 = *con1, a = *adc, w = *wl, an[8], tg, p;
-	bool ok = false;
+	uint32_t was = IRQ_Save(), tg;
 
-	for (unsigned k = 0; k < 8u; k++)
-		an[k] = ana[k];
 	IRQ_Free(43);
-	for (uint32_t c = 0; c < 8u && !ok; c++) {
-		*con1 = c1;
-		*adc = a;
-		*wl = w;
-		for (unsigned k = 0; k < 8u; k++)
-			ana[k] = an[k];
-		if (c & 1u)
-			*con1 &= ~(1u << 31);                 /* the bootloader's bit 31 (stock: not known set) */
-		if (c & 2u)
-			wl_base_as_stock();
-		if (c & 4u) {                             /* stock's mode 2 clock: PLL 96 MHz */
-			*con1 &= ~(3u << 22);
-		}
-		for (volatile uint32_t i = 0; i < 50000u; i++)
-			;
-		SYSTEM_WatchdogClear();
-		p = pend_period_us(&tg);
-		ls("FMLOG try ");
-		ld(c);
-		ls(" period_us ");
-		ld(p);
-		ls(" toggles ");
-		ld(tg);
-		ls(" con1 ");
-		lh(*con1);
-		lend();
-		ok = p >= 700u && p <= 1000u;
+	s_found = false;
+	s_base_p = pend_period_us(&tg);
+	ls("FMLOG scan base ");
+	ld(s_base_p);
+	ls(" toggles ");
+	ld(tg);
+	lend();
+	try_bits(0x001F1700u, 0xFFFFFFFFu);
+	try_bits(0x001F1708u, 0xFFFFFFFFu);
+	try_bits(0x001F170Cu, 0xFFFFFFFFu);
+	try_bits(0x001F1710u, 0xFFFFFFFFu);
+	try_bits(0x001F1714u, 0xFFFFFFBFu);
+	try_bits(0x001F171Cu, 0xFFFFFFFFu);
+	/* CLK_CON1: not the UART (10-11), flash (17, 28-29) */
+	try_bits(0x001E0010u, 0xCFFDF3FFu);
+	/* CLK_CON2: not the CPU clock (0-5) or bits 8-11 (UART/USB on some JieLi chips) */
+	try_bits(0x001E0014u, 0x3FFFF0C0u);
+	/* CLK_CON2 bits 12-17 (FM PLL select and divider in JieLi's headers), every value */
+	{
+		uint32_t c2 = *(volatile uint32_t *)0x001E0014u;
+		for (uint32_t v = 0; v < 64u; v++)
+			try_val(0x001E0014u, (c2 & ~(0x3Fu << 12)) | v << 12, 100u + v);
 	}
-	if (!ok) {
-		*con1 = c1;
-		*adc = a;
-		*wl = w;
-		for (unsigned k = 0; k < 8u; k++)
-			ana[k] = an[k];
-	} else if (gFmIsr) {
+	/* the FM analog registers stock's FM open writes (WLA_CON18-27) */
+	for (uint32_t a = 0x001E1948u; a <= 0x001E196Cu; a += 4u)
+		try_bits(a, 0xFFFFFFFFu);
+	ls("FMLOG scan ");
+	if (s_found) {
+		ls("found ");
+		lh(s_found_addr);
+		lc(' ');
+		lh(s_found_val);
+	} else {
+		ls("none");
+	}
+	lend();
+	if (s_found && gFmIsr) {
 		s_too_fast = false;
 		s_chk_n = s_chk_sum = 0;
 		IRQ_Request(43, 0, gFmIsr);
 	}
-	ls("FMLOG rate_fix ");
-	ls(ok ? "found" : "none");
-	lend();
 	IRQ_Restore(was);
-	return ok;
+	return s_found;
 }
 
 bool FMRX_Open(uint32_t khz, uint32_t mode)
