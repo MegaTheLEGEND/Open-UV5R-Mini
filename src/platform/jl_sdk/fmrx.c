@@ -99,6 +99,9 @@ void (*gFmBeat)(void);
 void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
 static uint32_t s_stall_d, s_stall_n;
+static uint32_t s_chk_sum, s_chk_n;
+static uint16_t s_chk_last;
+static volatile bool s_too_fast;
 static uint32_t s_g_sum, s_h_sum, s_gh_n;
 static uint16_t s_out_last;
 uint32_t gFmP_us, gFmG_us, gFmH_us;
@@ -181,6 +184,21 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	{                                    /* the safety check: 64 interrupts averaging under 600 us = stop */
+		uint16_t t = t_now();
+		if (s_chk_n)
+			s_chk_sum += (uint16_t)(t - s_chk_last);
+		s_chk_last = t;
+		if (++s_chk_n == 65u) {
+			if (s_chk_sum < 64u * 600u * 24u) {
+				s_too_fast = true;
+				IRQ_Free(43);            /* no more FM interrupts: the main code runs again */
+				return;
+			}
+			s_chk_n = 0;
+			s_chk_sum = 0;
+		}
+	}
 	{
 		uint32_t pc = 0;
 #ifdef __PI32V2__
@@ -423,9 +441,19 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	crumb(70);
 	IRQ_GlobalOn();
 	crumb(71);
+	s_too_fast = false;
+	s_chk_n = s_chk_sum = 0;
 	fm_inside_on();
 	crumb(80);
+	if (s_too_fast) {
+		FMRX_Close();
+		return false;
+	}
 	FMRX_Tune(khz);
+	if (s_too_fast) {
+		FMRX_Close();
+		return false;
+	}
 	s_st.step = 9;
 	crumb(99);
 	return true;
@@ -454,6 +482,7 @@ void FMRX_Close(void)
 }
 
 bool FMRX_IsOpen(void) { return s_open; }
+bool FMRX_TooFast(void) { return s_too_fast; }
 
 /* DAC test: a 1 kHz tone, 48 samples a cycle, at the volume set, written as the DAC takes it */
 void FMRX_ToneFill(void)

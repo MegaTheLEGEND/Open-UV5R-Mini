@@ -96,6 +96,10 @@ bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the
 void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
 void     FMRX_Close(void);
 bool     FMRX_IsOpen(void);
+/* true when the receiver was stopped because its interrupt came far too often (FMRX_Open then returns false):
+ * on Sean's radio (2026-11-25) it came every 240 us instead of 853 and left no time for the keys, the screen or the
+ * power switch, so it is switched off rather than freezing the radio */
+bool     FMRX_TooFast(void);
 bool     FMRX_Tune(uint32_t khz);       /* true: the library thinks a station is there */
 int      FMRX_Rssi(void);               /* the library's level, as it gives it */
 bool     FMRX_Stereo(void);

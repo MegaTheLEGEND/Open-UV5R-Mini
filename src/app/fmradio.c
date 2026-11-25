@@ -314,7 +314,7 @@ static void start(uint32_t mode)
 	gFmStall = 0;
 	diag();
 	if (!s_ok)
-		say("FM DID NOT START", true);
+		say(FMRX_TooFast() ? "FM CLOCK WRONG: OFF" : "FM DID NOT START", true);
 	else if (!(mode & FMRX_RX))
 		copy(s_f.bottom, "1 KHZ TONE */#:VOL", sizeof s_f.bottom);
 	else
