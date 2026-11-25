@@ -536,14 +536,57 @@ static void rate_fix(void)
 	s_sv_adc1 = REG32(0x001F170Cu);
 	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
 	p0 = pend_period_us(&tg);
-	REG32(0x001F1700u) &= ~1u;
-	for (volatile uint32_t i = 0; i < 20000u; i++)
-		;
+	{                                    /* exactly what the scan did: off, a wait, back on with the old value */
+		uint32_t con = REG32(0x001F1700u);
+		REG32(0x001F1700u) = con ^ 1u;
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+		(void)pend_period_us(0);
+		REG32(0x001F1700u) = con;
+		for (volatile uint32_t i = 0; i < 5000u; i++)
+			;
+		p = pend_period_us(0);
+		ls("FMLOG offon ");
+		ld(p);
+		ls(" hf ");
+		lh(REG32(0x001F1714u));
+		lend();
+		REG32(0x001F1700u) = con;
+	}
 	fm_block_restart();
 	for (volatile uint32_t i = 0; i < 20000u; i++)
 		;
 	SYSTEM_WatchdogClear();
 	p = pend_period_us(&tg);
+	ls("FMLOG restarted ");
+	ld(p);
+	ls(" hf ");
+	lh(REG32(0x001F1714u));
+	lend();
+	if (p < 600u) {                      /* HF_CON1 bit 13: 1 when fast, 0 when right (the scan) */
+		REG32(0x001F1714u) &= ~(1u << 13);
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+		p = pend_period_us(&tg);
+		ls("FMLOG hf13 off ");
+		ld(p);
+		ls(" hf ");
+		lh(REG32(0x001F1714u));
+		lend();
+	}
+	if (p < 600u) {                      /* the scan's order once more, as a last try */
+		uint32_t con = REG32(0x001F1700u);
+		REG32(0x001F1700u) = con ^ 1u;
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+		REG32(0x001F1700u) = con;
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+		fm_block_restart();
+		for (volatile uint32_t i = 0; i < 20000u; i++)
+			;
+		p = pend_period_us(&tg);
+	}
 	ls("FMLOG restart before ");
 	ld(p0);
 	ls(" after ");
