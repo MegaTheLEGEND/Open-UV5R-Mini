@@ -53,9 +53,7 @@ ENABLE_APP_SNAKE    ?= 1
 # FM broadcast radio, 64-108 MHz through the speaker (src/app/fmradio.c, src/platform/jl_sdk/fmrx.c). Needs JieLi's
 # FM and DAC libraries from their public SDK in build/sdk/ (sh tools/sdk/fm_libs.sh <sdk clone>); without them it is
 # left out with a warning. The image then holds JieLi's closed (Apache-2.0) library code: docs/THIRD-PARTY.md.
-# Off by default (2026-11-25): on Sean's radio the FM receiver's interrupt comes about 3.5 times too often (240 us
-# instead of 853), takes all the CPU time, and the radio hisses, freezes and restarts. Not fixed yet (ROADMAP 3.9).
-ENABLE_APP_FM       ?= 0
+ENABLE_APP_FM       ?= 1
 ifeq ($(ENABLE_APP_FM),1)
 ifeq ($(wildcard build/sdk/cpu.a build/sdk/media.a),)
 $(warning ENABLE_APP_FM: build/sdk/cpu.a and media.a not found (tools/sdk/fm_libs.sh); the FM radio is left out)

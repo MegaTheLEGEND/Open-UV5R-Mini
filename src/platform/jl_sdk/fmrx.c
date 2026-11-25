@@ -4,6 +4,11 @@
 #include "driver/io.h"
 #include "driver/irq.h"
 #include "driver/system.h"
+#include "driver/uart.h"
+
+static void ls(const char *s);
+static void ld(uint32_t v);
+static void lend(void);
 
 /* ---- JieLi's FM library (no header ships with it; how each is called is from the library's code and from the
  * stock app's calls to the same library) */
@@ -82,6 +87,79 @@ static void timer_start(void)
 
 static inline uint16_t t_now(void) { return (uint16_t)T3_CNT; }
 
+/* ------------------------------------------------------------------------------------------- cable log */
+/* Everything the FM start finds goes out on the cable UART (CHIRP's, 115200 baud, set up at power-on by
+ * program.c), so it can be read on the PC (K1 cable) instead of from photos of the screen (Sean, 2026-11-25). */
+static char s_lb[96];
+static unsigned s_ln;
+
+static void lc(char c)
+{
+	if (s_ln < sizeof s_lb)
+		s_lb[s_ln++] = c;
+}
+
+static void ls(const char *s)
+{
+	while (*s)
+		lc(*s++);
+}
+
+static void lh(uint32_t v)
+{
+	for (int i = 7; i >= 0; i--) {
+		uint32_t d = (v >> (4 * i)) & 0xFu;
+		lc((char)(d < 10u ? '0' + d : 'A' + d - 10u));
+	}
+}
+
+static void ld(uint32_t v)
+{
+	char t[11];
+	int n = 0;
+
+	do {
+		t[n++] = (char)('0' + v % 10u);
+		v /= 10u;
+	} while (v);
+	while (n)
+		lc(t[--n]);
+}
+
+static void lend(void)
+{
+	lc('\r');
+	lc('\n');
+	UART_Send((const uint8_t *)s_lb, s_ln);
+	s_ln = 0;
+}
+
+static void lreg(const char *name, uint32_t addr)
+{
+	ls(name);
+	lc('=');
+	lh(*(volatile uint32_t *)(uintptr_t)addr);
+	lc(' ');
+}
+
+static void log_regs(const char *when)
+{
+	ls("FMLOG REGS ");
+	ls(when);
+	lend();
+	lreg("SYSDIV", 0x1E0008u); lreg("CON0", 0x1E000Cu); lreg("CON1", 0x1E0010u); lreg("CON2", 0x1E0014u); lend();
+	lreg("CON3", 0x1E0018u); lreg("PLL", 0x1E0040u); lreg("PLL1", 0x1E0044u); lreg("PLL2", 0x1E0048u); lend();
+	for (uint32_t a = 0x1F1700u; a < 0x1F1720u; a += 16u) {
+		lreg("F", a); lreg("", a + 4u); lreg("", a + 8u); lreg("", a + 12u);
+		lend();
+	}
+	for (uint32_t a = 0x1E1900u; a < 0x1E1980u; a += 16u) {
+		lreg("A", a); lreg("", a + 4u); lreg("", a + 8u); lreg("", a + 12u);
+		lend();
+	}
+	lreg("WL1800", 0x1F1800u); lreg("IPCON5", 0x10F114u); lreg("IPMASK", 0x10F1A8u); lend();
+}
+
 __attribute__((noinline)) static uint32_t test_loop(void)    /* about 0.3 ms at 96 MHz with nothing else */
 {
 	uint16_t t0 = t_now();
@@ -107,10 +185,21 @@ static uint16_t s_out_last;
 uint32_t gFmP_us, gFmG_us, gFmH_us;
 uint32_t gFmLoop48, gFmLoopFast;
 
+static uint32_t s_irq_at_crumb;
 static void crumb(uint32_t step)
 {
 	gFmCrumb.step = step;
 	__asm__ volatile("csync");
+	ls("FMLOG step ");
+	ld(step);
+	ls(" irqs ");
+	ld(gFmCrumb.irqs);
+	ls(" delays ");
+	ld(gFmDelays);
+	ls(" adc ");
+	ld(gFmAdcCalls);
+	lend();
+	(void)s_irq_at_crumb;
 	if (gFmTrace)
 		gFmTrace(step, gFmCrumb.glue);
 }
@@ -370,6 +459,71 @@ static void clock_back(void)
 	s_fast = false;
 }
 
+/* The FM block's sample rate against its clock choices, measured with its interrupt off: the half-buffer bit
+ * (HF_CON1 0x1F1714 bit 5, which the interrupt reads to pick the half just filled) toggles once a half buffer, so
+ * the time between toggles is the interrupt period (853 us wanted). CLK_CON1 bits 22-23 (the library sets 1, stock's
+ * mode 2 sets 0) and FM ADC_CON 0x1F1708 bits 2-3 (stock: mode 0 = 3, 1 = 1, 2 = 2) are tried in turn. */
+static uint32_t half_period_us(void)
+{
+	volatile uint32_t *hf = (volatile uint32_t *)0x001F1714u;
+	uint32_t last = *hf & 0x20u, sum = 0, n = 0, guard;
+	uint16_t t0 = t_now(), tl;
+
+	for (guard = 0; guard < 3000000u && n < 17u; guard++) {
+		uint32_t b = *hf & 0x20u;
+		if (b != last) {
+			uint16_t t = t_now();
+			if (n)
+				sum += (uint16_t)(t - tl);
+			tl = t;
+			last = b;
+			n++;
+		}
+		if (n == 0 && (uint16_t)(t_now() - t0) > 60000u)
+			break;
+	}
+	return n > 1 ? sum / (n - 1u) / 24u : 0;
+}
+
+static void sweep(void)
+{
+	volatile uint32_t *con1 = (volatile uint32_t *)0x001E0010u, *adc = (volatile uint32_t *)0x001F1708u;
+	uint32_t was = IRQ_Save(), c1 = *con1, a = *adc;
+	uint32_t h = ((volatile uint32_t *)0x0002BF00u)[43], on = *(volatile uint32_t *)0x0010F114u & 0xF000u;
+
+	IRQ_Free(43);
+	ls("FMLOG sweep base con1 ");
+	lh(c1);
+	ls(" adc ");
+	lh(a);
+	ls(" now ");
+	ld(half_period_us());
+	lend();
+	for (uint32_t s = 0; s < 4u; s++)
+		for (uint32_t m = 0; m < 4u; m++) {
+			*con1 = (c1 & ~(3u << 22)) | s << 22;
+			*adc &= ~0xCu;
+			for (volatile uint32_t i = 0; i < 2000u; i++)
+				;
+			*adc |= m << 2;
+			for (volatile uint32_t i = 0; i < 20000u; i++)
+				;
+			SYSTEM_WatchdogClear();
+			ls("FMLOG sweep clk ");
+			ld(s);
+			ls(" mode ");
+			ld(m);
+			ls(" period_us ");
+			ld(half_period_us());
+			lend();
+		}
+	*con1 = c1;
+	*adc = a;
+	if (on && !s_too_fast)
+		IRQ_Request(43, 0, (void (*)(void))(uintptr_t)h);
+	IRQ_Restore(was);
+}
+
 bool FMRX_Open(uint32_t khz, uint32_t mode)
 {
 	if (s_open)
@@ -445,6 +599,18 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	s_chk_n = s_chk_sum = 0;
 	fm_inside_on();
 	crumb(80);
+	ls("FMLOG too_fast ");
+	ld(s_too_fast);
+	ls(" loop48 ");
+	ld(gFmLoop48);
+	ls(" loopfast ");
+	ld(gFmLoopFast);
+	ls(" con1_boot ");
+	lh(gFmClkCon1Was);
+	lend();
+	log_regs("after fm_inside_on");
+	sweep();
+	log_regs("after sweep");
 	if (s_too_fast) {
 		FMRX_Close();
 		return false;
