@@ -136,6 +136,8 @@ void local_irq_enable(void)
 
 void __local_irq_enable(void) { local_irq_enable(); }
 
+void (*gFmIsr)(void);
+
 void request_irq(uint8_t n, uint8_t priority, void (*h)(void), uint8_t cpu)
 {
 	(void)cpu;
@@ -144,6 +146,8 @@ void request_irq(uint8_t n, uint8_t priority, void (*h)(void), uint8_t cpu)
 		gFmDacIrqHandler = h;
 		return;
 	}
+	if (n == 43u)
+		gFmIsr = h;                      /* JieLi's FM interrupt, kept for fmrx.c's rate check */
 	IRQ_Request(n, priority, h);
 }
 

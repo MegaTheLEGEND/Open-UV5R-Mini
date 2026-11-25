@@ -459,69 +459,118 @@ static void clock_back(void)
 	s_fast = false;
 }
 
-/* The FM block's sample rate against its clock choices, measured with its interrupt off: the half-buffer bit
- * (HF_CON1 0x1F1714 bit 5, which the interrupt reads to pick the half just filled) toggles once a half buffer, so
- * the time between toggles is the interrupt period (853 us wanted). CLK_CON1 bits 22-23 (the library sets 1, stock's
- * mode 2 sets 0) and FM ADC_CON 0x1F1708 bits 2-3 (stock: mode 0 = 3, 1 = 1, 2 = 2) are tried in turn. */
-static uint32_t half_period_us(void)
+/* The real FM interrupt period, with the interrupt off: wait for its pending flag (HF_CON1 bit 7, seen set in the
+ * log), clear it as JieLi's interrupt does (|= 0x40), 9 times; also counts the half-buffer bit's toggles between
+ * two. 853 us wanted. */
+static uint32_t pend_period_us(uint32_t *toggles)
 {
 	volatile uint32_t *hf = (volatile uint32_t *)0x001F1714u;
-	uint32_t last = *hf & 0x20u, sum = 0, n = 0, guard;
-	uint16_t t0 = t_now(), tl;
+	uint32_t sum = 0, n = 0, tg = 0, half = *hf & 0x20u;
+	uint16_t t0 = t_now(), tl = 0;
 
-	for (guard = 0; guard < 3000000u && n < 17u; guard++) {
-		uint32_t b = *hf & 0x20u;
-		if (b != last) {
+	*hf |= 0x40u;
+	for (uint32_t guard = 0; guard < 4000000u && n < 9u; guard++) {
+		uint32_t v = *hf;
+		if ((v & 0x20u) != half) {
+			half = v & 0x20u;
+			tg++;
+		}
+		if (v & 0x80u) {
 			uint16_t t = t_now();
+			*hf |= 0x40u;
 			if (n)
 				sum += (uint16_t)(t - tl);
 			tl = t;
-			last = b;
 			n++;
 		}
 		if (n == 0 && (uint16_t)(t_now() - t0) > 60000u)
 			break;
 	}
+	if (toggles)
+		*toggles = tg;
 	return n > 1 ? sum / (n - 1u) / 24u : 0;
 }
 
-static void sweep(void)
+/* Stock's Bluetooth start-up (sub_01E0173E, run in the emulator, 2026-11-25) sets the wireless block and the radio
+ * analog block's first eight registers before FM is ever used; our firmware never did (all read 0 on Sean's
+ * radio). Values as stock writes them (facts, from the trace). */
+static void wl_base_as_stock(void)
+{
+	volatile uint32_t *wl = (volatile uint32_t *)0x001F1800u, *ana = (volatile uint32_t *)0x001E1900u;
+
+	*wl = 0x00000080u;
+	*wl = 0x000C0080u;
+	*wl = 0x000C0081u;
+	ana[0] = 0x00448725u;
+	ana[1] = 0x0C1C0000u;
+	ana[2] = 0x0F717A80u;
+	ana[3] = 0x3A3A4B25u;
+	ana[4] = 0x00000219u;
+	ana[5] = 0x08B60BCEu;
+	ana[6] = 0x1FFFF4E0u;
+	ana[7] = 0x00000000u;
+}
+
+extern void (*gFmIsr)(void);
+
+/* Log the interrupt period, then try the differences from stock one by one until the period is right (700-1000 us)
+ * and keep that one; if none is, put everything back (the guard then switches FM off). Sean's log of 2026-11-25:
+ * the FM block's buffer fills about 9 times too fast, in proportion to the clock picked in CLK_CON1 bits 22-23
+ * (PLL 96 MHz / HSB / LSB), so the hardware's own decimation is not working as on stock. */
+static bool rate_fix(void)
 {
 	volatile uint32_t *con1 = (volatile uint32_t *)0x001E0010u, *adc = (volatile uint32_t *)0x001F1708u;
-	uint32_t was = IRQ_Save(), c1 = *con1, a = *adc;
-	uint32_t h = ((volatile uint32_t *)0x0002BF00u)[43], on = *(volatile uint32_t *)0x0010F114u & 0xF000u;
+	volatile uint32_t *wl = (volatile uint32_t *)0x001F1800u, *ana = (volatile uint32_t *)0x001E1900u;
+	uint32_t was = IRQ_Save(), c1 = *con1, a = *adc, w = *wl, an[8], tg, p;
+	bool ok = false;
 
+	for (unsigned k = 0; k < 8u; k++)
+		an[k] = ana[k];
 	IRQ_Free(43);
-	ls("FMLOG sweep base con1 ");
-	lh(c1);
-	ls(" adc ");
-	lh(a);
-	ls(" now ");
-	ld(half_period_us());
-	lend();
-	for (uint32_t s = 0; s < 4u; s++)
-		for (uint32_t m = 0; m < 4u; m++) {
-			*con1 = (c1 & ~(3u << 22)) | s << 22;
-			*adc &= ~0xCu;
-			for (volatile uint32_t i = 0; i < 2000u; i++)
-				;
-			*adc |= m << 2;
-			for (volatile uint32_t i = 0; i < 20000u; i++)
-				;
-			SYSTEM_WatchdogClear();
-			ls("FMLOG sweep clk ");
-			ld(s);
-			ls(" mode ");
-			ld(m);
-			ls(" period_us ");
-			ld(half_period_us());
-			lend();
+	for (uint32_t c = 0; c < 8u && !ok; c++) {
+		*con1 = c1;
+		*adc = a;
+		*wl = w;
+		for (unsigned k = 0; k < 8u; k++)
+			ana[k] = an[k];
+		if (c & 1u)
+			*con1 &= ~(1u << 31);                 /* the bootloader's bit 31 (stock: not known set) */
+		if (c & 2u)
+			wl_base_as_stock();
+		if (c & 4u) {                             /* stock's mode 2 clock: PLL 96 MHz */
+			*con1 &= ~(3u << 22);
 		}
-	*con1 = c1;
-	*adc = a;
-	if (on && !s_too_fast)
-		IRQ_Request(43, 0, (void (*)(void))(uintptr_t)h);
+		for (volatile uint32_t i = 0; i < 50000u; i++)
+			;
+		SYSTEM_WatchdogClear();
+		p = pend_period_us(&tg);
+		ls("FMLOG try ");
+		ld(c);
+		ls(" period_us ");
+		ld(p);
+		ls(" toggles ");
+		ld(tg);
+		ls(" con1 ");
+		lh(*con1);
+		lend();
+		ok = p >= 700u && p <= 1000u;
+	}
+	if (!ok) {
+		*con1 = c1;
+		*adc = a;
+		*wl = w;
+		for (unsigned k = 0; k < 8u; k++)
+			ana[k] = an[k];
+	} else if (gFmIsr) {
+		s_too_fast = false;
+		s_chk_n = s_chk_sum = 0;
+		IRQ_Request(43, 0, gFmIsr);
+	}
+	ls("FMLOG rate_fix ");
+	ls(ok ? "found" : "none");
+	lend();
 	IRQ_Restore(was);
+	return ok;
 }
 
 bool FMRX_Open(uint32_t khz, uint32_t mode)
@@ -609,8 +658,8 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	lh(gFmClkCon1Was);
 	lend();
 	log_regs("after fm_inside_on");
-	sweep();
-	log_regs("after sweep");
+	rate_fix();
+	log_regs("after rate_fix");
 	if (s_too_fast) {
 		FMRX_Close();
 		return false;
