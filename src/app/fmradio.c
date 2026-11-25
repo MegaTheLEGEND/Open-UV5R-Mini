@@ -292,7 +292,7 @@ static void enter(void)
 	s_ok = s_started = false;
 	freq_text();
 	last_try();
-	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE 3", sizeof s_f.bottom);
+	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE", sizeof s_f.bottom);
 	s_f.bottom_warn = true;
 	UI_FmDraw(&s_f, true);
 	RADIO_ProbeBegin();                  /* the BK4819 quiet: no squelch, no audio */
@@ -312,11 +312,9 @@ static AppsResult_t key(KEY_Code_t k)
 		if (k == KEY_ACT_EXIT)
 			return APPS_EXIT;
 		if (k == KEY_ACT_MENU)
-			start(FMRX_DAC | FMRX_RX);
+			start(FMRX_DAC | FMRX_RX | FMRX_FAST);   /* the receiver needs 96 MHz (fmrx.h) */
 		else if (k == KEY_1)
-			start(FMRX_RX);
-		else if (k == KEY_3)
-			start(FMRX_DAC | FMRX_RX | FMRX_FAST);
+			start(FMRX_RX | FMRX_FAST);
 		else if (k == KEY_2)
 			start(FMRX_DAC);
 		return APPS_STAY;

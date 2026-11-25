@@ -68,7 +68,11 @@ extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */
-#define FMRX_FAST 4u             /* twice the CPU clock while FM runs (stock runs FM at 96 MHz, FM_INSIDE_CLK) */
+/* Twice the CPU clock (48 -> 96 MHz) while the receiver runs, as stock (FM_INSIDE_CLK). Needed: measured in the
+ * emulator (emu/fm_cost.py, 2026-11-25), one FM interrupt is about 24 000 instructions (JieLi's fm_dem 22 600, our
+ * handler 1 500), 1172 a second = 28 million instructions a second, more than 48 MHz gives once loads and
+ * multiplies are counted; on Sean's radio at 48 MHz the interrupt left the rest no time at all. */
+#define FMRX_FAST 4u
 uint32_t FMRX_SysMHz(void);      /* the CPU clock now, from the clock registers */
 bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the radio */
 void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
