@@ -61,6 +61,7 @@ static uint32_t s_mode;
 volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
 
 void (*gFmTrace)(uint32_t step, uint32_t glue);
+void (*gFmBeat)(void);
 
 static void crumb(uint32_t step)
 {

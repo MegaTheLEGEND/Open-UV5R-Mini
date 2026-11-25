@@ -50,12 +50,12 @@ static void heap_init(void)
 }
 
 /* everything allocated is given back at once (FMRX_Close: the libraries keep pointers we can't track) */
-uint32_t gFmAdcCalls, gFmAdcTimeouts;
+uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays;
 
 void FMGLUE_HeapReset(void)              /* at every FM start */
 {
 	heap_init();
-	gFmAdcCalls = gFmAdcTimeouts = 0;
+	gFmAdcCalls = gFmAdcTimeouts = gFmDelays = 0;
 }
 
 void *malloc(size_t n)
@@ -216,10 +216,13 @@ static void adc_mux(uint32_t ch)
  * own wait ends; its calibration value is then wrong, but the start goes on and the screen says how far. */
 static void adc_show(uint32_t id)
 {
-	if (gFmAdcCalls <= 2u)
+	if (gFmAdcCalls <= 2u) {
 		glue_show(id);
-	else
+	} else {
 		GLUE(id);
+		if (gFmBeat && (id % 10u) == 0u)
+			gFmBeat();
+	}
 }
 
 uint32_t adc_sample(uint32_t ch)
@@ -269,6 +272,8 @@ void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a ti
 		GLUE(4);
 		SYSTEM_WatchdogClear();
 	}
+	if ((++gFmDelays & 15u) == 0u && gFmBeat)
+		gFmBeat();
 	while (n--)
 		__asm__ volatile("nop");
 }

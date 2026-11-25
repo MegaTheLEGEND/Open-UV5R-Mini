@@ -206,17 +206,35 @@ static void trace(uint32_t step, uint32_t glue)
 	SYSTEM_DelayMs(400);
 }
 
+/* heartbeat, no wait: "S71 A40 T1 D1234" = step, ADC calls, ADC time-outs, delay calls (fmrx.h gFmBeat) */
+static void beat(void)
+{
+	char b[22], *p = b;
+
+	*p++ = 'S';
+	p = APPS_PutInt(p, (int)gFmCrumb.step);
+	*p++ = ' '; *p++ = 'A';
+	p = APPS_PutInt(p, (int)(gFmAdcCalls > 999u ? 999u : gFmAdcCalls));
+	*p++ = ' '; *p++ = 'T';
+	p = APPS_PutInt(p, (int)(gFmAdcTimeouts > 99u ? 99u : gFmAdcTimeouts));
+	*p++ = ' '; *p++ = 'D';
+	APPS_PutInt(p, (int)(gFmDelays > 999999u ? 999999u : gFmDelays));
+	UI_PrintPadded(b, 2, 116, COLOR_WARN, COLOR_BG, 21);
+}
+
 static void start(uint32_t mode)
 {
 	s_mode = mode;
 	s_started = true;
 	gFmTrace = trace;
+	gFmBeat = beat;
 	trace(1, 0);
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	UI_FmDraw(&s_f, false);
 	FMRX_SetVolume(s_vol);
 	s_ok = FMRX_Open(s_khz, mode);
 	gFmTrace = 0;
+	gFmBeat = 0;
 	diag();
 	if (!s_ok)
 		say("FM DID NOT START", true);

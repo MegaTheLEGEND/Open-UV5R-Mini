@@ -53,6 +53,11 @@ extern volatile FmrxCrumb_t gFmCrumb;
  * so a start that dies leaves its last step on the screen (Sean's second try, 2026-11-24: the RAM breadcrumbs of the
  * crashed start never arrived). */
 extern void (*gFmTrace)(uint32_t step, uint32_t glue);
+/* Heartbeat during a slow-motion start, with no wait: at every ADC call after the first two and every 16th delay
+ * call, so a start that hangs shows whether the calibration is still measuring (ADC count climbing) or looping
+ * somewhere else (only the delay count climbing). Sean's fifth try, 2026-11-24: it stopped at "71 G3023". */
+extern void (*gFmBeat)(void);
+extern uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays;
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */
