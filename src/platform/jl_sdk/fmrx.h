@@ -72,6 +72,7 @@ extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
  * address is kept in the breadcrumbs (exc_rets, the second PC number) at every interrupt, so it survives a restart.
  * Sean's thirteenth try (2026-11-25): at 120 MHz the start still stopped right after the FM block is turned on. */
 extern void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
+extern uint32_t gFmClkCon1Was;           /* CLK_CON1 as the bootloader left it, before FMRX_Open set its radio clocks */
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */

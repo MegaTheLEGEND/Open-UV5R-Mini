@@ -228,10 +228,10 @@ static void beat(void)
 	p = b;                               /* "ISR 64 CK0200/01C2": FM interrupts so far, clock registers */
 	*p++ = 'I'; *p++ = 'S'; *p++ = 'R'; *p++ = ' ';
 	p = APPS_PutInt(p, (int)(gFmCrumb.irqs > 999999u ? 999999u : gFmCrumb.irqs));
-	*p++ = ' ';                          /* "48M 0021": CPU MHz, CLK_CON2 low bits */
+	*p++ = ' ';                          /* "120M 00F4C000": CPU MHz, CLK_CON1 as the bootloader left it */
 	p = APPS_PutInt(p, (int)FMRX_SysMHz());
 	*p++ = 'M'; *p++ = ' ';
-	put_hex(p, *(volatile uint32_t *)0x001E0014u, 4);
+	put_hex(p, gFmClkCon1Was, 8);
 	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
 }
 

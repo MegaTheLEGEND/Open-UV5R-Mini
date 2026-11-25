@@ -284,6 +284,8 @@ uint32_t FMRX_SysMHz(void)
  * flash below its present speed with the flash divider (/ 3 = 40 MHz) instead of the ROM call. PLL_CON1 0x1E0044
  * bit 24 (480 MHz output on) is set first in case the bootloader left it off. Runs from RAM with interrupts off. */
 #define CLK_CON0    REG32(0x001E000Cu)
+#define CLK_CON1    REG32(0x001E0010u)
+uint32_t gFmClkCon1Was;
 #define PLL_CON1_   REG32(0x001E0044u)
 __attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t div, uint32_t con2)
 {
@@ -362,6 +364,14 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 		crumb(99);
 		return true;
 	}
+	/* The radio block's clocks, as stock's Bluetooth start-up sets them before FM is ever opened (stock
+	 * sub_01E0173E: CLK_CON1 0x1E0010 &= ~0xC000, ~0xC0000, ~0x300000): Bluetooth clock (bits 14-15) from the PLL's
+	 * 48 MHz, WL2ADC (18-19, the radio's ADC, which the FM receiver samples with) from the PLL's 96 MHz, bits 20-21
+	 * clear (public BR23 SDK, asm/clock_hw.h). We have no Bluetooth start-up, so the FM receiver ran on whatever the
+	 * bootloader left there, and the FM block's sampling may have followed the CPU clock (Sean's fourteenth try,
+	 * 2026-11-25: at 120 MHz the VCO calibration never locked; at 48 the start stalled once FM ran). */
+	gFmClkCon1Was = CLK_CON1;
+	CLK_CON1 &= ~(3u << 14 | 3u << 18 | 3u << 20);
 	/* the faster clock only now: at 96 MHz JieLi's DAC trim did not finish (Sean's ninth try, 2026-11-25: still in
 	 * dac_channel_trim after a long wait), at 48 MHz it does */
 	if (mode & FMRX_FAST)
