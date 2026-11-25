@@ -97,6 +97,8 @@ volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
 void (*gFmTrace)(uint32_t step, uint32_t glue);
 void (*gFmBeat)(void);
 void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
+void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
+static uint32_t s_stall_d, s_stall_n;
 
 static void crumb(uint32_t step)
 {
@@ -175,6 +177,19 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	{
+		uint32_t pc = 0;
+#ifdef __PI32V2__
+		__asm__ volatile("%0 = reti" : "=r"(pc));
+#endif
+		gFmCrumb.exc_rets = pc;          /* where the main code is (shown after a restart) */
+		if (gFmDelays != s_stall_d) {
+			s_stall_d = gFmDelays;
+			s_stall_n = 0;
+		} else if (++s_stall_n % 600u == 0u && gFmStall) {
+			gFmStall(pc, gFmCrumb.irqs, gFmDelays);
+		}
+	}
 	{
 		uint16_t t = t_now();
 		if (s_per_ok) {

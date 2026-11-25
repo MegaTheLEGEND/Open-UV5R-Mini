@@ -67,6 +67,11 @@ extern uint32_t gFmDelayFrom;            /* where the last delay() call came fro
  * fed) until it is switched off. Sean's sixth try, 2026-11-24: it stopped at A26 T0 D1968, with no more calls into
  * our code, which looks like an exception or a loop in the library. */
 extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
+/* Main code stalled during a start (no library delay call for about 0.5 s of FM interrupts): called from the FM
+ * interrupt with where the main code was interrupted (reti), the interrupt count and the delay count. The same
+ * address is kept in the breadcrumbs (exc_rets, the second PC number) at every interrupt, so it survives a restart.
+ * Sean's thirteenth try (2026-11-25): at 120 MHz the start still stopped right after the FM block is turned on. */
+extern void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */

@@ -251,6 +251,22 @@ static void exc_show(uint32_t vec, uint32_t pc, uint32_t rets)
 	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
 }
 
+/* the main code stalled during the start: "MAIN 01E0DE7A" and "ISR 1729 D1951", drawn from the FM interrupt (the
+ * main code is not drawing then) */
+static void stall_show(uint32_t main_pc, uint32_t irqs, uint32_t delays)
+{
+	char b[24], *p = b;
+
+	copy(p, "MAIN ", 6);
+	put_hex(p + 5, main_pc, 8);
+	UI_PrintPadded(b, 2, 96, COLOR_WARN, COLOR_BG, 21);
+	copy(b, "ISR ", 5);
+	p = APPS_PutInt(b + 4, (int)(irqs > 999999u ? 999999u : irqs));
+	*p++ = ' '; *p++ = 'D';
+	APPS_PutInt(p, (int)(delays > 99999u ? 99999u : delays));
+	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
+}
+
 static void start(uint32_t mode)
 {
 	s_mode = mode;
@@ -258,6 +274,7 @@ static void start(uint32_t mode)
 	gFmTrace = trace;
 	gFmBeat = beat;
 	gFmExc = exc_show;
+	gFmStall = stall_show;
 	trace(1, 0);
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	UI_FmDraw(&s_f, false);
@@ -266,6 +283,7 @@ static void start(uint32_t mode)
 	gFmTrace = 0;
 	gFmBeat = 0;
 	gFmExc = 0;
+	gFmStall = 0;
 	diag();
 	if (!s_ok)
 		say("FM DID NOT START", true);
