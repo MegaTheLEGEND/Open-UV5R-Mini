@@ -62,6 +62,7 @@ volatile FmrxCrumb_t gFmCrumb __attribute__((section(".ram2.crumb")));
 
 void (*gFmTrace)(uint32_t step, uint32_t glue);
 void (*gFmBeat)(void);
+void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 
 static void crumb(uint32_t step)
 {
@@ -82,8 +83,11 @@ static void crumb(uint32_t step)
 		gFmCrumb.exc = (n) + 1u;                                                        \
 		gFmCrumb.exc_pc = pc;                                                           \
 		gFmCrumb.exc_rets = rs;                                                         \
+		if (gFmExc)                                                                     \
+			gFmExc((n), pc, rs);                                                        \
 		for (;;)                                                                        \
-			;                                                                           \
+			if (gFmExc)                                                                 \
+				SYSTEM_WatchdogClear();                                                 \
 	}
 #else
 #define EXC_HANDLER(n) static void exc##n(void) { gFmCrumb.exc = (n) + 1u; }

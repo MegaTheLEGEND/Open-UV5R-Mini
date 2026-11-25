@@ -206,20 +206,37 @@ static void trace(uint32_t step, uint32_t glue)
 	SYSTEM_DelayMs(400);
 }
 
-/* heartbeat, no wait: "S71 A40 T1 D1234" = step, ADC calls, ADC time-outs, delay calls (fmrx.h gFmBeat) */
+/* heartbeat, no wait: "A26 T0 D1968 R0ABCDE" = ADC calls, ADC time-outs, delay calls, and the low 6 hex digits of
+ * where the last delay call came from (fmrx.h gFmBeat) */
 static void beat(void)
 {
-	char b[22], *p = b;
+	char b[24], *p = b;
 
-	*p++ = 'S';
-	p = APPS_PutInt(p, (int)gFmCrumb.step);
-	*p++ = ' '; *p++ = 'A';
+	*p++ = 'A';
 	p = APPS_PutInt(p, (int)(gFmAdcCalls > 999u ? 999u : gFmAdcCalls));
 	*p++ = ' '; *p++ = 'T';
 	p = APPS_PutInt(p, (int)(gFmAdcTimeouts > 99u ? 99u : gFmAdcTimeouts));
 	*p++ = ' '; *p++ = 'D';
-	APPS_PutInt(p, (int)(gFmDelays > 999999u ? 999999u : gFmDelays));
+	p = APPS_PutInt(p, (int)(gFmDelays > 99999u ? 99999u : gFmDelays));
+	*p++ = ' '; *p++ = 'R';
+	put_hex(p, gFmDelayFrom, 6);
 	UI_PrintPadded(b, 2, 116, COLOR_WARN, COLOR_BG, 21);
+}
+
+/* an exception during the start: "EXC 1 PC 01E0ABCD" and "RETS 01E0ABCD" above the heartbeat (fmrx.h gFmExc) */
+static void exc_show(uint32_t vec, uint32_t pc, uint32_t rets)
+{
+	char b[24], *p = b;
+
+	copy(p, "EXC ", 5);
+	p += 4;
+	p = APPS_PutInt(p, (int)vec);
+	copy(p, " PC ", 5);
+	put_hex(p + 4, pc, 8);
+	UI_PrintPadded(b, 2, 96, COLOR_WARN, COLOR_BG, 21);
+	copy(b, "RETS ", 6);
+	put_hex(b + 5, rets, 8);
+	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
 }
 
 static void start(uint32_t mode)
@@ -228,6 +245,7 @@ static void start(uint32_t mode)
 	s_started = true;
 	gFmTrace = trace;
 	gFmBeat = beat;
+	gFmExc = exc_show;
 	trace(1, 0);
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	UI_FmDraw(&s_f, false);
@@ -235,6 +253,7 @@ static void start(uint32_t mode)
 	s_ok = FMRX_Open(s_khz, mode);
 	gFmTrace = 0;
 	gFmBeat = 0;
+	gFmExc = 0;
 	diag();
 	if (!s_ok)
 		say("FM DID NOT START", true);

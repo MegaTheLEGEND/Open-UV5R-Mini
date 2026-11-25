@@ -50,7 +50,7 @@ static void heap_init(void)
 }
 
 /* everything allocated is given back at once (FMRX_Close: the libraries keep pointers we can't track) */
-uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays;
+uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays, gFmDelayFrom;
 
 void FMGLUE_HeapReset(void)              /* at every FM start */
 {
@@ -272,7 +272,9 @@ void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a ti
 		GLUE(4);
 		SYSTEM_WatchdogClear();
 	}
-	if ((++gFmDelays & 15u) == 0u && gFmBeat)
+	gFmDelays++;
+	gFmDelayFrom = (uint32_t)(uintptr_t)__builtin_return_address(0);
+	if (gFmBeat)
 		gFmBeat();
 	while (n--)
 		__asm__ volatile("nop");

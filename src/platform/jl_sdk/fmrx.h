@@ -58,6 +58,11 @@ extern void (*gFmTrace)(uint32_t step, uint32_t glue);
  * somewhere else (only the delay count climbing). Sean's fifth try, 2026-11-24: it stopped at "71 G3023". */
 extern void (*gFmBeat)(void);
 extern uint32_t gFmAdcCalls, gFmAdcTimeouts, gFmDelays;
+extern uint32_t gFmDelayFrom;            /* where the last delay() call came from (its return address) */
+/* An exception (vector 0-2) during a slow-motion start: shown on the screen, then the radio waits there (watchdog
+ * fed) until it is switched off. Sean's sixth try, 2026-11-24: it stopped at A26 T0 D1968, with no more calls into
+ * our code, which looks like an exception or a loop in the library. */
+extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */
