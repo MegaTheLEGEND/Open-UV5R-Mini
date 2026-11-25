@@ -274,7 +274,9 @@ void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a ti
 	}
 	gFmDelays++;
 	gFmDelayFrom = (uint32_t)(uintptr_t)__builtin_return_address(0);
-	if (gFmBeat)
+	/* the screen line costs about as much as a short delay: every call only once the receiver starts (step 71),
+	 * else the DAC trim's thousands of delays took minutes (Sean's tenth try, 2026-11-25) */
+	if (gFmBeat && (gFmCrumb.step >= 71u || (gFmDelays & 63u) == 0u))
 		gFmBeat();
 	while (n--)
 		__asm__ volatile("nop");
