@@ -514,12 +514,37 @@ __attribute__((unused)) static void wl_base_as_stock(void)
 extern void (*gFmIsr)(void);
 
 extern void (*gFmIsr)(void);
+extern uint8_t fm_adc_dat[];
 
 /* One register bit flipped, the FM interrupt period measured, the register put back. Logged as
  * "FMLOG bit <addr> <bit> <period_us> <toggles>". */
 static uint32_t s_base_p;
 static bool s_found;
 static uint32_t s_found_addr, s_found_val;
+
+/* The FM block's start, in the order and with the values stock's FM open and JieLi's library write them
+ * (emu/fm_trace.py, emu/fm_ours.py), for when a tried bit has stopped it. */
+static const uint32_t k_fm_fir[16] = {
+	0xFFF4FFFAu, 0x001EFFF9u, 0x00F30073u, 0x01A70171u, 0x00820158u, 0xFEC3FF78u, 0xFFCCFEDCu, 0x01C1010Cu,
+	0xFFBB0148u, 0xFD71FE07u, 0x0152FEB5u, 0x03B6039Fu, 0xFC3600D2u, 0xFA22F8E4u, 0x0D84017Eu, 0x21F81A06u,
+};
+static uint32_t s_sv_adc, s_sv_adc1, s_sv_base;
+
+static void fm_block_restart(void)
+{
+	REG32(0x001F1700u) = 0x4001u;
+	REG32(0x001F1700u) = 0x4009u;
+	REG32(0x001F170Cu) = 0x80000000u;
+	for (unsigned k = 0; k < 16u; k++)
+		REG32(0x001F1718u) = k_fm_fir[k];
+	REG32(0x001F1708u) = s_sv_adc & ~1u;
+	REG32(0x001F170Cu) = s_sv_adc1;
+	REG32(0x001F1704u) = s_sv_base;
+	REG32(0x001F1714u) = 0x1u;
+	REG32(0x001F1714u) = 0x2001u;
+	REG32(0x001F1708u) = s_sv_adc;
+	REG32(0x001F1700u) = 0x4019u;
+}
 
 static void try_val(uint32_t addr, uint32_t val, uint32_t tag)
 {
@@ -539,6 +564,17 @@ static void try_val(uint32_t addr, uint32_t val, uint32_t tag)
 		s_found_val = val;
 	} else {
 		*r = old;
+		for (volatile uint32_t i = 0; i < 5000u; i++)
+			;
+		if (pend_period_us(0) == 0) {            /* stopped: start it again as stock does */
+			*r = old;
+			fm_block_restart();
+			for (volatile uint32_t i = 0; i < 20000u; i++)
+				;
+			ls("FMLOG restart ");
+			ld(pend_period_us(0));
+			lend();
+		}
 	}
 	if (p + p / 10u < s_base_p || p > s_base_p + s_base_p / 10u || s_found) {   /* only the ones that change it */
 		ls("FMLOG bit ");
@@ -574,6 +610,9 @@ static bool rate_fix(void)
 
 	IRQ_Free(43);
 	s_found = false;
+	s_sv_adc = REG32(0x001F1708u);
+	s_sv_adc1 = REG32(0x001F170Cu);
+	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
 	s_base_p = pend_period_us(&tg);
 	ls("FMLOG scan base ");
 	ld(s_base_p);
