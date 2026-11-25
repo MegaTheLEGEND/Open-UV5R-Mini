@@ -262,6 +262,27 @@ __attribute__((section(".ramfunc.fm"))) static void dac_put(const int16_t *d, ui
 	s_st.dac_drop += n;
 }
 
+static void ls(const char *s);
+static void ld(uint32_t v);
+static void lh(uint32_t v);
+static void lend(void);
+static void stall_log(uint32_t pc)
+{
+	ls("FMLOG stall main ");
+	lh(pc);
+	ls(" irqs ");
+	ld(gFmCrumb.irqs);
+	ls(" P ");
+	ld(gFmP_us);
+	ls(" G ");
+	ld(gFmG_us);
+	ls(" H ");
+	ld(gFmH_us);
+	ls(" hf ");
+	lh(REG32(0x001F1714u));
+	lend();
+}
+
 /* Called by JieLi's FM interrupt with the demodulated audio: len bytes of interleaved 16-bit left/right at 41.7 kHz
  * (32 frames). Mono, volume, and 41.7 -> 48 kHz by straight-line interpolation. */
 __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *buf, int len)
@@ -304,6 +325,7 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 			gFmH_us = gh ? s_h_sum / gh / 24u : 0;
 			s_per_sum = s_per_n = 0;
 			s_g_sum = s_h_sum = s_gh_n = 0;
+			stall_log(pc);
 			gFmStall(pc, gFmCrumb.irqs, gFmDelays);
 			s_out_last = t_now();        /* the drawing is not counted */
 			s_per_ok = false;
@@ -601,6 +623,18 @@ static void rate_fix(void)
 	if (gFmIsr)
 		IRQ_Request(43, 0, gFmIsr);
 	IRQ_Restore(was);
+	{
+		uint32_t i0 = gFmCrumb.irqs;
+		timer_start();
+		for (uint32_t k = 0; k < 40u; k++) {          /* about 100 ms of crystal time */
+			uint16_t t0 = t_now();
+			while ((uint16_t)(t_now() - t0) < 60000u)
+				;
+		}
+		ls("FMLOG on: irqs in 100 ms ");
+		ld(gFmCrumb.irqs - i0);
+		lend();
+	}
 }
 
 bool FMRX_Open(uint32_t khz, uint32_t mode)
