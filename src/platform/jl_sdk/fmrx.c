@@ -100,7 +100,7 @@ EXC_HANDLER(2)
 
 /* write n mono samples into the DAC's ring, as JieLi's DAC-as-IO demo does: SWN is the room left, SWP where to
  * write; writing SWN hands the samples over */
-static void dac_put(const int16_t *d, uint32_t n)
+__attribute__((section(".ramfunc.fm"))) static void dac_put(const int16_t *d, uint32_t n)
 {
 	while (n) {
 		uint32_t room = DAC_SWN & 0xFFFFu, swp = DAC_SWP & 0xFFFFu, len = DAC_LEN & 0xFFFFu, k;
@@ -127,7 +127,7 @@ static void dac_put(const int16_t *d, uint32_t n)
 
 /* Called by JieLi's FM interrupt with the demodulated audio: len bytes of interleaved 16-bit left/right at 37.5 kHz
  * (32 frames). Mono, volume, and 37.5 -> 48 kHz by straight-line interpolation. */
-void fm_sample_output_handler(int16_t *buf, int len)
+__attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *buf, int len)
 {
 	int16_t out[48];
 	uint32_t n = 0, frames = (uint32_t)len / 4u;
@@ -197,6 +197,66 @@ static bool dac_open(void)
 	return true;
 }
 
+/* ------------------------------------------------------------------------------------------- CPU clock */
+/* JieLi's clock registers (public BR23 SDK, asm/clock_hw.h): SYS_DIV 0x1E0008 = HSB divider (bits 0-7), LSB divider
+ * (8-10), flash (SFC) divider (12-14), each "value + 1"; CLK_CON2 0x1E0014 bits 0-1 = which PLL output the CPU runs
+ * from (192, 137, 320, 480 MHz), bits 2-5 = its divider (1, 3, 5, 7 times 1, 2, 4, 8). Sean's radio showed SYS_DIV 0
+ * and CLK_CON0 0x01C3 (CPU on the PLL) on 2026-11-24, with the FM interrupt taking nearly all the time. */
+#define CLK_SYS_DIV REG32(0x001E0008u)
+#define CLK_CON2    REG32(0x001E0014u)
+static uint32_t s_old_div, s_old_con2;
+static bool     s_fast;
+
+uint32_t FMRX_SysMHz(void)
+{
+	static const uint16_t pll[4] = { 192, 137, 320, 480 };
+	uint32_t c = CLK_CON2, d = (c >> 2) & 0xFu;
+
+	return pll[c & 3u] / ((2u * (d & 3u) + 1u) << (d >> 2)) / ((CLK_SYS_DIV & 0xFFu) + 1u);
+}
+
+/* Twice the CPU clock: halve the PLL divider, and first double the LSB and flash dividers so the peripherals (UART,
+ * screen SPI, flash) keep their speed. Runs from RAM with interrupts off, as the flash clock changes under it. */
+__attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t div, uint32_t con2)
+{
+	uint32_t was = IRQ_Save();
+
+	if (con2 != CLK_CON2 && ((con2 >> 2) & 0xFu) < ((CLK_CON2 >> 2) & 0xFu)) {   /* faster: dividers first */
+		CLK_SYS_DIV = div;
+		__asm__ volatile("csync");
+		CLK_CON2 = con2;
+	} else {                                                                      /* slower: clock first */
+		CLK_CON2 = con2;
+		__asm__ volatile("csync");
+		CLK_SYS_DIV = div;
+	}
+	__asm__ volatile("csync");
+	for (volatile uint32_t i = 0; i < 1000u; i++)
+		;
+	IRQ_Restore(was);
+}
+
+static void clock_fast(void)
+{
+	uint32_t d = (CLK_CON2 >> 2) & 0xFu, div = CLK_SYS_DIV;
+
+	s_old_div = div;
+	s_old_con2 = CLK_CON2;
+	if ((d >> 2) == 0u || (div & 0xFFu) != 0u || (div & (7u << 8)) != 0u || (div & (7u << 12)) != 0u)
+		return;                          /* not the set-up seen on the radio: leave it */
+	div |= 1u << 8 | 1u << 12;           /* LSB and flash: / 2 */
+	clock_set(div, (CLK_CON2 & ~(0xFu << 2)) | (d - 4u) << 2);
+	s_fast = true;
+}
+
+static void clock_back(void)
+{
+	if (!s_fast)
+		return;
+	clock_set(s_old_div, s_old_con2);
+	s_fast = false;
+}
+
 bool FMRX_Open(uint32_t khz, uint32_t mode)
 {
 	if (s_open)
@@ -209,6 +269,8 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	s_st = (FmrxStats_t){ 0 };
 	s_prev = 0;
 	s_phase = 0;
+	if (mode & FMRX_FAST)
+		clock_fast();
 	s_st.sys_div = REG32(0x001E0008u);
 	s_st.clk_con0 = REG32(0x001E000Cu);
 	FMGLUE_HeapReset();
@@ -266,6 +328,7 @@ void FMRX_Close(void)
 		audio_dac_close(DAC);
 	}
 	IO_Amp(AUDIO_FM, false);
+	clock_back();
 	FMGLUE_HeapReset();
 	s_st.step = 0;
 	crumb(0);                            /* closed cleanly */

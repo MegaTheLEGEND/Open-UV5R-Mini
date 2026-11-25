@@ -10,7 +10,8 @@
  * RAM2: 0x22000..0x2BF00, also the stock app's and free under ours: the FM radio's heap and DAC buffer (.ram2,
  *   not cleared at start). 0x2BF00 is the interrupt vector table (fixed in hardware; driver/irq.h).
  * JieLi's FM and DAC libraries (ENABLE_APP_FM) bring sections of their own names: their code goes with .text,
- *   their data with .data / .bss.
+ *   their data with .data / .bss, except the FM interrupt and demodulator (.fm_code), which run from RAM as
+ *   stock's do (2026-11-25: from the flash the interrupt took nearly all the CPU time).
  */
 ENTRY(_start)
 /* JieLi's libraries read the bootloader's record (chip id, trims) as boot_info: start.S copies it to 0xD920 in
@@ -24,9 +25,9 @@ MEMORY {
 }
 SECTIONS {
   .entry : { KEEP(*(.entry)) } > flash
-  .text : { *(.text*) *(.rodata*) *(.fm_code*) *(.*.text*) *(.*_code*) *(.*.rodata*) *(.*_const*) *(.LOG_TAG_CONST*)
+  .text : { *(.text*) *(.rodata*) *(.*.text*) *(.[!f]*_code*) *(.f[!m]*_code*) *(.*.rodata*) *(.*_const*) *(.LOG_TAG_CONST*)
             *(.srodata*) . = ALIGN(4); } > flash
-  .ramfunc : ALIGN(4) { __ramfunc_start = .; *(.ramfunc*) . = ALIGN(4); __ramfunc_end = .; } > ramx AT> flash
+  .ramfunc : ALIGN(4) { __ramfunc_start = .; *(.ramfunc*) *(.fm_code*) . = ALIGN(4); __ramfunc_end = .; } > ramx AT> flash
   __ramfunc_load = LOADADDR(.ramfunc);
   .data : ALIGN(4) { __data_start = .; *(.data*) *(.*.data*) *(.sdata*) . = ALIGN(4); __data_end = .; } > ram AT> flash
   __data_load = LOADADDR(.data);

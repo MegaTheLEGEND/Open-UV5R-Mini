@@ -68,6 +68,8 @@ extern void (*gFmExc)(uint32_t vec, uint32_t pc, uint32_t rets);
 
 #define FMRX_DAC 1u              /* the DAC and speaker */
 #define FMRX_RX  2u              /* the FM receiver */
+#define FMRX_FAST 4u             /* twice the CPU clock while FM runs (stock runs FM at 96 MHz, FM_INSIDE_CLK) */
+uint32_t FMRX_SysMHz(void);      /* the CPU clock now, from the clock registers */
 bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the radio */
 void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
 void     FMRX_Close(void);

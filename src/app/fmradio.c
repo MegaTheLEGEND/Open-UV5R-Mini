@@ -225,10 +225,10 @@ static void beat(void)
 	p = b;                               /* "ISR 64 CK0200/01C2": FM interrupts so far, clock registers */
 	*p++ = 'I'; *p++ = 'S'; *p++ = 'R'; *p++ = ' ';
 	p = APPS_PutInt(p, (int)(gFmCrumb.irqs > 999999u ? 999999u : gFmCrumb.irqs));
-	*p++ = ' '; *p++ = 'C'; *p++ = 'K';
-	p = put_hex(p, *(volatile uint32_t *)0x001E0008u, 4);
-	*p++ = '/';
-	put_hex(p, *(volatile uint32_t *)0x001E000Cu, 4);
+	*p++ = ' ';                          /* "48M 0021": CPU MHz, CLK_CON2 low bits */
+	p = APPS_PutInt(p, (int)FMRX_SysMHz());
+	*p++ = 'M'; *p++ = ' ';
+	put_hex(p, *(volatile uint32_t *)0x001E0014u, 4);
 	UI_PrintPadded(b, 2, 106, COLOR_WARN, COLOR_BG, 21);
 }
 
@@ -292,7 +292,7 @@ static void enter(void)
 	s_ok = s_started = false;
 	freq_text();
 	last_try();
-	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE", sizeof s_f.bottom);
+	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE 3", sizeof s_f.bottom);
 	s_f.bottom_warn = true;
 	UI_FmDraw(&s_f, true);
 	RADIO_ProbeBegin();                  /* the BK4819 quiet: no squelch, no audio */
@@ -315,6 +315,8 @@ static AppsResult_t key(KEY_Code_t k)
 			start(FMRX_DAC | FMRX_RX);
 		else if (k == KEY_1)
 			start(FMRX_RX);
+		else if (k == KEY_3)
+			start(FMRX_DAC | FMRX_RX | FMRX_FAST);
 		else if (k == KEY_2)
 			start(FMRX_DAC);
 		return APPS_STAY;
