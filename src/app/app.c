@@ -2038,6 +2038,10 @@ void APP_Init(void)
 		s_wait_release = true;               /* the = still held is not a press */
 		go(SCREEN_MENU);
 	}
+#if APP_FM_ENABLE && FM_DEV_AUTOSTART
+	else
+		app_open(&APP_FM);
+#endif
 }
 
 /* Backlight as the stock setting 0x03: 0 always on, 1-4 = 5/10/15/20 s after the last key, PTT or signal. */

@@ -1,5 +1,6 @@
 /* Open-UV5R-Mini: FM broadcast receiver. See platform/jl_sdk/fmrx.h. */
 #include "platform/jl_sdk/fmrx.h"
+#include "app/apps.h"
 #include "bsp/ac695n.h"
 #include "driver/io.h"
 #include "driver/irq.h"
@@ -727,6 +728,18 @@ static void mon_cmd(const char *s)
 		*r = v;
 		mon_word(a);
 		break;
+	case 'W': {                          /* W A v0 v1 ...: up to 16 words from A (code or data for the RAM) */
+		uint32_t k = 0;
+		r[k++] = v;
+		while (*s == ' ' && k < 16u)
+			r[k++] = mon_hex(&s);
+		ls("MON wrote ");
+		ld(k);
+		ls(" at ");
+		lh(a);
+		lend();
+		break;
+	}
 	case 'o':
 		*r |= v;
 		mon_word(a);
@@ -889,7 +902,7 @@ static void mon_loop(void)
 
 		SYSTEM_WatchdogClear();
 		if (got <= 0) {
-			if (++idle >= 50u && !s_mon_used) {   /* nobody on the cable: carry on after 5 s */
+			if (++idle >= 50u && !s_mon_used && !FM_DEV_AUTOSTART) {   /* nobody on the cable: on after 5 s */
 				ls("MON nobody, going on");
 				lend();
 				return;

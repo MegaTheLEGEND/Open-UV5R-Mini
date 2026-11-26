@@ -408,6 +408,12 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
+#if FM_DEV_AUTOSTART
+	if (!s_started) {                    /* development: start the receiver by itself */
+		start(FMRX_DAC | FMRX_RX | FMRX_FAST);
+		return APPS_STAY;
+	}
+#endif
 	if (!s_started) {
 		if (full)
 			UI_FmDraw(&s_f, true);

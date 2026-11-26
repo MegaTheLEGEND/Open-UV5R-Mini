@@ -85,6 +85,11 @@ extern const AppDef_t APP_SYSINFO;
 #endif
 #if APP_FM_ENABLE
 extern const AppDef_t APP_FM;
+/* Development: power on straight into the FM radio (receiver started), with the cable monitor waiting for the PC
+ * (platform/jl_sdk/fmrx.c), so the FM bring-up needs no key presses; a crash restarts the radio into it again. */
+#ifndef FM_DEV_AUTOSTART
+#define FM_DEV_AUTOSTART 1
+#endif
 #endif
 #if APP_SNAKE_ENABLE
 extern const AppDef_t APP_SNAKE;

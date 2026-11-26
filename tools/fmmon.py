@@ -29,6 +29,18 @@ def main():
     end = time.time() + 60 * a.minutes
     open(a.cmds, 'a').close()
     sent = os.path.getsize(a.cmds)                  # only commands added from now on
+    while time.time() < end:                        # the port can drop (cable pulled, radio reset): open it again
+        try:
+            run(a, end, sent)
+            return
+        except (serial.SerialException, OSError) as e:
+            with open(a.out, 'a', encoding='utf-8') as f:
+                f.write('%s --- port error: %s\n' % (stamp(), e))
+            sent = os.path.getsize(a.cmds)
+            time.sleep(2)
+
+
+def run(a, end, sent):
     buf = b''
     with serial.Serial(a.port, a.baud, timeout=0.1) as s, open(a.out, 'a', encoding='utf-8') as f:
         f.write('--- open %s %s (monitor)\n' % (a.port, time.strftime('%H:%M:%S')))
