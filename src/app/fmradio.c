@@ -27,7 +27,7 @@
 #define FM_SEEK_STEP 100u                /* kHz */
 
 static UiFm_t   s_f;
-static uint32_t s_khz = 100000u;         /* kept while the radio is on */
+static uint32_t s_khz = 100700u;         /* kept while the radio is on; 100.7 has a station where Sean is */
 static uint8_t  s_vol = 10;
 static uint32_t s_typed_v;
 static uint8_t  s_typed;
