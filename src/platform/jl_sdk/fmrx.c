@@ -51,7 +51,7 @@ static const uint32_t DAC_PD[3] = { 0, 0, 0x00068321u };
 
 #define DAC_RATE     48000
 #define DAC_POINTS   1024u               /* mono samples in the DAC's ring: 21 ms */
-#define FM_RATE      41667u           /* JieLi SDK audio_dec.c: FM output rate */
+#define FM_RATE      37500u           /* 32 frames every 847-853 us (counted on the radio, 2026-11-26) */
 #define STEP_Q16     ((uint32_t)((FM_RATE * 65536ull) / DAC_RATE))   /* 0.78125 */
 
 static uint32_t s_dac_hdl[256] __attribute__((aligned(8)));   /* JieLi's audio_dac_hdl: about 300 bytes */
@@ -86,6 +86,7 @@ static void timer_start(void)
 }
 
 static inline uint16_t t_now(void) { return (uint16_t)T3_CNT; }
+#define T3_TICKS_PER_MS 2686u            /* measured on Sean's radio against the PC clock (2026-11-26) */
 
 /* ------------------------------------------------------------------------------------------- cable log */
 /* Everything the FM start finds goes out on the cable UART (CHIRP's, 115200 baud, set up at power-on by
@@ -326,13 +327,17 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 		ld((uint32_t)len);
 		lend();
 	}
-	{                                    /* the safety check: 64 interrupts averaging under 600 us = stop */
+	{                                    /* the safety check: 64 interrupts averaging under 600 us = stop. Timer 3
+	                                      * counts about 2.69 million a second, not 24 million (counted against the
+	                                      * PC clock with the cable monitor, 2026-11-26: 8192 FM interrupts in 6.94 s,
+	                                      * 847 us each = 2275 ticks); the 24 MHz figure made the right rate look
+	                                      * 8x too fast and this check switched FM off */
 		uint16_t t = t_now();
 		if (s_chk_n)
 			s_chk_sum += (uint16_t)(t - s_chk_last);
 		s_chk_last = t;
 		if (++s_chk_n == 65u) {
-			if (s_chk_sum < 64u * 600u * 24u) {
+			if (s_chk_sum < 64u * 600u * T3_TICKS_PER_MS / 1000u) {
 				s_too_fast = true;
 				IRQ_Free(43);            /* no more FM interrupts: the main code runs again */
 				return;
@@ -591,7 +596,7 @@ static uint32_t imm32_at(uint32_t a)        /* a 32-bit immediate at a 2-byte al
 	return (uint32_t)*(volatile uint16_t *)(uintptr_t)a | (uint32_t)*(volatile uint16_t *)(uintptr_t)(a + 2u) << 16;
 }
 
-static bool fm_isr_parse(uint32_t isr)
+__attribute__((unused)) static bool fm_isr_parse(uint32_t isr)
 {
 	/* fmhw_isr: +0x12 "r4 = imm" (C4 FF), +0x1C "r2 = imm" (C2 FF), +0x32 "r2 = imm" (C2 FF) */
 	if (*(volatile uint16_t *)(uintptr_t)(isr + 0x12u) != 0xFFC4u ||
@@ -618,7 +623,7 @@ static void fi_log(const char *what, uint32_t a, uint32_t b)
 }
 
 static void canary_log(const char *when);
-static IRQ_HANDLER void fm_isr_ours(void)
+__attribute__((unused)) static IRQ_HANDLER void fm_isr_ours(void)
 {
 	uint32_t hf, st, in = 0;
 	bool log = s_fi_n < 3u;
@@ -675,7 +680,7 @@ static IRQ_HANDLER void fm_isr_ours(void)
 static void canary_fill(void);
 static void canary_log(const char *when);
 
-static bool s_mon_go;
+static bool s_mon_go, s_mon_used;
 
 static uint32_t mon_hex(const char **p)
 {
@@ -851,7 +856,12 @@ static void mon_loop(void)
 
 		SYSTEM_WatchdogClear();
 		if (got <= 0) {
-			if (++idle >= 100u) {            /* every ~10 s: still here */
+			if (++idle >= 50u && !s_mon_used) {   /* nobody on the cable: carry on after 5 s */
+				ls("MON nobody, going on");
+				lend();
+				return;
+			}
+			if (idle >= 100u) {              /* every ~10 s: still here */
 				idle = 0;
 				ls("MON ready");
 				lend();
@@ -859,6 +869,7 @@ static void mon_loop(void)
 			continue;
 		}
 		idle = 0;
+		s_mon_used = true;
 		for (int i = 0; i < got; i++) {
 			char ch = (char)b[i];
 			if (ch == '\r' || ch == '\n') {
@@ -915,9 +926,14 @@ static void canary_log(const char *when)
 	lend();
 }
 
+/* After fm_inside_on: JieLi's FM interrupt is already right (one 512-sample block every 847 us, 37.5 kHz out;
+ * counted against the PC clock 2026-11-26). The earlier "94 us" was timer 3 read as 24 MHz; the FM block restart
+ * that "fixed" it set HF_CON1 bits 8-15 (the block length, 64-byte units; JieLi's 32) to 0 = 16 KB a block, which
+ * ran over the RAM after the 4 KB buffer and the interrupt table. So: no restart; the cable monitor (a few seconds,
+ * only if the PC talks to it), then the interrupt back on. */
 static void rate_fix(void)
 {
-	uint32_t was = IRQ_Save(), tg, p0, p;
+	uint32_t was = IRQ_Save();
 
 	IRQ_Free(43);
 	s_sv_adc = REG32(0x001F1708u);
@@ -926,129 +942,15 @@ static void rate_fix(void)
 #if FM_MONITOR
 	timer_start();
 	mon_loop();
-	if (s_mon_go) {                      /* the monitor set things up by hand: no restart, just the interrupt */
-		s_too_fast = false;
-		s_chk_n = s_chk_sum = 0;
-		if (gFmIsr)
-			IRQ_Request(43, 0, gFmIsr);
-		IRQ_Restore(was);
-		ls("FMLOG monitor go, irq on");
-		lend();
-		return;
-	}
 #endif
-	canary_fill();
-	p0 = pend_period_us(&tg);
-	canary_log("at 94us");
-	canary_fill();
-	{                                    /* exactly what the scan did: off, a wait, back on with the old value */
-		uint32_t con = REG32(0x001F1700u);
-		REG32(0x001F1700u) = con ^ 1u;
-		for (volatile uint32_t i = 0; i < 20000u; i++)
-			;
-		(void)pend_period_us(0);
-		REG32(0x001F1700u) = con;
-		for (volatile uint32_t i = 0; i < 5000u; i++)
-			;
-		p = pend_period_us(0);
-		ls("FMLOG offon ");
-		ld(p);
-		ls(" hf ");
-		lh(REG32(0x001F1714u));
-		lend();
-		REG32(0x001F1700u) = con;
-	}
-	fm_block_restart();
-	for (volatile uint32_t i = 0; i < 20000u; i++)
-		;
-	SYSTEM_WatchdogClear();
-	p = pend_period_us(&tg);
-	ls("FMLOG restarted ");
-	ld(p);
-	ls(" hf ");
-	lh(REG32(0x001F1714u));
-	lend();
-	if (p < 600u) {                      /* HF_CON1 bit 13: 1 when fast, 0 when right (the scan) */
-		REG32(0x001F1714u) &= ~(1u << 13);
-		for (volatile uint32_t i = 0; i < 20000u; i++)
-			;
-		p = pend_period_us(&tg);
-		ls("FMLOG hf13 off ");
-		ld(p);
-		ls(" hf ");
-		lh(REG32(0x001F1714u));
-		lend();
-	}
-	if (p < 600u) {                      /* the scan's order once more, as a last try */
-		uint32_t con = REG32(0x001F1700u);
-		REG32(0x001F1700u) = con ^ 1u;
-		for (volatile uint32_t i = 0; i < 20000u; i++)
-			;
-		REG32(0x001F1700u) = con;
-		for (volatile uint32_t i = 0; i < 20000u; i++)
-			;
-		fm_block_restart();
-		for (volatile uint32_t i = 0; i < 20000u; i++)
-			;
-		p = pend_period_us(&tg);
-	}
-	ls("FMLOG restart before ");
-	ld(p0);
-	ls(" after ");
-	ld(p);
-	ls(" hf ");
-	lh(REG32(0x001F1714u));
-	ls(" con ");
-	lh(REG32(0x001F1700u));
-	lend();
 	s_too_fast = false;
 	s_chk_n = s_chk_sum = 0;
-	ls("FMLOG irq on, handler ");
-	lh((uint32_t)(uintptr_t)gFmIsr);
-	lend();
-	canary_log("after restart");
-	s_isr_log = 0;
-	s_fi_n = 0;
-	if (gFmIsr && fm_isr_parse((uint32_t)(uintptr_t)gFmIsr)) {
-		ls("FMLOG ours, base ");
-		lh(s_fi_base);
-		ls(" st ");
-		lh(*(volatile uint32_t *)(uintptr_t)(s_fi_base + 20u));
-		ls(" buf ");
-		lh(*(volatile uint32_t *)(uintptr_t)(s_fi_base + 24u));
-		ls(" dem ");
-		lh(*(volatile uint8_t *)(uintptr_t)s_fi_dem);
-		ls(" mute ");
-		lh(*(volatile uint8_t *)(uintptr_t)(s_fi_base + 28u));
-		ls(" out ");
-		lh(s_fi_out);
-		lend();
-		IRQ_Request(43, 0, fm_isr_ours);
-	} else if (gFmIsr) {
-		ls("FMLOG fmhw_isr not as expected");
-		lend();
+	if (gFmIsr)
 		IRQ_Request(43, 0, gFmIsr);
-	}
-	ls("FMLOG requested, ipcon5 ");
-	lh(REG32(0x0010F114u));
-	ls(" ipnd1 ");
-	lh(REG32(0x0010F184u));
-	lend();
 	IRQ_Restore(was);
-	ls("FMLOG restored");
+	ls("FMLOG irq on, hf ");
+	lh(REG32(0x001F1714u));
 	lend();
-	{
-		uint32_t i0 = gFmCrumb.irqs;
-		timer_start();
-		for (uint32_t k = 0; k < 40u; k++) {          /* about 100 ms of crystal time */
-			uint16_t t0 = t_now();
-			while ((uint16_t)(t_now() - t0) < 60000u)
-				;
-		}
-		ls("FMLOG on: irqs in 100 ms ");
-		ld(gFmCrumb.irqs - i0);
-		lend();
-	}
 }
 
 bool FMRX_Open(uint32_t khz, uint32_t mode)
