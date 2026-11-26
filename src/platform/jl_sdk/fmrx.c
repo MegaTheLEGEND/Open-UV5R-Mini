@@ -180,7 +180,7 @@ void (*gFmStall)(uint32_t main_pc, uint32_t irqs, uint32_t delays);
 static uint32_t s_stall_d, s_stall_n;
 static uint32_t s_chk_sum, s_chk_n;
 static uint16_t s_chk_last;
-static volatile bool s_too_fast;
+static volatile bool s_too_fast, s_in_on;
 static uint32_t s_g_sum, s_h_sum, s_gh_n;
 static uint16_t s_out_last;
 uint32_t gFmP_us, gFmG_us, gFmH_us;
@@ -337,7 +337,7 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 			s_chk_sum += (uint16_t)(t - s_chk_last);
 		s_chk_last = t;
 		if (++s_chk_n == 65u) {
-			if (s_chk_sum < 64u * 600u * T3_TICKS_PER_MS / 1000u) {
+			if (s_in_on || s_chk_sum < 64u * 600u * T3_TICKS_PER_MS / 1000u) {   /* in fm_inside_on: off after 64, as before */
 				s_too_fast = true;
 				IRQ_Free(43);            /* no more FM interrupts: the main code runs again */
 				return;
@@ -809,6 +809,39 @@ static void mon_cmd(const char *s)
 		lend();
 		break;
 	}
+	case 'b': {                          /* b N: run JieLi's fm_dem N times on the FM buffer (PC times it) */
+		uint32_t st, t0 = 0, tk = 0;
+		uint16_t tl;
+		if (!gFmIsr || !fm_isr_parse((uint32_t)(uintptr_t)gFmIsr)) {
+			ls("MON no fmhw_isr");
+			lend();
+			break;
+		}
+		st = *(volatile uint32_t *)(uintptr_t)(s_fi_base + 20u);
+		tl = t_now();
+		for (uint32_t i = 0; i < a; i++) {
+			uint16_t t;
+			fm_dem((void *)(uintptr_t)s_sv_base, (void *)(uintptr_t)st, (void *)(uintptr_t)s_fi_out);
+			t = t_now();
+			tk += (uint16_t)(t - tl);
+			tl = t;
+			SYSTEM_WatchdogClear();
+		}
+		(void)t0;
+		ls("MON dem ");
+		ld(a);
+		ls(" ticks ");
+		ld(tk);
+		lend();
+		break;
+	}
+	case 'B': {                          /* B N: an empty counted loop, N times (PC times it): CPU speed */
+		for (volatile uint32_t i = 0; i < a; i++)
+			;
+		ls("MON loop done");
+		lend();
+		break;
+	}
 	case 'g':                            /* go: leave the monitor and turn the FM interrupt on as it is now */
 		s_mon_go = true;
 		ls("MON go");
@@ -1026,7 +1059,9 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	crumb(71);
 	s_too_fast = false;
 	s_chk_n = s_chk_sum = 0;
+	s_in_on = true;                      /* the FM interrupt starved the main code inside fm_inside_on (2026-11-26) */
 	fm_inside_on();
+	s_in_on = false;
 	crumb(80);
 	ls("FMLOG too_fast ");
 	ld(s_too_fast);
