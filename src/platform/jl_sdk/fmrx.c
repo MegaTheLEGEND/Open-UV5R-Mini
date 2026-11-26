@@ -579,6 +579,80 @@ static void fm_block_restart(void)
 	REG32(0x001F1700u) = 0x4019u;
 }
 
+/* Debug (2026-11-26): the radio froze as soon as JieLi's FM interrupt (fmhw_isr) ran at 758 us, before it reached
+ * fm_sample_output_handler, with no exception logged. This is the same interrupt, step for step as fmhw_isr's code
+ * does it (llvm-objdump of the linked library), with a cable line before and after each step for the first calls.
+ * fmhw_isr's library variables are static, so their addresses are read from its own instructions. */
+extern void fm_dem(void *in, void *state, void *out);
+static uint32_t s_fi_base, s_fi_dem, s_fi_out, s_fi_n;
+
+static uint32_t imm32_at(uint32_t a)        /* a 32-bit immediate at a 2-byte aligned address */
+{
+	return (uint32_t)*(volatile uint16_t *)(uintptr_t)a | (uint32_t)*(volatile uint16_t *)(uintptr_t)(a + 2u) << 16;
+}
+
+static bool fm_isr_parse(uint32_t isr)
+{
+	/* fmhw_isr: +0x12 "r4 = imm" (C4 FF), +0x1C "r2 = imm" (C2 FF), +0x32 "r2 = imm" (C2 FF) */
+	if (*(volatile uint16_t *)(uintptr_t)(isr + 0x12u) != 0xFFC4u ||
+	    *(volatile uint16_t *)(uintptr_t)(isr + 0x1Cu) != 0xFFC2u ||
+	    *(volatile uint16_t *)(uintptr_t)(isr + 0x32u) != 0xFFC2u)
+		return false;
+	s_fi_base = imm32_at(isr + 0x14u);
+	s_fi_dem = imm32_at(isr + 0x1Eu);
+	s_fi_out = imm32_at(isr + 0x34u);
+	return true;
+}
+
+static void fi_log(const char *what, uint32_t a, uint32_t b)
+{
+	ls("FMLOG fi ");
+	ld(s_fi_n);
+	ls(" ");
+	ls(what);
+	ls(" ");
+	lh(a);
+	ls(" ");
+	lh(b);
+	lend();
+}
+
+static IRQ_HANDLER void fm_isr_ours(void)
+{
+	uint32_t hf, st, in = 0;
+	bool log = s_fi_n < 3u;
+
+	if (log)
+		fi_log("enter", REG32(0x001F1714u), 0);
+	REG32(0x001F1714u) |= 0x40u;
+	hf = REG32(0x001F1714u);
+	st = *(volatile uint32_t *)(uintptr_t)(s_fi_base + 20u);
+	if (!st) {
+		if (log)
+			fi_log("no state", hf, 0);
+		s_fi_n++;
+		return;
+	}
+	if (*(volatile uint8_t *)(uintptr_t)s_fi_dem == 0) {
+		in = *(volatile uint32_t *)(uintptr_t)(s_fi_base + 24u) + ((~hf << 6) & 0x800u);
+		if (log)
+			fi_log("dem in st", in, st);
+		fm_dem((void *)(uintptr_t)in, (void *)(uintptr_t)st, (void *)(uintptr_t)s_fi_out);
+		if (log)
+			fi_log("dem done", REG32(0x001F1714u), 0);
+	} else if (log) {
+		fi_log("dem skipped", *(volatile uint8_t *)(uintptr_t)s_fi_dem, 0);
+	}
+	if (*(volatile uint8_t *)(uintptr_t)(s_fi_base + 28u) == 0) {
+		for (uint32_t i = 0; i < 128u; i++)
+			((volatile uint8_t *)(uintptr_t)s_fi_out)[i] = 0;
+	}
+	fm_sample_output_handler((int16_t *)(uintptr_t)s_fi_out, 128);
+	if (log)
+		fi_log("out done", 0, 0);
+	s_fi_n++;
+}
+
 /* Restart the FM block after JieLi's fm_inside_on, the stock way. Found by a bit scan on Sean's radio
  * (2026-11-25): after fm_inside_on its buffer interrupt came every 94 us (853 thought, 768 by JieLi's 41 667 Hz
  * output rate: 32 frames a call); stopped (0x1F1700 bit 0) and started again in stock's order (fm_block_restart) it
@@ -658,8 +732,27 @@ static void rate_fix(void)
 	lh((uint32_t)(uintptr_t)gFmIsr);
 	lend();
 	s_isr_log = 0;
-	if (gFmIsr)
+	s_fi_n = 0;
+	if (gFmIsr && fm_isr_parse((uint32_t)(uintptr_t)gFmIsr)) {
+		ls("FMLOG ours, base ");
+		lh(s_fi_base);
+		ls(" st ");
+		lh(*(volatile uint32_t *)(uintptr_t)(s_fi_base + 20u));
+		ls(" buf ");
+		lh(*(volatile uint32_t *)(uintptr_t)(s_fi_base + 24u));
+		ls(" dem ");
+		lh(*(volatile uint8_t *)(uintptr_t)s_fi_dem);
+		ls(" mute ");
+		lh(*(volatile uint8_t *)(uintptr_t)(s_fi_base + 28u));
+		ls(" out ");
+		lh(s_fi_out);
+		lend();
+		IRQ_Request(43, 0, fm_isr_ours);
+	} else if (gFmIsr) {
+		ls("FMLOG fmhw_isr not as expected");
+		lend();
 		IRQ_Request(43, 0, gFmIsr);
+	}
 	ls("FMLOG requested, ipcon5 ");
 	lh(REG32(0x0010F114u));
 	ls(" ipnd1 ");
