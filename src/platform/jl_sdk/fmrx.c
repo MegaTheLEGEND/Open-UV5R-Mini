@@ -660,6 +660,190 @@ static IRQ_HANDLER void fm_isr_ours(void)
  * (2026-11-25): after fm_inside_on its buffer interrupt came every 94 us (853 thought, 768 by JieLi's 41 667 Hz
  * output rate: 32 frames a call); stopped (0x1F1700 bit 0) and started again in stock's order (fm_block_restart) it
  * came every 758 us. HF_CON1 0x1F1714 bit 13 read 1 before and 0 after. */
+/* Debug monitor on the cable (2026-11-26): after fm_inside_on, with the FM interrupt off, the radio waits for
+ * commands so the FM block can be tried live from the PC (tools/fmmon.py) without a new build each time. Never
+ * writes flash. One command a line, numbers in hex:
+ *   r A          read the word at A           w A V   write V to A        o A V / a A V   A |= V / A &= V
+ *   d A N        N words from A (max 64)      p       the FM buffer interrupt's period (us) and HF_CON1
+ *   k            fill the RAM after the FM buffer with a pattern;  K   count what changed since
+ *   s            fill, wait for one FM buffer interrupt, count what changed (how much one block writes)
+ *   f            restart the FM block in stock's order (fm_block_restart)
+ *   c A [r0 r1 r2 r3]  call the function at A, print r0
+ *   x            leave the monitor, carry on with the FM start */
+#define FM_MONITOR 1
+
+static void canary_fill(void);
+static void canary_log(const char *when);
+
+static uint32_t mon_hex(const char **p)
+{
+	uint32_t v = 0;
+	const char *s = *p;
+
+	while (*s == ' ')
+		s++;
+	for (;; s++) {
+		char c = *s;
+		if (c >= '0' && c <= '9')
+			v = v * 16u + (uint32_t)(c - '0');
+		else if (c >= 'a' && c <= 'f')
+			v = v * 16u + (uint32_t)(c - 'a' + 10);
+		else if (c >= 'A' && c <= 'F')
+			v = v * 16u + (uint32_t)(c - 'A' + 10);
+		else
+			break;
+	}
+	*p = s;
+	return v;
+}
+
+static void mon_word(uint32_t a)
+{
+	ls("MON ");
+	lh(a);
+	ls(" = ");
+	lh(*(volatile uint32_t *)(uintptr_t)a);
+	lend();
+}
+
+static void mon_cmd(const char *s)
+{
+	char c = *s++;
+	uint32_t a = mon_hex(&s), v = mon_hex(&s);
+	volatile uint32_t *r = (volatile uint32_t *)(uintptr_t)(a & ~3u);
+
+	switch (c) {
+	case 'r':
+		mon_word(a);
+		break;
+	case 'w':
+		*r = v;
+		mon_word(a);
+		break;
+	case 'o':
+		*r |= v;
+		mon_word(a);
+		break;
+	case 'a':
+		*r &= v;
+		mon_word(a);
+		break;
+	case 'd':
+		if (v > 64u)
+			v = 64u;
+		for (uint32_t i = 0; i < v; i += 4u) {
+			ls("MON ");
+			lh(a + 4u * i);
+			ls(":");
+			for (uint32_t k = i; k < i + 4u && k < v; k++) {
+				ls(" ");
+				lh(r[k]);
+			}
+			lend();
+		}
+		break;
+	case 'p': {
+		uint32_t tg, p = pend_period_us(&tg);
+		ls("MON period ");
+		ld(p);
+		ls(" toggles ");
+		ld(tg);
+		ls(" hf ");
+		lh(REG32(0x001F1714u));
+		ls(" con ");
+		lh(REG32(0x001F1700u));
+		ls(" adc ");
+		lh(REG32(0x001F1708u));
+		lend();
+		break;
+	}
+	case 'k':
+		canary_fill();
+		ls("MON filled");
+		lend();
+		break;
+	case 'K':
+		canary_log("now");
+		break;
+	case 's': {
+		uint32_t g = 0;
+		REG32(0x001F1714u) |= 0x40u;
+		canary_fill();
+		while (!(REG32(0x001F1714u) & 0x80u) && ++g < 4000000u)
+			;
+		canary_log(g < 4000000u ? "one block" : "no irq");
+		break;
+	}
+	case 'f':
+		fm_block_restart();
+		ls("MON restarted");
+		lend();
+		break;
+	case 'c': {
+		uint32_t r2 = mon_hex(&s), r3 = mon_hex(&s);
+		uint32_t (*fn)(uint32_t, uint32_t, uint32_t, uint32_t) =
+			(uint32_t (*)(uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)a;
+		uint32_t r0 = 0, r1 = v;
+		const char *t = s;
+		(void)t;
+		/* c A r0 r1 r2 r3: v is r0 here, the rest follow */
+		r0 = v;
+		r1 = r2;
+		r2 = r3;
+		r3 = mon_hex(&s);
+		ls("MON ret ");
+		lh(fn(r0, r1, r2, r3));
+		lend();
+		break;
+	}
+	default:
+		ls("MON ? r w o a d p k K s f c x");
+		lend();
+		break;
+	}
+}
+
+static void mon_loop(void)
+{
+	char line[96];
+	uint32_t n = 0, idle = 0;
+
+	ls("MON ready (x to go on)");
+	lend();
+	for (;;) {
+		uint8_t b[32];
+		int got = UART_Receive(b, (int)sizeof b, 100u);
+
+		SYSTEM_WatchdogClear();
+		if (got <= 0) {
+			if (++idle >= 100u) {            /* every ~10 s: still here */
+				idle = 0;
+				ls("MON ready");
+				lend();
+			}
+			continue;
+		}
+		idle = 0;
+		for (int i = 0; i < got; i++) {
+			char ch = (char)b[i];
+			if (ch == '\r' || ch == '\n') {
+				line[n] = 0;
+				if (n) {
+					if (line[0] == 'x') {
+						ls("MON bye");
+						lend();
+						return;
+					}
+					mon_cmd(line);
+				}
+				n = 0;
+			} else if (n < sizeof line - 1u) {
+				line[n++] = ch;
+			}
+		}
+	}
+}
+
 /* Debug: does the FM block write past its 4 KB buffer? The RAM after it (to the interrupt table at 0x2BF00) is
  * unused: fill it, and later count the words that changed. Also the 64 bytes before the buffer. */
 #define CAN_LO 0x00029820u
@@ -702,6 +886,9 @@ static void rate_fix(void)
 	s_sv_adc = REG32(0x001F1708u);
 	s_sv_adc1 = REG32(0x001F170Cu);
 	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
+#if FM_MONITOR
+	mon_loop();
+#endif
 	canary_fill();
 	p0 = pend_period_us(&tg);
 	canary_log("at 94us");
