@@ -675,6 +675,8 @@ static IRQ_HANDLER void fm_isr_ours(void)
 static void canary_fill(void);
 static void canary_log(const char *when);
 
+static bool s_mon_go;
+
 static uint32_t mon_hex(const char **p)
 {
 	uint32_t v = 0;
@@ -774,6 +776,39 @@ static void mon_cmd(const char *s)
 		canary_log(g < 4000000u ? "one block" : "no irq");
 		break;
 	}
+	case 'n': {                          /* count a FM buffer interrupts (pending bit), and the timer ticks meanwhile:
+	                                      * the PC times it, so both can be checked against a real clock */
+		uint32_t cnt = 0, ticks = 0, g = 0;
+		uint16_t tl = t_now();
+		if (!a)
+			a = 1000u;
+		REG32(0x001F1714u) |= 0x40u;
+		while (cnt < a && g < 400000000u) {
+			uint16_t t = t_now();
+			ticks += (uint16_t)(t - tl);
+			tl = t;
+			g++;
+			if (REG32(0x001F1714u) & 0x80u) {
+				REG32(0x001F1714u) |= 0x40u;
+				cnt++;
+			}
+			if ((g & 0xFFFFFu) == 0u)
+				SYSTEM_WatchdogClear();
+		}
+		ls("MON counted ");
+		ld(cnt);
+		ls(" ticks ");
+		ld(ticks);
+		ls(" loops ");
+		ld(g);
+		lend();
+		break;
+	}
+	case 'g':                            /* go: leave the monitor and turn the FM interrupt on as it is now */
+		s_mon_go = true;
+		ls("MON go");
+		lend();
+		break;
 	case 'f':
 		fm_block_restart();
 		ls("MON restarted");
@@ -835,6 +870,8 @@ static void mon_loop(void)
 						return;
 					}
 					mon_cmd(line);
+					if (s_mon_go)
+						return;
 				}
 				n = 0;
 			} else if (n < sizeof line - 1u) {
@@ -887,7 +924,18 @@ static void rate_fix(void)
 	s_sv_adc1 = REG32(0x001F170Cu);
 	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
 #if FM_MONITOR
+	timer_start();
 	mon_loop();
+	if (s_mon_go) {                      /* the monitor set things up by hand: no restart, just the interrupt */
+		s_too_fast = false;
+		s_chk_n = s_chk_sum = 0;
+		if (gFmIsr)
+			IRQ_Request(43, 0, gFmIsr);
+		IRQ_Restore(was);
+		ls("FMLOG monitor go, irq on");
+		lend();
+		return;
+	}
 #endif
 	canary_fill();
 	p0 = pend_period_us(&tg);

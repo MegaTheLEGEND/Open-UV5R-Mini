@@ -13,6 +13,11 @@ import time
 import serial
 
 
+def stamp():
+    t = time.time()
+    return time.strftime('%H:%M:%S', time.localtime(t)) + '.%03d' % (int(t * 1000) % 1000)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--port', required=True)
@@ -34,7 +39,7 @@ def main():
                 line, buf = buf.split(b'\n', 1)
                 text = line.decode('ascii', 'replace').strip()
                 if text:
-                    f.write('%s %s\n' % (time.strftime('%H:%M:%S'), text))
+                    f.write('%s %s\n' % (stamp(), text))
                     f.flush()
             size = os.path.getsize(a.cmds)
             if size > sent:
@@ -45,7 +50,7 @@ def main():
                 for cmd in new[:cut].splitlines():
                     cmd = cmd.strip()
                     if cmd:
-                        f.write('%s >> %s\n' % (time.strftime('%H:%M:%S'), cmd.decode('ascii', 'replace')))
+                        f.write('%s >> %s\n' % (stamp(), cmd.decode('ascii', 'replace')))
                         f.flush()
                         s.write(cmd + b'\r\n')
                         time.sleep(0.05)
