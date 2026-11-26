@@ -617,6 +617,7 @@ static void fi_log(const char *what, uint32_t a, uint32_t b)
 	lend();
 }
 
+static void canary_log(const char *when);
 static IRQ_HANDLER void fm_isr_ours(void)
 {
 	uint32_t hf, st, in = 0;
@@ -648,8 +649,10 @@ static IRQ_HANDLER void fm_isr_ours(void)
 			((volatile uint8_t *)(uintptr_t)s_fi_out)[i] = 0;
 	}
 	fm_sample_output_handler((int16_t *)(uintptr_t)s_fi_out, 128);
-	if (log)
+	if (log) {
 		fi_log("out done", 0, 0);
+		canary_log("isr");
+	}
 	s_fi_n++;
 }
 
@@ -657,6 +660,40 @@ static IRQ_HANDLER void fm_isr_ours(void)
  * (2026-11-25): after fm_inside_on its buffer interrupt came every 94 us (853 thought, 768 by JieLi's 41 667 Hz
  * output rate: 32 frames a call); stopped (0x1F1700 bit 0) and started again in stock's order (fm_block_restart) it
  * came every 758 us. HF_CON1 0x1F1714 bit 13 read 1 before and 0 after. */
+/* Debug: does the FM block write past its 4 KB buffer? The RAM after it (to the interrupt table at 0x2BF00) is
+ * unused: fill it, and later count the words that changed. Also the 64 bytes before the buffer. */
+#define CAN_LO 0x00029820u
+#define CAN_HI 0x0002BF00u
+static void canary_fill(void)
+{
+	for (uint32_t a = CAN_LO; a < CAN_HI; a += 4u)
+		*(volatile uint32_t *)(uintptr_t)a = 0xA5A5A5A5u;
+}
+
+static void canary_log(const char *when)
+{
+	uint32_t n = 0, lo = 0, hi = 0;
+
+	for (uint32_t a = CAN_LO; a < CAN_HI; a += 4u)
+		if (*(volatile uint32_t *)(uintptr_t)a != 0xA5A5A5A5u) {
+			if (!n)
+				lo = a;
+			hi = a;
+			n++;
+		}
+	ls("FMLOG canary ");
+	ls(when);
+	ls(" changed ");
+	ld(n);
+	ls(" from ");
+	lh(lo);
+	ls(" to ");
+	lh(hi);
+	ls(" vec43 ");
+	lh(*(volatile uint32_t *)(uintptr_t)0x0002BFACu);
+	lend();
+}
+
 static void rate_fix(void)
 {
 	uint32_t was = IRQ_Save(), tg, p0, p;
@@ -665,7 +702,10 @@ static void rate_fix(void)
 	s_sv_adc = REG32(0x001F1708u);
 	s_sv_adc1 = REG32(0x001F170Cu);
 	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
+	canary_fill();
 	p0 = pend_period_us(&tg);
+	canary_log("at 94us");
+	canary_fill();
 	{                                    /* exactly what the scan did: off, a wait, back on with the old value */
 		uint32_t con = REG32(0x001F1700u);
 		REG32(0x001F1700u) = con ^ 1u;
@@ -731,6 +771,7 @@ static void rate_fix(void)
 	ls("FMLOG irq on, handler ");
 	lh((uint32_t)(uintptr_t)gFmIsr);
 	lend();
+	canary_log("after restart");
 	s_isr_log = 0;
 	s_fi_n = 0;
 	if (gFmIsr && fm_isr_parse((uint32_t)(uintptr_t)gFmIsr)) {
