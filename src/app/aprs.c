@@ -294,8 +294,10 @@ static void draw_set(void)
 
 static void draw(bool full)
 {
-	if (full)
+	if (full) {                           /* the screen it opens on (the menu) is still there: clear it */
+		ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BG);
 		title();
+	}
 	if (s_view == V_LIST)
 		draw_list();
 	else if (s_view == V_DETAIL)

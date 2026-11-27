@@ -22,9 +22,11 @@ void MON_Char(char c, uint8_t x, uint8_t y, uint8_t scale)
 	if (c >= 'a' && c <= 'z')
 		c = (char)(c - 32);
 	if (col < SH_COLS && row < SH_ROWS) {
+		/* the character covers 8 * scale pixel rows: older text there (drawn on another row grid) is gone */
+		for (unsigned r = y / 4u; r < (y + 8u * scale + 3u) / 4u && r < SH_ROWS; r++)
+			for (unsigned k = 0; k < scale && col + k < SH_COLS; k++)
+				s_shadow[r][col + k] = 0;
 		s_shadow[row][col] = c == ' ' ? 0 : c;
-		for (unsigned k = 1; k < scale && col + k < SH_COLS; k++)
-			s_shadow[row][col + k] = 0;
 	}
 }
 
