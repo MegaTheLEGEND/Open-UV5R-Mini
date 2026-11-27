@@ -440,6 +440,10 @@ static void main_view(UiMain_t *v)
 		*p++ = 'D'; *p++ = 'T'; *p++ = 'M'; *p++ = 'F'; *p++ = ' ';
 		copy_text(p, s_dtmf, 17);
 		v->bottom_color = COLOR_WARN;
+	} else if (gStock.raw[0x3A] == 1u) {
+		/* VOX keys the radio on any sound (a key beep, a breath): always in sight while on (Sean, 2026-11-27) */
+		copy_text(v->bottom, "VOX ON", sizeof v->bottom);
+		v->bottom_color = COLOR_WARN;
 	} else
 		v->bottom[0] = 0;               /* only DTMF and notifications here (Sean, 2026-11-24): no hints */
 }
@@ -1304,8 +1308,11 @@ static bool key_fn(KEY_Code_t k, bool held)
 		key_action(KA_POWER);
 		note(gVfo.power == POWER_LOW ? "POWER LOW" : "POWER HIGH", COLOR_INFO);
 		return true;
-	case KEY_7:                          /* VOX on / off (stock setting 0x3A) */
-		gStock.raw[0x3A] = !gStock.raw[0x3A];
+	case KEY_7:                          /* VOX on / off (stock setting 0x3A): F then 7 only, never 7 held, which a
+	                                      * slow 7 typed first did by accident (Sean, 2026-11-27) */
+		if (held)
+			return true;
+		gStock.raw[0x3A] = gStock.raw[0x3A] == 1u ? 0u : 1u;
 		VOX_Reset();
 		note(gStock.raw[0x3A] ? "VOX ON" : "VOX OFF", COLOR_INFO);
 #if SETTINGS_ENABLE_SAVE
@@ -1412,7 +1419,8 @@ static void key_main(KEY_Code_t k)
 }
 
 bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
-static bool s_rescue_armed;              /* ABOUT: * pressed once, a second * restarts into rescue mode */
+static bool s_rescue_armed;              /* ABOUT: * pressed once: rescue mode in 5 s, or at once on a second * */
+static uint16_t s_rescue_ms;
 
 /* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
  * debugging aids on and off (Sean, 2026-11-27); not saved, on again at power-on. */
@@ -1431,7 +1439,12 @@ static void draw_about(void)
 	UI_PrintString("DEBUG", 4, 94, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString(gDebug ? "ON " : "OFF", 58, 94, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("RESCUE", 4, 105, COLOR_DIM, COLOR_BG, 1);
-	UI_PrintString(s_rescue_armed ? "* AGAIN" : "*", 58, 105, s_rescue_armed ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
+	if (s_rescue_armed) {                /* "IN 5S" counting down; * again now, any other key cancels */
+		char t[8] = "IN  S *";
+		t[3] = (char)('0' + (5000u - s_rescue_ms + 999u) / 1000u);
+		UI_PrintString(t, 58, 105, COLOR_WARN, COLOR_BG, 1);
+	} else
+		UI_PrintString("*      ", 58, 105, COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #else
 	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
@@ -1934,7 +1947,7 @@ static const char *const HELP_MAIN[] = {
 	"1 STEP     2 A/B",
 	"3 VFO/MR   4 METER",
 	"5 SPECTRUM 6 POWER",
-	"7 VOX      8 DUAL W",
+	"7 F7:VOX   8 DUAL W",
 	"9 MONITOR  0 FM RADIO",
 	"* SCAN     F * TONES",
 	"F UP/DN    SQUELCH",
@@ -2979,6 +2992,7 @@ void APP_Tick(void)
 #endif
 			if (DEBUGGING && k == KEY_STAR) {
 				s_rescue_armed = true;
+				s_rescue_ms = 0;
 				s_redraw = true;
 			} else if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
 				gDebug = !gDebug;
@@ -3017,6 +3031,15 @@ void APP_Tick(void)
 		;                                  /* the panel is off: nothing drawn */
 	else if (s_screen == SCREEN_MAIN) {
 		draw_main();
+	} else if (DEBUGGING && s_screen == SCREEN_ABOUT && s_rescue_armed) {
+		uint16_t was = s_rescue_ms;      /* the countdown on screen each second, then the restart */
+		s_rescue_ms = (uint16_t)(s_rescue_ms + APP_TICK_MS);
+#if DEBUGGING
+		if (s_rescue_ms >= 5000u)
+			reboot_to_rescue();
+#endif
+		if (s_redraw || was / 1000u != s_rescue_ms / 1000u)
+			draw_about();
 	} else if (s_redraw && s_screen == SCREEN_ABOUT)
 		draw_about();
 	else if (s_redraw && s_screen == SCREEN_HELP)

@@ -60,7 +60,7 @@ Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 
 | 0–9 | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz); held, or F then the digit: see below |
 
 Held (half a second), or F then the key, on the main screen (after the UV-K5 open firmware's layout; ours where the
-radio has no such thing): 1 step, 2 A/B, 3 VFO/MR, 4 signal meter, 5 spectrum, 6 power, 7 VOX, 8 dual watch,
+radio has no such thing): 1 step, 2 A/B, 3 VFO/MR, 4 signal meter, 5 spectrum, 6 power, 7 VOX (F then 7 only; "VOX ON" stays on the bottom line), 8 dual watch,
 9 monitor, 0 FM radio, F then UP/DOWN squelch. Keys with a held job act when let go. In an app, F then UP/DOWN stand for
 the app's `#` and `*` (FM volume up/down, spectrum step). F goes off after the next key on every screen.
 
