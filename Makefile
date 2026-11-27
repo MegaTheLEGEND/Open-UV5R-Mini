@@ -21,7 +21,7 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
        src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c src/driver/spi1.c \
        src/driver/irq.c \
-       src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
+       src/ui/font.c src/ui/helper.c src/ui/textentry.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
        src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
        src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c \
        src/ui/screen_apps.c src/ui/status.c \

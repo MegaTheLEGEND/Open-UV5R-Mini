@@ -183,10 +183,11 @@ int main(int argc, char **argv)
 				m.num[r] = (uint8_t)(r + 1);
 			}
 		}
-		strcpy(m.corner, "02/51");
-		m.value = "CITY RPTR   ";
+		strcpy(m.corner, "ABC");             /* typing: letters (F: 123) */
+		m.corner_warn = true;
+		m.value = "CITY RPT";
 		m.edit = true;
-		m.cursor = 5;
+		m.cursor = 8;                                /* after the text: the next letter */
 		UI_MenuDraw(&m, true);
 		snprintf(path, sizeof path, "%s/menu_name.ppm", dir);
 		dump(path);

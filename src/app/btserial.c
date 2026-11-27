@@ -3,7 +3,8 @@
  * shows what the phone or PC sends and sends a few lines back. It needs a backend with a serial link (bt/bt.h
  * BT_IsAvailable); the open build has none yet, so it says so.
  *
- * Keys: 1 send "PING", 2 send the selected side's frequency, 0 clear the screen, EXIT back.
+ * Keys: MENU type a line (keypad letters, F numbers: ui/textentry.h; MENU sends it), 1 send "PING", 2 send the
+ * selected side's frequency, 0 clear the screen, EXIT back.
  * Its state is in .ram2 (.bss is full). */
 #include "app/apps.h"
 #if APP_BTSERIAL_ENABLE
@@ -12,6 +13,7 @@
 #include "radio/radio.h"
 #include "ui/helper.h"
 #include "ui/status.h"
+#include "ui/textentry.h"
 #include "ui/theme.h"
 
 #define ROW_Y(r) ((uint8_t)(13u + 10u * (r)))
@@ -25,6 +27,9 @@ static struct {
 	bool     was_connected;
 	bool     redraw, full;
 	char     status[22];
+	bool     typing;
+	char     out[COLS + 3];              /* the line being typed, then CR LF */
+	TextEntry_t te;
 } S __attribute__((section(".ram2.btserial")));
 
 static char *put(char *o, const char *s) { while (*s) *o++ = *s++; *o = 0; return o; }
@@ -87,13 +92,23 @@ static void draw(bool full)
 	UI_TitleRight(BT_IsConnected() ? "LINKED" : "WAITING", BT_IsConnected() ? COLOR_RX : COLOR_DIM);
 	for (uint8_t r = 0; r < LINES; r++)
 		UI_PrintPadded(S.line[r], 2, ROW_Y(r), COLOR_TEXT, COLOR_BG, COLS);
+	if (S.typing) {                      /* the line being typed, ABC or 123 at the right */
+		char t[COLS + 1];
+		TEXT_Line(&S.te, t, COLS - 4);
+		o = put(S.status, t);
+		while (o < S.status + COLS - 3)
+			*o++ = ' ';
+		put(o, TEXT_ModeName(&S.te));
+		UI_PrintPadded(S.status, 2, 107, COLOR_WARN, COLOR_BG, COLS);
+		UI_PrintPadded("MENU SEND * DEL F 123", 2, 118, COLOR_DIM, COLOR_BG, COLS);
+		return;
+	}
 	o = put(S.status, "RX ");
 	o = APPS_PutInt(o, (int)S.rx);
 	o = put(o, "  TX ");
 	APPS_PutInt(o, (int)S.tx);
 	UI_PrintPadded(S.status, 2, 107, COLOR_DIM, COLOR_BG, COLS);
-	if (full)
-		UI_PrintString("1 PING 2 FREQ 0 CLR", 2, 118, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintPadded("MENU TYPE 1 PING 0 CLR", 2, 118, COLOR_DIM, COLOR_BG, COLS);
 }
 
 static void enter(void)
@@ -103,6 +118,7 @@ static void enter(void)
 	S.col = 0;
 	S.rx = S.tx = 0;
 	S.was_connected = false;
+	S.typing = false;
 	S.redraw = S.full = true;
 	BT_Init(on_receive);
 }
@@ -116,7 +132,25 @@ static AppsResult_t key(KEY_Code_t k)
 {
 	char b[24], *o;
 
+	if (S.typing) {
+		TextResult_t r = TEXT_Key(&S.te, k, gAppsUptimeMs);
+		if (r != TEXT_EDITING) {
+			S.typing = false;
+			if (r == TEXT_DONE && S.te.len) {
+				put(S.out + S.te.len, "\r\n");
+				send(S.out);
+			}
+		}
+		S.redraw = true;
+		return APPS_STAY;
+	}
 	switch (k) {
+	case KEY_MENU:
+		S.out[0] = 0;
+		TEXT_Start(&S.te, S.out, COLS, TEXT_FREE);
+		S.typing = true;
+		S.redraw = true;
+		break;
 	case KEY_EXIT:
 		return APPS_EXIT;
 	case KEY_1:
@@ -156,5 +190,5 @@ static AppsResult_t tick(bool full)
 }
 
 const AppDef_t APP_BTSERIAL = { "BT SERIAL", enter, key, tick, leave, false, false,
-                                "1 SEND PING\n2 SEND FREQUENCY\n0 CLEAR\nEXIT BACK" };
+                                "MENU TYPE A LINE\n F 123/ABC * DEL\n MENU SENDS IT\n1 SEND PING\n2 SEND FREQUENCY\n0 CLEAR\nEXIT BACK" };
 #endif

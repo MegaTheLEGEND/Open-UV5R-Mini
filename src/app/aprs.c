@@ -9,7 +9,7 @@
  *   Send      1 sends our position report now (radio/aprs.c, AFSK from the BK4819's tone generator, radio.c
  *             RADIO_SendAfsk), through the normal transmit checks (TX lock: only where the radio may transmit). With
  *             BEACON set, it is also sent every 10, 20 or 30 minutes while the app is open.
- *   Settings  * : call sign (keypad letters, 2 = A B C 2 ...), SSID, icon, latitude and longitude (typed DDMM.m, *
+ *   Settings  * : call sign (keypad letters, ui/textentry.h: 2 = A B C 2 ..., F numbers), SSID, icon, latitude and longitude (typed DDMM.m, *
  *             flips N/S or E/W), the beacon time and the receive mode. Kept with the radio's settings.
  *
  * Keys on the list: UP/DOWN pick, MENU the station's details, 1 beacon, 0 the other receive mode, * settings,
@@ -28,13 +28,13 @@
 #include "radio/txlock.h"
 #include "ui/helper.h"
 #include "ui/status.h"
+#include "ui/textentry.h"
 #include "ui/theme.h"
 
 #define HEARD_N      8u
 #define ROW_Y(r)     ((uint8_t)(26u + 11u * (r)))
 #define SAY_MS       2500u
 #define DUP_MS       30000u              /* the same packet again (digipeated) within this: counted, not listed */
-#define TAP_MS       1000u               /* the same key again within this: the next letter on it */
 #define PRE_FLAGS    36u                 /* 240 ms of flags before the frame */
 
 typedef struct {
@@ -59,9 +59,7 @@ static uint32_t   s_beacon_ms;           /* until the next timed beacon */
 static char       s_ed[8];
 static uint8_t    s_ed_n;
 static bool       s_ed_neg;
-static int8_t     s_tap_key = -1;
-static uint8_t    s_tap_i;
-static uint32_t   s_tap_t;
+static TextEntry_t s_te;                 /* the call sign being typed */
 
 static uint32_t aprs_freq(void)          /* 10 Hz units */
 {
@@ -253,9 +251,12 @@ static void set_value(char *o, unsigned row)
 static void edit_value(char *o, unsigned row)
 {
 	if (row == S_CALL) {
-		for (unsigned k = 0; k < s_ed_n; k++)
-			*o++ = s_ed[k];
-		*o++ = '_';
+		TEXT_Line(&s_te, o, 7);
+		while (*o)
+			o++;
+		*o++ = ' ';
+		for (const char *m = TEXT_ModeName(&s_te); *m; )
+			*o++ = *m++;
 		*o = 0;
 		return;
 	}
@@ -287,7 +288,7 @@ static void draw_set(void)
 	}
 	line(ROW_Y(7), "", COLOR_DIM);
 	if (s_view == V_EDIT)
-		bottom(s_row == S_CALL ? "KEYS ABC  * DEL  MENU" : "DIGITS  * N/S E/W MENU");
+		bottom(s_row == S_CALL ? "F 123/ABC * DEL MENU" : "DIGITS  * N/S E/W MENU");
 	else
 		bottom("MENU CHANGE  EXIT DONE");
 }
@@ -379,17 +380,16 @@ static void heard(const uint8_t *frame, unsigned len)
 }
 
 /* ------------------------------------------------------------------ editing */
-static const char *const TAPS[10] = { "0", "1", "ABC2", "DEF3", "GHI4", "JKL5", "MNO6", "PQRS7", "TUV8", "WXYZ9" };
-
 static void edit_start(void)
 {
 	s_view = V_EDIT;
 	s_ed_n = 0;
-	s_tap_key = -1;
-	if (s_row == S_CALL)
+	if (s_row == S_CALL) {
 		for (; s_c.call[s_ed_n] && s_ed_n < 6u; s_ed_n++)
 			s_ed[s_ed_n] = s_c.call[s_ed_n];
-	else
+		s_ed[s_ed_n] = 0;
+		TEXT_Start(&s_te, s_ed, 6, TEXT_CALL);   /* keypad letters, F numbers (ui/textentry.h) */
+	} else
 		s_ed_neg = (s_row == S_LAT ? s_c.lat : s_c.lon) < 0;
 }
 
@@ -406,6 +406,7 @@ static void edit_done(void)
 				s_c.call[k] = cs[k];
 		else {
 			say("NOT A CALL SIGN");
+			TEXT_Start(&s_te, s_ed, 6, TEXT_CALL);   /* go on typing */
 			return;
 		}
 	} else {
@@ -439,29 +440,19 @@ static void edit_key(KEY_Code_t k)
 {
 	int d = KEY_Digit(k);
 
-	if (k == KEY_ACT_EXIT) {
+	if (s_row == S_CALL) {
+		TextResult_t r = TEXT_Key(&s_te, k, gAppsUptimeMs);
+		s_ed_n = s_te.len;
+		if (r == TEXT_DONE)
+			edit_done();
+		else if (r == TEXT_CANCEL)
+			s_view = V_SET;
+	} else if (k == KEY_ACT_EXIT) {
 		s_view = V_SET;
 	} else if (k == KEY_ACT_MENU) {
 		edit_done();
 	} else if (k == KEY_STAR) {
-		if (s_row == S_CALL) {
-			if (s_ed_n)
-				s_ed_n--;
-			s_tap_key = -1;
-		} else
-			s_ed_neg = !s_ed_neg;
-	} else if (d >= 0 && s_row == S_CALL) {
-		const char *g = TAPS[d];
-		uint32_t now = gAppsUptimeMs;
-		if (d == s_tap_key && now - s_tap_t < TAP_MS && s_ed_n) {
-			s_tap_i = (uint8_t)((s_tap_i + 1u) % (unsigned)(g[1] ? (g[2] ? (g[3] ? (g[4] ? 5 : 4) : 3) : 2) : 1));
-			s_ed[s_ed_n - 1u] = g[s_tap_i];
-		} else if (s_ed_n < 6u) {
-			s_tap_i = 0;
-			s_ed[s_ed_n++] = g[0];
-		}
-		s_tap_key = (int8_t)d;
-		s_tap_t = now;
+		s_ed_neg = !s_ed_neg;
 	} else if (d >= 0) {
 		unsigned dd = s_row == S_LAT ? 2u : 3u;
 		if (s_ed_n < dd + 3u)

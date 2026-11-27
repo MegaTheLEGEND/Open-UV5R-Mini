@@ -44,6 +44,7 @@
 #include "driver/system.h"
 #include "driver/uart.h"
 #include "ui/helper.h"
+#include "ui/textentry.h"
 #include "ui/screen_main.h"
 #include "ui/screen_menu.h"
 #include "ui/theme.h"
@@ -774,7 +775,7 @@ static void vfo_retune(uint32_t f)
 /* CH NAME editing: the name padded to 12, the cursor, and the characters UP/DOWN step through */
 static char    s_name_buf[13];
 static int8_t  s_name_cur;
-static const char NAME_CHARS[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-./+#*()";
+static TextEntry_t s_name_te;            /* the channel name being typed (ui/textentry.h) */
 /* FREQUENCY typed in the menu: kHz digits so far */
 static uint32_t s_freq_khz;
 static uint8_t  s_freq_n;
@@ -943,13 +944,10 @@ static void menu_change(int i, int dir)
 	case M_LOCKPTT:
 		s_lock_ptt = !s_lock_ptt;
 		return;
-	case M_CHNAME: {                     /* the character at the cursor, through NAME_CHARS */
-		int n = (int)sizeof NAME_CHARS - 1, c = 0;
-		while (c < n && NAME_CHARS[c] != s_name_buf[s_name_cur])
-			c++;
-		s_name_buf[s_name_cur] = NAME_CHARS[((c < n ? c : 0) + n + dir) % n];
+	case M_CHNAME:                       /* the last character, through what a name may have (ui/textentry.c) */
+		TEXT_Key(&s_name_te, dir > 0 ? KEY_UP : KEY_DOWN, SYSTEM_Ms());
+		s_name_cur = (int8_t)(s_name_te.len < 12 ? s_name_te.len : 11);
 		return;
-	}
 	case M_FREQ: {                       /* one step, on the step grid */
 		uint32_t st = RADIO_Steps[gVfo.step], f = gVfo.freq - gVfo.freq % st;
 		f = dir > 0 ? f + st : f - st;
@@ -1094,6 +1092,16 @@ static void draw_menu(void)
 		m.value = menu_value(s_menu_sel, b);
 		if (s_menu_sel == M_CHNAME && s_menu_edit)
 			m.cursor = s_name_cur;
+		if (s_menu_sel == M_CHNAME && s_menu_edit && !s_menu_num_len) {   /* ABC or 123 in the corner */
+			const char *q = TEXT_ModeName(&s_name_te);
+			p = m.corner;
+			while (*q)
+				*p++ = *q++;
+			*p = 0;
+			m.corner_warn = true;
+			UI_MenuDraw(&m, s_redraw);
+			return;
+		}
 		m.corner_warn |= s_menu_sel == M_REGION || s_menu_sel == M_TXLOCK;
 	}
 	p = m.corner;
@@ -1114,6 +1122,9 @@ static void draw_menu(void)
 static void go(Screen_t s)
 {
 	if (s == SCREEN_MAIN) {
+		if (s_menu_edit && s_menu_sel == M_CHNAME)
+			s_menu_edit = 0;             /* a name being typed is dropped */
+		TEXT_End();
 		s_menu_hidden = false;           /* the hidden items go with the menu */
 		s_menu_sec = -1;                 /* the menu opens at its first page */
 		s_menu_num_len = 0;
@@ -1570,6 +1581,7 @@ static void app_close(AppsResult_t r)
 	const AppDef_t *a = s_app;
 
 	s_app = 0;
+	TEXT_End();                          /* a field it was typing in is gone */
 	if (a)
 		a->leave();
 	if (r == APPS_TUNE) {                /* the VFO on that frequency (VFO mode, no shift) */
@@ -1617,21 +1629,21 @@ static void menu_enter(void)
 			RADIO_Beep(400, 120);
 			return;
 		}
-		if (!s_menu_edit) {                  /* start: the name padded to 12 with spaces, cursor on the first */
+		if (!s_menu_edit) {                  /* start: typing after the name as it is (ui/textentry.h) */
 			int k = 0;
 			for (; k < 12 && s_ch_name[k]; k++)
 				s_name_buf[k] = s_ch_name[k];
-			for (; k < 12; k++)
-				s_name_buf[k] = ' ';
-			s_name_buf[12] = 0;
-			s_name_cur = 0;
+			s_name_buf[k] = 0;
+			TEXT_Start(&s_name_te, s_name_buf, 12, TEXT_NAME);
+			s_name_cur = (int8_t)(k < 12 ? k : 11);
 			s_menu_edit = 1;
 			return;
 		}
+		TEXT_End();
 		s_menu_edit = 0;                     /* MENU again: save it (trailing spaces dropped) */
 		{
 			Channel_t c;
-			int k = 12;
+			int k = s_name_te.len;
 			while (k > 0 && s_name_buf[k - 1] == ' ')
 				k--;
 			if (!CHANNEL_Load((uint16_t)s_ch, &c)) {
@@ -1806,6 +1818,8 @@ static void key_menu(KEY_Code_t k)
 
 	if (k == KEY_ACT_EXIT) {
 		if (s_menu_edit) {
+			if (s_menu_sel == M_CHNAME)
+				TEXT_End();
 			s_menu_edit = 0;                 /* a name or typed frequency being edited is dropped */
 			s_freq_n = 0;
 		} else {
@@ -1827,13 +1841,9 @@ static void key_menu(KEY_Code_t k)
 			s_menu_sel = sec_item(s_menu_sec, r);
 		}
 	} else if (s_menu_edit && s_menu_sel == M_CHNAME && (k == KEY_STAR || k == KEY_HASH || d >= 0)) {
-		/* * and # move the cursor; a digit is typed in and the cursor moves on */
-		if (d >= 0)
-			s_name_buf[s_name_cur] = (char)('0' + d);
-		if (k == KEY_STAR)
-			s_name_cur = (int8_t)(s_name_cur ? s_name_cur - 1 : 11);
-		else
-			s_name_cur = (int8_t)((s_name_cur + 1) % 12);
+		/* keypad letters (ui/textentry.h): digits type, * deletes, # (F) letters <-> numbers */
+		TEXT_Key(&s_name_te, k, SYSTEM_Ms());
+		s_name_cur = (int8_t)(s_name_te.len < 12 ? s_name_te.len : 11);
 	} else if (d >= 0 && s_menu_edit && s_menu_sel == M_FREQ) {
 		/* MHz then kHz, 6 digits as on the main screen; the 6th tunes */
 		s_freq_khz = s_freq_n ? s_freq_khz * 10u + (uint32_t)d : (uint32_t)d;
@@ -3175,8 +3185,8 @@ void APP_Tick(void)
 		else if (s_screen == SCREEN_HELP) {
 			if (k == KEY_ACT_EXIT)
 				help_close();
-		} else if (k == KEY_HASH && !(s_screen == SCREEN_MENU && s_menu_edit && s_menu_sel == M_CHNAME))
-			s_fkey = !s_fkey;                    /* F; # still moves the cursor in a channel name */
+		} else if (k == KEY_HASH && !gTextActive)
+			s_fkey = !s_fkey;                    /* F; while typing (ui/textentry.h) # is the field's letters/numbers */
 		else if (s_screen == SCREEN_MAIN)
 			key_main(k);
 		else if (s_screen == SCREEN_APP) {
