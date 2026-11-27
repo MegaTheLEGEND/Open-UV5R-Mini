@@ -537,6 +537,8 @@ static void enter(void)
 
 static void leave(void)
 {
+	gSystemIdle = 0;
+	SYSTEM_SetTicksPerSec(0);
 	FMRX_Close();
 	RADIO_ProbeEnd();
 }
@@ -599,6 +601,42 @@ static AppsResult_t key(KEY_Code_t k)
 	return APPS_STAY;
 }
 
+/* RDS between ticks: the main loop's wait calls this over and over (driver/system.h gSystemIdle). Decoding more
+ * often than every 10 ms decoded far more groups (Sean, 2026-11-27, when the ticks ran 9x fast by mistake). */
+static bool s_rds_new;
+
+static void idle_rds(void)
+{
+	if (s_ok && (s_mode & FMRX_RX) && RDS_Poll())
+		s_rds_new = true;
+}
+
+/* The timer's real rate while FM runs, from the FM interrupt: 37500 / 32 = 1171.875 a second, crystal-timed (8192
+ * of them in 6.94 s on Sean's radio, PC-timed, 2026-11-26). Measured over about 2 s, so uptime and key holds keep
+ * real time whatever the FM start did to the clocks. */
+static void clock_check(void)
+{
+	static uint32_t irq0, raw0;
+	static bool armed;
+	uint32_t irqs = gFmCrumb.irqs, raw = SYSTEM_Raw(), di = irqs - irq0;
+
+	if (!armed || irqs < irq0) {
+		irq0 = irqs;
+		raw0 = raw;
+		armed = true;
+		return;
+	}
+	if (di < 2344u)
+		return;
+	{
+		uint32_t tps = (raw - raw0) / di * 1172u + (raw - raw0) % di * 1172u / di;
+		if (tps > 10000u && tps < 2000000u)  /* something sensible */
+			SYSTEM_SetTicksPerSec(tps);
+	}
+	irq0 = irqs;
+	raw0 = raw;
+}
+
 static AppsResult_t tick(bool full)
 {
 	if (!s_started) {                    /* the receiver starts by itself on the first tick, after the screen is up
@@ -622,7 +660,10 @@ static AppsResult_t tick(bool full)
 		hint();
 	if (s_ok && (s_mode & FMRX_RX)) {    /* RDS: decode what the FM interrupt gathered; the text scrolls */
 		bool redraw = false;
-		if (RDS_Poll()) {
+		gSystemIdle = idle_rds;
+		clock_check();
+		if (RDS_Poll() || s_rds_new) {
+			s_rds_new = false;
 			rds_text();
 			redraw = true;
 		}
