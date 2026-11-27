@@ -407,6 +407,7 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
 | Format | one real stream, sign-extended, about ±50,000; neighbours correlate 0.88. It is already the demodulated FM baseband (MPX): the 19 kHz pilot stands 27 dB over the floor, the 38 kHz stereo band is there |
 | Rate | about 600,000 samples a second (pilot measured at 18,998-19,001 Hz assuming 600 kHz) |
 | Clicks | short positive bursts (2-3 samples, +30,000 to +40,000); with `fm_dem` running about 1,000 a second, without it about 8,000 |
+| RF supply (VDC13) | stock's clock start-up (`sub_01E699A6`) sets P33 `P3_ANA_CON6` bits 0-2 (VDC13_VOL_SEL) to 7 = 1.40 V and `P3_ANA_CON9` bits 0-3 (SYSVDD) to 7, later raised with the CPU clock (table at `0x01E69D5E`: 7, 8, 10, 14). The bootloader leaves VDC13 at 3 = 1.20 V (our radio read `P3_ANA_CON6` = 0x0B, `CON9` = 0x19). Setting 1.40 V live: 98.9 RSSI -40 → -32, pilot 19 → 24 dB over the floor, clicks halved. `WLDO06_EN` (`P3_ANA_CON1` bit 3, off) made no clear difference |
 | RDS | present on KKZX 98.9 (RSSI -37): a pilot-locked BPSK carrier at 57 kHz with the carrier suppressed (squared-signal lock 0.14-0.23 against 0.02 noise, no tone). Too weak to decode bits in 2.2 s captures (about -5 dB in its band); needs a stronger signal or better antenna. Capture: the 57 kHz band mixed down on the radio (oscillator, CIC2 / 128 to 4.7 kHz complex), decoded on the PC with `tools/rds_decode.py` |
 
 #### FM receiver: what our FM radio is built on (2026-11-24)

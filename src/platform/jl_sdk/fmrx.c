@@ -1065,6 +1065,11 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	 * 2026-11-25: at 120 MHz the VCO calibration never locked; at 48 the start stalled once FM ran). */
 	gFmClkCon1Was = CLK_CON1;
 	CLK_CON1 &= ~(3u << 14 | 3u << 18 | 3u << 20);
+	/* The radio block's supply: VDC13 (P33 P3_ANA_CON6 bits 0-2, public BR23 SDK asm/power/p33.h) to 7 = 1.40 V, as
+	 * stock's clock start-up does (sub_01E699A6, seen in the emulator); the bootloader leaves 3 = 1.20 V. On Sean's
+	 * radio (cable monitor, 2026-11-26) KKZX 98.9 went from RSSI -40 to -32, its pilot from 19 to 24 dB over the
+	 * noise, and the FM clicks halved. */
+	P33_Write(6, (uint8_t)((P33_Read(6) & ~7u) | 7u));
 	/* the faster clock only now: at 96 MHz JieLi's DAC trim did not finish (Sean's ninth try, 2026-11-25: still in
 	 * dac_channel_trim after a long wait), at 48 MHz it does */
 	{
