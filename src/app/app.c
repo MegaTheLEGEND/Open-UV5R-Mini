@@ -2039,7 +2039,7 @@ static void start_side(uint8_t side);
 
 static bool splash(void)
 {
-	static uint8_t b[512];
+	static uint8_t b[2048];              /* 8 rows a piece */
 	bool blank = true;
 
 	EXTFLASH_Read(SPLASH_ADDR, b, sizeof b);
@@ -2047,13 +2047,16 @@ static bool splash(void)
 		blank = b[i] == 0xFFu;
 	if (blank)
 		return false;
-	/* two rows at a time: the flash and the LCD share SPI1 (the LCD's pixels go out by DMA), so each read finishes
+	/* drawn in the dark, then the backlight on, so it shows all at once (drawn in sight it built up row by row,
+	 * Sean, 2026-11-27) */
+	ST7735S_SetBacklight(false);
+	/* a few rows at a time: the flash and the LCD share SPI1 (the LCD's pixels go out by DMA), so each read finishes
 	 * before its rows are drawn and each window ends before the next read (Sean, 2026-11-27: reading inside one
 	 * open window drew two white rows, then black, then the radio restarted) */
 	for (uint32_t a = 0; a < 128u * 128u * 2u; a += sizeof b) {
 		if (a)
 			EXTFLASH_Read(SPLASH_ADDR + a, b, sizeof b);
-		ST7735S_SetWindow(0, (uint8_t)(a / 256u), 128, (uint8_t)(sizeof b / 256u));
+		ST7735S_SetWindow(0, (uint8_t)(a / 256u), 128, (uint8_t)(sizeof b / 256u));   /* 256 bytes a row */
 		for (unsigned i = 0; i < sizeof b; i += 2u)
 			ST7735S_PushPixel((uint16_t)(b[i] | b[i + 1u] << 8));
 		ST7735S_End();
@@ -2333,8 +2336,8 @@ void APP_Init(void)
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	gAppsFlashOk = s_xf_ok;
 	/* the radio's own power-on picture while the rest starts, the beeps' audio last (Sean, 2026-11-27; ROADMAP 4.8) */
-	uint32_t splash_t0 = SYSTEM_Ms();
 	bool splash_on = s_xf_ok && splash();
+	uint32_t splash_t0 = SYSTEM_Ms();    /* held from when it shows */
 	if (s_xf_ok) {
 		static uint8_t cal[CALIB_LEN];
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
