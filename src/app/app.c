@@ -33,6 +33,7 @@
 #include "driver/extflash.h"
 #include "driver/gpio.h"
 #include "driver/io.h"
+#include "driver/irq.h"
 #include "driver/keyboard.h"
 #include "driver/st7735s.h"
 #include "driver/system.h"
@@ -1304,6 +1305,7 @@ static void key_main(KEY_Code_t k)
 }
 
 bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
+static bool s_rescue_armed;              /* ABOUT: * pressed once, a second * restarts into rescue mode */
 
 /* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
  * debugging aids on and off (Sean, 2026-11-27); not saved, on again at power-on. */
@@ -1319,15 +1321,35 @@ static void draw_about(void)
 	UI_PrintString(VERSION_Build(), 58, 52, COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("RADIO", 4, 66, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString(FW_TARGET, 4, 78, COLOR_TEXT, COLOR_BG, 1);
-	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
 #if DEBUGGING
-	UI_PrintString("DEBUG", 4, 106, COLOR_DIM, COLOR_BG, 1);
-	UI_PrintString(gDebug ? "ON " : "OFF", 58, 106, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("DEBUG", 4, 94, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(gDebug ? "ON " : "OFF", 58, 94, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("RESCUE", 4, 105, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(s_rescue_armed ? "* AGAIN" : "*", 58, 105, s_rescue_armed ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #else
+	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #endif
 }
+
+#if DEBUGGING
+/* Restart into the boot ROM's USB download mode (the rescue mode), without the USB key. The AC695N's boot ROM
+ * (dumped from Sean's radio, read 2026-11-27) checks 8 bytes of RAM at 0x10804 before booting: "usb" 0xED 0x63 0x81
+ * 0x67 0xEF means USB download mode (another tag, "uart"..., the UART one); it clears the tag once read, so the
+ * next power-on boots normally. The ROM restarts the chip itself by writing 0x10 to P33 register 0xA0 (P3_PR_PWR in
+ * JieLi's public BR23 SDK). The PC must be on the radio's USB lines (the rescue cable) to see it. Not run on a
+ * radio yet. */
+static void reboot_to_rescue(void)
+{
+	IRQ_GlobalOff();
+	*(volatile uint32_t *)0x00010804u = 0xED627375u;   /* "usb" 0xED */
+	*(volatile uint32_t *)0x00010808u = 0xEF678163u;
+	P33_Write(0xA0u, 0x10u);
+	for (;;)
+		;
+}
+#endif
 
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
 static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
@@ -2658,11 +2680,21 @@ void APP_Tick(void)
 			if (r != APPS_STAY)
 				app_close(r);
 		} else if (s_screen == SCREEN_ABOUT) {
-			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
-				gDebug = !gDebug;
+#if DEBUGGING
+			if (k == KEY_STAR && s_rescue_armed)   /* rescue mode: * twice */
+				reboot_to_rescue();
+#endif
+			if (DEBUGGING && k == KEY_STAR) {
+				s_rescue_armed = true;
 				s_redraw = true;
-			} else
+			} else if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
+				gDebug = !gDebug;
+				s_rescue_armed = false;
+				s_redraw = true;
+			} else {
+				s_rescue_armed = false;
 				go(SCREEN_MENU);
+			}
 		}
 		else
 			key_menu(k);
