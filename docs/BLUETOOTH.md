@@ -118,3 +118,85 @@ are needed for that.
   [LIFTER.md](LIFTER.md)).
 
 Rough sizes: full stock-style Bluetooth about 150–250 KB; BLE-only about 60–100 KB. Both are estimates.
+
+## Bluetooth API and Flipper-style apps (2026-11-27)
+
+Sean asked for (1) the Bluetooth functions behind an API the apps can call, (2) whether the AC695N's Bluetooth radio
+can act like an SDR, and (3) as many of Flipper Zero's Bluetooth features as the hardware allows.
+
+### The API: `src/bt/bt.h`
+
+One header for every backend. `BT_Caps()` says what the linked backend can do, so an app shows what is missing
+instead of failing. All calls are from the main loop; received data and scan reports are polled.
+
+| Part | Calls | Backend that has it |
+| --- | --- | --- |
+| What is there | `BT_Caps`, `BT_Backend`, `BT_GetAddress` | all |
+| Serial link | `BT_IsAvailable`, `BT_Init`, `BT_IsConnected`, `BT_Send` | SDK edition (SPP, `bt_spp.c`) |
+| BLE scanning | `BT_LeScanStart`, `BT_LeScanStop`, `BT_LePoll` (`BT_LeReport_t`: address, RSSI, 31 bytes of data) | none yet |
+| BLE advertising (the radio's own beacon) | `BT_LeAdvStart`, `BT_LeAdvStop` | none yet |
+
+`src/bt/le_adv.c` reads advertising data (name, flags, TX power, service UUID, company ID, a guess at the kind of
+device: iBeacon, Eddystone, Apple, Microsoft, Google, Samsung, Tile, HID, heart rate) and keeps the list of devices
+heard (16, strongest first, aged out after 30 s). Pure C, tested on the PC: `python tests/btle_host.py`.
+
+### Can the Bluetooth radio be an SDR? No.
+
+- **No raw IQ.** The radio is run by JieLi's closed baseband and controller (`btctrler.a`). What comes out is
+  packets, plus an RSSI for each packet. No register or library call hands out samples.
+- **Only 2.4 GHz.** The synthesiser code (`bta_pll_*`) tunes the 2.402–2.480 GHz Bluetooth channels, and the antenna
+  is a PCB trace sized for 2.4 GHz. Nothing known tunes it anywhere else.
+- **Only Bluetooth modulations:** GFSK (BLE, BR), π/4-DQPSK and 8DPSK (EDR). The controller has test modes (LE
+  receiver and transmitter tests on one of the 40 channels, a single carrier) and a per-channel RSSI. At most that
+  gives a coarse 2.4 GHz activity meter: not a spectrum analyser, and it decodes nothing but Bluetooth.
+- The FM receiver in the same chip (64–108 MHz, RE-NOTES) hands out demodulated audio, not IQ, so it is not an SDR
+  either.
+
+### Flipper Zero's Bluetooth features on this radio
+
+| Feature | Possible? | Why / what it needs | State |
+| --- | --- | --- | --- |
+| BT info: backend, links, address, the stock BTIF bytes | yes | nothing more | **app `BT INFO`** (`ENABLE_APP_BTINFO`) |
+| BLE scanner: devices nearby, name, RSSI, kind, raw data | yes | HCI LE scanning and advertising reports from the controller (the BLE backend below) | **app `BLE SCAN`** (`ENABLE_APP_BTSCAN`): list and details work; it says "no BLE scanning in this build" until a backend scans. Debug builds take made-up reports on the cable (`!app adv`) |
+| The radio's own beacon (e.g. an Eddystone URL or a name) | yes | HCI LE advertising (the BLE backend) | API only |
+| Serial link to a PC or phone | yes | classic SPP: the SDK edition (`bt_spp.c`, Wireless CPS). BLE data: a GATT server (JieLi's `btstack.a`, or NimBLE) | SDK edition, not run |
+| BLE remote / keyboard for your own phone (media keys, camera shutter) | yes, later | HID over GATT: a host stack (`btstack.a` has it; the SDK's `hid` app) | todo |
+| Classic device discovery (inquiry) | probably | the controller has inquiry; needs the classic HCI commands | todo |
+| Connection sniffer (following other devices' links) | no | the controller reports only advertisements and our own links: no promiscuous mode, no raw packets | — |
+| "BLE spam" (fake pairing pop-ups on nearby phones) | not built | it floods other people's devices; not something this project ships | — |
+
+### The BLE backend: what it takes (findings, 2026-11-27)
+
+The plan: JieLi's controller library (`btctrler.a`, from the public SDK, Apache-2.0) linked into our bare-metal
+build as the FM receiver is, with HCI commands sent to it directly. The scanner and the beacon need no host stack.
+
+- **The controller speaks standard HCI.** `btctrler.a` defines `hci_controller_init`, `hci_le_controller_cmd_handler`,
+  `hci_send_cmd`, `hci_send_event` and an H4 transport (`h4_uart_init`, `h4_hci_push_data`), and the task entry
+  `btctrler_task_init(transport, config)` (SDK `include_lib/btctrler/btctrler_task.h`). So the open question of
+  "A smaller option" above is answered: yes. NimBLE could sit on top later for GATT.
+- **Size.** A test link of `btctrler_task_init` and the HCI handlers pulled in about 290 KB of code and 11 KB of
+  RAM (`.bd_base` 4 KB, HCI 2.7 KB, RF 1 KB, BLE link layer 0.8 KB, …). Classic code comes along because the library
+  picks its modes from `config_*` variables at run time. Our image is about 117 KB of a 479 KB slot, so the code
+  fits. The RAM does not fit in `.bss` (full): the backend would run only while a Bluetooth app is open, with its
+  memory in the FM radio's 24 KB heap (`.ram2`, free outside the FM app).
+- **What it expects of JieLi's OS: 230 symbols**, in these groups (our stand-ins would sit beside `fm_glue.c`):
+
+  | Group | Examples | Our stand-in |
+  | --- | --- | --- |
+  | settings it reads | `config_btctler_mode`, `config_btctler_le_*`, `CONFIG_*` | constants: BLE only, observer and broadcaster |
+  | tasks and queues | `task_create`, `os_taskq_pend`, `os_taskq_post_type`, `os_sem_*`, `os_mutex_*`, `os_time_dly` | the hard part: the controller's task waits in `os_taskq_pend`, so it needs its own stack and a small context switch (pi32v2 assembly) run from the main loop |
+  | timers | `sys_timer_*`, `sys_timeout_*`, `usr_timeout_*` | a timer list run from the 10 ms tick |
+  | interrupts | `request_irq`, `local_irq_*`, `bit_set_ie` | `driver/irq.c`, as FM |
+  | memory | `malloc`, `zalloc`, `free`, `lbuf_*` (`system.a`) | the FM heap; `lbuf` from `system.a` or our own |
+  | power and clocks | `low_power_*`, `clk_get_osc_cap`, `p33_soft_reset`, `adc_*` | no sleep; crystal trim from the stock values |
+  | storage | `syscfg_read`, `syscfg_write` (address, name, RF trim) | read only from BTIF and calibration; never written (AGENTS.md rule 6) |
+  | pairing crypto | `uECC_*`, `bi_*`, `f1_function`, `g_function` | not needed to scan or advertise: stubs that refuse |
+  | logs | `log_tag_const_*`, `printf`, `puts` | quiet |
+
+- **Clocks and RF set-up** are inside the library (`bt_rf_init`, `bt_analog_part_init` writing WLA_CON
+  `0x1E1900`..; RE-NOTES "Radio clocks"); stock's start-up order (`sub_01E0173E`) is the reference. The same set-up
+  may help the weak FM radio too (FM shares the BT_RF pin).
+
+Next, in order: (1) the OS stand-ins, tested on the PC where possible; (2) a debug build that starts the controller
+and sends HCI Reset and Read BD_ADDR, checked on the cable monitor; (3) LE scanning into `BT_LePoll`; (4) LE
+advertising. None of this has run on a radio.
