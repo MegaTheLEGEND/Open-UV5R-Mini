@@ -136,8 +136,8 @@ int main(int argc, char **argv)
 	 * a channel name being edited, and SYSTEM with the hidden items after a start with = held. Names and numbers
 	 * as the app has them (ENABLE_KEYTEST on). */
 	{
-		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "APPS", "SYSTEM", "ABOUT" };
-		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-37", "38-51", 0 };
+		static const char *const PAGE[] = { "CHANNEL", "SCAN", "TRANSMIT", "APPS", "BLUETOOTH", "SYSTEM", "ABOUT" };
+		static const char *const PAGE_R[] = { "1-14", "15-21", "22-32", "33-40", "41-45", "46-59", 0 };
 		static const char *const CH[] = { "SHIFT", "OFFSET", "TX POWER", "BANDWIDTH", "MODULATION", "STEP",
 		                                  "SQUELCH" };
 		static const char *const SYS[] = { "AUTO LOCK", "LOCK PTT", "MENU EXIT", "= PRESS", "= DOUBLE", "= HOLD",
@@ -145,10 +145,10 @@ int main(int argc, char **argv)
 		UiMenu_t m;
 		memset(&m, 0, sizeof m);
 		m.title = "MENU";
-		m.count = 6;
+		m.count = 7;
 		m.sel = 0;
 		m.cursor = -1;
-		for (int r = 0; r < 6; r++) {
+		for (int r = 0; r < 7; r++) {
 			m.name[r] = PAGE[r];
 			m.right[r] = PAGE_R[r];
 		}

@@ -576,10 +576,13 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
                                    M_REGION, M_TXLOCK };
 #define HIDDEN_N 2                       /* the hidden items at the end of SEC_SYS */
 
-/* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
-#define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
-                    + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE + APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE \
-                    + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE + APP_BTCHIRP_ENABLE)
+/* APPS and BLUETOOTH: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n, the radio apps first,
+ * then the Bluetooth ones, which have their own top-level section (Sean, 2026-11-27) */
+#define RAPPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
+                     + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE)
+#define BTAPPS_COUNT (APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE \
+                      + APP_BTCHIRP_ENABLE)
+#define APPS_COUNT (RAPPS_COUNT + BTAPPS_COUNT)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
@@ -601,6 +604,13 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #if APP_SUBGHZ_ENABLE
 	&APP_SUBGHZ,
 #endif
+#if APP_SYSINFO_ENABLE
+	&APP_SYSINFO,
+#endif
+#if APP_SNAKE_ENABLE
+	&APP_SNAKE,
+#endif
+	/* BLUETOOTH */
 #if APP_BTSCAN_ENABLE
 	&APP_BTSCAN,
 #endif
@@ -616,83 +626,37 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #if APP_BTINFO_ENABLE
 	&APP_BTINFO,
 #endif
-#if APP_SYSINFO_ENABLE
-	&APP_SYSINFO,
-#endif
-#if APP_SNAKE_ENABLE
-	&APP_SNAKE,
-#endif
-};
-static const uint8_t SEC_APPS[APPS_COUNT] = {
-	M_APP0 + 0,
-#if APPS_COUNT > 1
-	M_APP0 + 1,
-#endif
-#if APPS_COUNT > 2
-	M_APP0 + 2,
-#endif
-#if APPS_COUNT > 3
-	M_APP0 + 3,
-#endif
-#if APPS_COUNT > 4
-	M_APP0 + 4,
-#endif
-#if APPS_COUNT > 5
-	M_APP0 + 5,
-#endif
-#if APPS_COUNT > 6
-	M_APP0 + 6,
-#endif
-#if APPS_COUNT > 7
-	M_APP0 + 7,
-#endif
-#if APPS_COUNT > 8
-	M_APP0 + 8,
-#endif
-#if APPS_COUNT > 9
-	M_APP0 + 9,
-#endif
-#if APPS_COUNT > 10
-	M_APP0 + 10,
-#endif
-#if APPS_COUNT > 11
-	M_APP0 + 11,
-#endif
-#if APPS_COUNT > 12
-	M_APP0 + 12,
-#endif
-#if APPS_COUNT > 13
-	M_APP0 + 13,
-#endif
-#if APPS_COUNT > 14
-	M_APP0 + 14,
-#endif
-#if APPS_COUNT > 15
-	M_APP0 + 15,
-#endif
-#if APPS_COUNT > 16
-#error "more apps: add rows to SEC_APPS"
-#endif
 };
 #endif
 typedef struct {
 	const char    *name;
-	const uint8_t *items;
+	const uint8_t *items;                /* the menu ids, or 0: apps M_APP0 + app0 + row */
 	uint8_t        n;
+	uint8_t        app0;
 } Section_t;
 static const Section_t SECTIONS[] = {
-	{ "CHANNEL",  SEC_CH,   sizeof SEC_CH },
-	{ "SCAN",     SEC_SCAN, sizeof SEC_SCAN },
-	{ "TRANSMIT", SEC_TX,   sizeof SEC_TX },
-#if APPS_COUNT
-	{ "APPS",     SEC_APPS, sizeof SEC_APPS },
+	{ "CHANNEL",  SEC_CH,   sizeof SEC_CH, 0 },
+	{ "SCAN",     SEC_SCAN, sizeof SEC_SCAN, 0 },
+	{ "TRANSMIT", SEC_TX,   sizeof SEC_TX, 0 },
+#if RAPPS_COUNT
+	{ "APPS",      0, RAPPS_COUNT, 0 },
 #endif
-	{ "SYSTEM",   SEC_SYS,  sizeof SEC_SYS },     /* last: the hidden items are at its end */
+#if BTAPPS_COUNT
+	{ "BLUETOOTH", 0, BTAPPS_COUNT, RAPPS_COUNT },
+#endif
+	{ "SYSTEM",   SEC_SYS,  sizeof SEC_SYS, 0 },     /* last: the hidden items are at its end */
 };
 #define SEC_COUNT ((int)(sizeof SECTIONS / sizeof SECTIONS[0]))
 static int8_t  s_menu_sec = -1;          /* the section open; -1 = the first page */
 static uint8_t s_menu_page_sel;          /* the first page's selected row (SEC_COUNT = ABOUT) */
 static uint8_t s_menu_num, s_menu_num_len;   /* an item number being typed */
+
+/* row r of section sec: its menu id */
+static uint8_t sec_item(int sec, int r)
+{
+	const Section_t *t = &SECTIONS[sec];
+	return t->items ? t->items[r] : (uint8_t)(M_APP0 + t->app0 + r);
+}
 
 static int sec_len(int sec)
 {
@@ -715,7 +679,7 @@ static int menu_total(void)
 static int sec_row(int sec, int id)              /* the row of item id in sec, or 0 */
 {
 	for (int r = 0; r < SECTIONS[sec].n; r++)
-		if (SECTIONS[sec].items[r] == id)
+		if (sec_item(sec, r) == id)
 			return r;
 	return 0;
 }
@@ -1122,7 +1086,7 @@ static void draw_menu(void)
 		m.sel = (uint8_t)sec_row(s_menu_sec, s_menu_sel);
 		m.top = UI_MenuTop(m.sel);
 		for (int r = 0; r < UI_MENU_ROWS && m.top + r < m.count; r++) {
-			int id = sec->items[m.top + r];
+			int id = sec_item(s_menu_sec, m.top + r);
 			m.name[r] = menu_name(id);
 			m.num[r] = (uint8_t)(first + m.top + r);
 			m.hidden[r] = id == M_REGION || id == M_TXLOCK;
@@ -1793,7 +1757,7 @@ static void menu_jump(int n)
 	for (int sec = 0; sec < SEC_COUNT; sec++) {
 		int first = sec_first_num(sec);
 		if (n >= first && n < first + sec_len(sec)) {
-			menu_open(sec, SECTIONS[sec].items[n - first]);
+			menu_open(sec, sec_item(sec, n - first));
 			return;
 		}
 	}
@@ -1831,7 +1795,7 @@ static void key_menu(KEY_Code_t k)
 			if (s_menu_page_sel >= SEC_COUNT)
 				go(SCREEN_ABOUT);
 			else
-				menu_open(s_menu_page_sel, SECTIONS[s_menu_page_sel].items[0]);
+				menu_open(s_menu_page_sel, sec_item(s_menu_page_sel, 0));
 		} else if (k == KEY_ACT_UP || k == KEY_ACT_DOWN)
 			s_menu_page_sel = (uint8_t)((s_menu_page_sel + SEC_COUNT + 1 + (k == KEY_ACT_UP ? -1 : 1))
 			                            % (SEC_COUNT + 1));
@@ -1860,7 +1824,7 @@ static void key_menu(KEY_Code_t k)
 		else {
 			int n = sec_len(s_menu_sec);
 			int r = (sec_row(s_menu_sec, s_menu_sel) + n + dir) % n;
-			s_menu_sel = SECTIONS[s_menu_sec].items[r];
+			s_menu_sel = sec_item(s_menu_sec, r);
 		}
 	} else if (s_menu_edit && s_menu_sel == M_CHNAME && (k == KEY_STAR || k == KEY_HASH || d >= 0)) {
 		/* * and # move the cursor; a digit is typed in and the cursor moves on */
