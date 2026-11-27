@@ -61,10 +61,15 @@ override ENABLE_APP_FM := 0
 endif
 endif
 
+# Debugging aids for bring-up: the FM app's debug lines (step trace, heartbeat, live counters), the FM cable monitor
+# and the FM log on the cable UART. Crash readouts (screen and cable) stay in either way. Off for normal use.
+ENABLE_DEBUGGING    ?= 0
+
 FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE_SCREEN_TEST) \
                  -DSETTINGS_ENABLE_SAVE=$(ENABLE_SAVE) -DRADIO_ENABLE_TX=$(ENABLE_TX) -DLCD_HW_SPI=$(ENABLE_LCD_SPI) \
                  -DTXLOCK_REGIONS=$(ENABLE_REGIONS) -DTXLOCK_REGION=$(REGION) -DTXLOCK_UNLOCK=$(ENABLE_TX_UNLOCK) \
                  -DKEYTEST_ENABLE=$(ENABLE_KEYTEST) \
                  -DAPP_SPECTRUM_ENABLE=$(ENABLE_APP_SPECTRUM) -DAPP_METER_ENABLE=$(ENABLE_APP_METER) \
                  -DAPP_CHANNELS_ENABLE=$(ENABLE_APP_CHANNELS) -DAPP_SYSINFO_ENABLE=$(ENABLE_APP_SYSINFO) \
-                 -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE) -DAPP_FM_ENABLE=$(ENABLE_APP_FM)
+                 -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE) -DAPP_FM_ENABLE=$(ENABLE_APP_FM) \
+                 -DDEBUGGING=$(ENABLE_DEBUGGING)

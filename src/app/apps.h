@@ -83,6 +83,10 @@ extern const AppDef_t APP_CHANNELS;
 #if APP_SYSINFO_ENABLE
 extern const AppDef_t APP_SYSINFO;
 #endif
+/* features.mk ENABLE_DEBUGGING: bring-up aids (FM debug lines, cable monitor, cable log); crash readouts stay */
+#ifndef DEBUGGING
+#define DEBUGGING 0
+#endif
 #if APP_FM_ENABLE
 extern const AppDef_t APP_FM;
 /* Development: power on straight into the FM radio (receiver started), with the cable monitor waiting for the PC

@@ -94,6 +94,7 @@ static inline uint16_t t_now(void) { return (uint16_t)T3_CNT; }
  * program.c), so it can be read on the PC (K1 cable) instead of from photos of the screen (Sean, 2026-11-25). */
 static char s_lb[96];
 static unsigned s_ln;
+static bool s_log_always;                /* crash lines go out even with DEBUGGING off */
 
 static void lc(char c)
 {
@@ -132,7 +133,8 @@ static void lend(void)
 {
 	lc('\r');
 	lc('\n');
-	UART_Send((const uint8_t *)s_lb, s_ln);
+	if (DEBUGGING || s_log_always)
+		UART_Send((const uint8_t *)s_lb, s_ln);
 	s_ln = 0;
 }
 
@@ -274,6 +276,7 @@ static void lh(uint32_t v);
 static void lend(void);
 static void exc_log(uint32_t n, uint32_t pc, uint32_t rs)
 {
+	s_log_always = true;
 	ls("FMLOG EXC ");
 	ld(n);
 	ls(" pc ");
@@ -701,7 +704,7 @@ __attribute__((unused)) static IRQ_HANDLER void fm_isr_ours(void)
  *   f            restart the FM block in stock's order (fm_block_restart)
  *   c A [r0 r1 r2 r3]  call the function at A, print r0
  *   x            leave the monitor, carry on with the FM start */
-#define FM_MONITOR 0
+#define FM_MONITOR DEBUGGING
 
 static void canary_fill(void);
 static void canary_log(const char *when);
@@ -914,7 +917,7 @@ static void mon_cmd(const char *s)
 	}
 }
 
-static void mon_loop(void)
+__attribute__((unused)) static void mon_loop(void)
 {
 	char line[96];
 	uint32_t n = 0, idle = 0;
