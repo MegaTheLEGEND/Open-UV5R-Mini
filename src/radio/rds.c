@@ -168,7 +168,7 @@ static int      s_last_t;
 static uint8_t  s_exp, s_nb;
 static int      s_bad;
 static uint16_t s_g[4];
-static uint8_t  s_mask;
+static uint8_t  s_mask, s_clean;        /* blocks of this group heard, and heard with no bit corrected */
 static uint16_t s_pi_cand, s_ps_cand[4];
 static uint8_t  s_rt_ab;
 static bool     s_changed;
@@ -228,6 +228,45 @@ static void set_char(char *s, unsigned i, uint8_t c)
 	}
 }
 
+static void af_add(uint8_t c)
+{
+	for (unsigned i = 0; i < s_info.naf; i++)
+		if (s_info.af[i] == c)
+			return;
+	if (s_info.naf < sizeof s_info.af) {
+		s_info.af[s_info.naf++] = c;
+		s_changed = true;
+	}
+}
+
+/* 4A: Modified Julian Day (17 bits), UTC hour and minute, local offset in half hours (IEC 62106 annex G) */
+static void ct(uint16_t b, uint16_t c, uint16_t d)
+{
+	int32_t mjd = (int32_t)((uint32_t)(b & 3u) << 15 | c >> 1);
+	int32_t y, m, day, k;
+	uint8_t hour = (uint8_t)((c & 1u) << 4 | d >> 12), min = (uint8_t)((d >> 6) & 63u);
+	int8_t off = (int8_t)(d & 31u);
+
+	if (mjd < 15079 || hour > 23u || min > 59u)
+		return;
+	if (d & 32u)
+		off = (int8_t)-off;
+	y = (mjd * 100 - 1507820) / 36525;                   /* Y' = int((MJD - 15078.2) / 365.25) */
+	m = (mjd * 10000 - 149561000 - (y * 36525 / 100) * 10000) / 306001;   /* M' */
+	day = mjd - 14956 - y * 36525 / 100 - m * 306001 / 10000;
+	k = (m == 14 || m == 15) ? 1 : 0;
+	y += k;
+	m = m - 1 - k * 12;
+	s_info.ct = true;
+	s_info.ct_year = (uint16_t)(1900 + y);
+	s_info.ct_month = (uint8_t)m;
+	s_info.ct_day = (uint8_t)day;
+	s_info.ct_hour = hour;
+	s_info.ct_min = min;
+	s_info.ct_offset = off;
+	s_changed = true;
+}
+
 static void group_done(void)
 {
 	uint16_t b = s_g[1];
@@ -236,6 +275,9 @@ static void group_done(void)
 	if (!(s_mask & 2u))
 		return;
 	s_info.groups++;
+	s_info.group_seen |= (uint16_t)(1u << type);
+	s_info.pty = (uint8_t)((b >> 5) & 31u);
+	s_info.tp = (b >> 10) & 1u;
 	if (s_mask & 1u) {                   /* PI: the same twice before it is shown */
 		if (s_g[0] == s_pi_cand && s_info.pi != s_g[0]) {
 			s_info.pi = s_g[0];
@@ -243,13 +285,41 @@ static void group_done(void)
 		}
 		s_pi_cand = s_g[0];
 	}
-	if (type == 0u && (s_mask & 8u)) {   /* 0A/0B: two characters of the station name */
+	if (type == 0u) {                    /* 0A/0B: flags, two characters of the station name, two AFs (0A) */
 		unsigned seg = b & 3u;
-		if (s_ps_cand[seg] == s_g[3]) {
-			set_char(s_info.ps, 2u * seg, (uint8_t)(s_g[3] >> 8));
-			set_char(s_info.ps, 2u * seg + 1u, (uint8_t)s_g[3]);
+		s_info.ta = (b >> 4) & 1u;
+		s_info.ms = (b >> 3) & 1u;
+		if (b & 4u)                      /* DI: one bit a segment, segment 0 is the most significant */
+			s_info.di |= (uint8_t)(8u >> seg);
+		else
+			s_info.di &= (uint8_t)~(8u >> seg);
+		if (s_mask & 8u) {
+			/* shown when the pair is heard twice the same, or once with blocks B and D needing no correction */
+			if (s_ps_cand[seg] == s_g[3] || (s_clean & 10u) == 10u) {
+				set_char(s_info.ps, 2u * seg, (uint8_t)(s_g[3] >> 8));
+				set_char(s_info.ps, 2u * seg + 1u, (uint8_t)s_g[3]);
+			}
+			s_ps_cand[seg] = s_g[3];
 		}
-		s_ps_cand[seg] = s_g[3];
+		if (ver == 0u && (s_clean & 4u))
+			for (unsigned k = 0; k < 2u; k++) {
+				uint8_t c = (uint8_t)(k ? s_g[2] : s_g[2] >> 8);
+				if (c >= 1u && c <= 204u)
+					af_add(c);
+			}
+	} else if (type == 1u && ver == 0u && (s_mask & 4u)) {   /* 1A: variant 0 carries the country code */
+		if (((s_g[2] >> 12) & 7u) == 0u && s_info.ecc != (uint8_t)s_g[2]) {
+			s_info.ecc = (uint8_t)s_g[2];
+			s_changed = true;
+		}
+	} else if (type == 4u && ver == 0u && (s_clean & 14u) == 14u) {   /* 4A: clock time, only from clean blocks */
+		ct(s_g[1], s_g[2], s_g[3]);
+	} else if (type == 10u && ver == 0u && (s_mask & 12u) == 12u) {  /* 10A: programme type name */
+		unsigned seg = b & 1u;
+		set_char(s_info.ptyn, 4u * seg, (uint8_t)(s_g[2] >> 8));
+		set_char(s_info.ptyn, 4u * seg + 1u, (uint8_t)s_g[2]);
+		set_char(s_info.ptyn, 4u * seg + 2u, (uint8_t)(s_g[3] >> 8));
+		set_char(s_info.ptyn, 4u * seg + 3u, (uint8_t)s_g[3]);
 	} else if (type == 2u) {             /* 2A: four characters of radio text, 2B: two */
 		unsigned seg = b & 15u, ab = (b >> 4) & 1u;
 		if (ab != s_rt_ab) {             /* the text A/B flag flipped: new text */
@@ -276,7 +346,9 @@ static void block(uint32_t w, unsigned slot)
 	bool ok;
 
 	if (slot == 0u)
-		s_mask = 0;
+		s_mask = s_clean = 0;
+	if (syndrome(w) == OFFSET[slot == 3u ? 4 : slot] || (slot == 2u && syndrome(w) == OFFSET[3]))
+		s_clean |= (uint8_t)(1u << slot);
 	if (slot == 2u)
 		ok = correct(&w, 2) || correct(&w, 3);
 	else
@@ -408,6 +480,8 @@ void RDS_Reset(uint32_t fs_mpx)
 		s_info.ps[i] = ' ';
 	for (int i = 0; i < 64; i++)
 		s_info.rt[i] = ' ';
+	for (int i = 0; i < 8; i++)
+		s_info.ptyn[i] = ' ';
 	s_changed = true;
 }
 
@@ -433,4 +507,36 @@ bool RDS_Poll(void)
 const RdsInfo_t *RDS_Info(void)
 {
 	return &s_info;
+}
+
+/* RBDS programme types (NRSC-4-B), shortened to 8 characters */
+const char *RDS_PtyName(uint8_t pty)
+{
+	static const char *const N[32] = {
+		"NONE", "NEWS", "INFORM", "SPORTS", "TALK", "ROCK", "CLS ROCK", "ADLT HIT",
+		"SOFT RCK", "TOP 40", "COUNTRY", "OLDIES", "SOFT", "NOSTALGA", "JAZZ", "CLASSICL",
+		"R&B", "SOFT R&B", "LANGUAGE", "REL MUSC", "REL TALK", "PERSNLTY", "PUBLIC", "COLLEGE",
+		"SPANISH", "SPAN MUS", "HIP HOP", "PTY 27", "PTY 28", "WEATHER", "TEST", "ALERT",
+	};
+	return N[pty & 31u];
+}
+
+/* US PI codes: 4096-21671 are K calls, 21672-39247 W calls (NRSC-4-B annex D), base 26 */
+void RDS_CallSign(uint16_t pi, char out[5])
+{
+	uint32_t n;
+
+	out[0] = 0;
+	if (pi >= 4096u && pi <= 21671u) {
+		out[0] = 'K';
+		n = pi - 4096u;
+	} else if (pi >= 21672u && pi <= 39247u) {
+		out[0] = 'W';
+		n = pi - 21672u;
+	} else
+		return;
+	out[1] = (char)('A' + n / 676u);
+	out[2] = (char)('A' + n / 26u % 26u);
+	out[3] = (char)('A' + n % 26u);
+	out[4] = 0;
 }

@@ -194,6 +194,22 @@ void UI_GameScore(const char *text)
 /* ------------------------------------------------------------------------------------------- FM radio */
 static UiFm_t s_fm_shown;
 
+static UiRds_t s_rds_shown;
+
+void UI_RdsDraw(const UiRds_t *r, bool full)
+{
+	if (full) {
+		ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BG);
+		title_bar("RDS", r->right);
+	} else if (differ(r->right, s_rds_shown.right))
+		title_bar("RDS", r->right);
+	for (int i = 0; i < UI_RDS_LINES; i++)
+		if (full || differ(r->line[i], s_rds_shown.line[i]))
+			UI_PrintPadded(r->line[i], 2, (uint8_t)(13 + 9 * i), i >= 8 && i <= 10 ? COLOR_INFO : COLOR_TEXT,
+			               COLOR_BG, 21);
+	s_rds_shown = *r;
+}
+
 void UI_FmDraw(const UiFm_t *f, bool full)
 {
 	const UiFm_t *o = &s_fm_shown;

@@ -28,6 +28,18 @@ typedef struct {
 	uint16_t pi;                         /* programme identification (0 = none yet) */
 	char     ps[9];                      /* station name, 8 characters, spaces until heard */
 	char     rt[65];                     /* radio text, up to 64 characters */
+	char     ptyn[9];                    /* programme type name (10A), spaces until heard */
+	uint8_t  pty;                        /* programme type, 0-31 (RBDS names in RDS_PtyName) */
+	bool     tp, ta, ms;                 /* traffic programme, traffic announcement now, music (else speech) */
+	uint8_t  di;                         /* decoder identification bits, as heard (bit 0 stereo, 3 dynamic PTY) */
+	uint8_t  ecc;                        /* extended country code (1A variant 0), 0 = none */
+	uint8_t  naf;                        /* alternative frequencies heard (0A), in 100 kHz above 87.5 MHz */
+	uint8_t  af[25];
+	bool     ct;                         /* clock time heard (4A) */
+	uint16_t ct_year;                    /* UTC */
+	uint8_t  ct_month, ct_day, ct_hour, ct_min;
+	int8_t   ct_offset;                  /* local time offset, half hours */
+	uint16_t group_seen;                 /* group types seen: bit n = type n (A or B) */
 	uint32_t groups;                     /* groups decoded */
 	uint32_t blocks_ok, blocks_bad;      /* blocks with sync: good (after correction), bad */
 } RdsInfo_t;
@@ -39,5 +51,9 @@ void RDS_FeBlock(const volatile int32_t *x, uint32_t n);
 /* the main loop: decode what the interrupt gathered; true when something shown changed */
 bool RDS_Poll(void);
 const RdsInfo_t *RDS_Info(void);
+/* the programme type's name, RBDS (North American) list, up to 8 characters */
+const char *RDS_PtyName(uint8_t pty);
+/* a US PI code's call sign ("KZZU"), or "" when it is not one */
+void RDS_CallSign(uint16_t pi, char out[5]);
 
 #endif

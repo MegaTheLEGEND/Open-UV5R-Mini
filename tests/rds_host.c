@@ -32,5 +32,16 @@ int main(int argc, char **argv)
 	       r->pi, (unsigned)r->groups, (unsigned)r->blocks_ok, (unsigned)r->blocks_bad);
 	printf("ps [%s]\n", r->ps);
 	printf("rt [%s]\n", r->rt);
+	printf("ct %04u-%02u-%02u %02u:%02u off %d\n", r->ct_year, r->ct_month, r->ct_day, r->ct_hour, r->ct_min,
+	       r->ct_offset);
+	printf("pty %u %s tp %d ms %d ta %d di %u\n", r->pty, RDS_PtyName(r->pty), r->tp, r->ms, r->ta, r->di);
+	printf("ptyn [%s]\n", r->ptyn);
+	printf("af");
+	for (unsigned i = 0; i < r->naf; i++)
+		printf(" %u", r->af[i]);
+	printf("\ngroups seen %04X\n", r->group_seen);
+	char cs[5];
+	RDS_CallSign(r->pi, cs);
+	printf("call %s\n", cs);
 	return 0;
 }

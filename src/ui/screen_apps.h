@@ -90,4 +90,14 @@ typedef struct {
 
 void UI_FmDraw(const UiFm_t *f, bool full);
 
+/* FM radio, all of RDS (A/B on the FM screen): title bar "RDS" and the frequency, then 12 lines of 21 characters,
+ * 9 pixels apart from y 13 */
+#define UI_RDS_LINES 12
+typedef struct {
+	char right[8];
+	char line[UI_RDS_LINES][22];
+} UiRds_t;
+
+void UI_RdsDraw(const UiRds_t *r, bool full);
+
 #endif

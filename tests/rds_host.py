@@ -32,15 +32,34 @@ def check(data16):
     return reg & 0x3FF
 
 
+PTY = 10                                         # COUNTRY in the RBDS list
+PTYN = 'COUNTRY!'
+AF = [(224 + 2) << 8 | 114, 124 << 8 | 124]     # 0A block C: "2 AFs follow", 98.9; 99.9, 99.9
+CT = (2026, 11, 27, 7, 45, -16)                  # UTC 2026-11-27 07:45, local offset -8 h (in half hours)
+
+
+def mjd(y, m, d):
+    import datetime
+    return (datetime.date(y, m, d) - datetime.date(1858, 11, 17)).days
+
+
 def groups():
     rt = (RT + '\r').ljust(32)
     out = []
+    flags = (1 << 10) | (PTY << 5)               # TP on, the programme type
     while True:
-        for seg in range(4):                     # 0A: station name
-            b = (0 << 12) | seg
-            out.append((PI, b, 0xE0CD, (ord(PS[2 * seg]) << 8) | ord(PS[2 * seg + 1])))
+        for seg in range(4):                     # 0A: station name, AF, music, DI bit 0 (stereo) in segment 3
+            b = (0 << 12) | flags | (1 << 3) | ((1 << 2) if seg == 3 else 0) | seg
+            out.append((PI, b, AF[seg % 2], (ord(PS[2 * seg]) << 8) | ord(PS[2 * seg + 1])))
+        y, mo, d, h, mi, off = CT                # 4A: clock time
+        j = mjd(y, mo, d)
+        out.append((PI, (4 << 12) | flags | (j >> 15), ((j & 0x7FFF) << 1) | (h >> 4),
+                    ((h & 15) << 12) | (mi << 6) | ((1 << 5) if off < 0 else 0) | abs(off)))
+        for seg in range(2):                     # 10A: programme type name
+            out.append((PI, (10 << 12) | flags | seg, (ord(PTYN[4 * seg]) << 8) | ord(PTYN[4 * seg + 1]),
+                        (ord(PTYN[4 * seg + 2]) << 8) | ord(PTYN[4 * seg + 3])))
         for seg in range(8):                     # 2A: radio text
-            b = (2 << 12) | seg
+            b = (2 << 12) | flags | seg
             c = (ord(rt[4 * seg]) << 8) | ord(rt[4 * seg + 1])
             d = (ord(rt[4 * seg + 2]) << 8) | ord(rt[4 * seg + 3])
             out.append((PI, b, c, d))
@@ -114,7 +133,9 @@ def main():
     r = subprocess.run([exe, raw, str(fs_told)], capture_output=True, text=True, check=True).stdout
     print('SNR %.1f dB in the RDS band, %.1f s:' % (a.snr_db, a.seconds))
     print(r.rstrip())
-    ok = ('pi 2D09' in r) and ('ps [KKZX    ]' in r) and (RT in r)
+    ok = ('pi 2D09' in r) and ('ps [KKZX    ]' in r) and (RT in r) and ('ct 2026-11-27 07:45 off -16' in r) \
+        and ('pty 10 COUNTRY tp 1 ms 1' in r) and ('ptyn [COUNTRY!]' in r) and ('af 124 114' in r) \
+        and ('call KKZX' in r)
     print('PASS' if ok else 'FAIL')
     return 0 if ok else 1
 

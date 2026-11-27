@@ -40,6 +40,10 @@ static bool     s_ok, s_started;
 static uint32_t s_mode;
 static uint8_t  s_rt_len, s_rt_off;      /* RDS radio text: its length, where the scrolling window starts */
 static uint16_t s_rt_ms;
+static bool     s_rds_view;              /* A/B: all of RDS instead of the FM screen */
+static UiRds_t  s_r;
+
+static void draw(bool full);
 
 static char *put_hex(char *p, uint32_t v, int digits)
 {
@@ -75,7 +79,7 @@ static void say(const char *t, bool warn)
 
 static void hint(void)
 {
-	copy(s_f.bottom, s_seek ? "SEARCHING..." : "=:SEEK */#:VOL", sizeof s_f.bottom);
+	copy(s_f.bottom, s_seek ? "SEARCHING..." : "=SEEK */#VOL A/B RDS", sizeof s_f.bottom);
 	s_f.bottom_warn = false;
 }
 
@@ -130,6 +134,129 @@ static void rds_text(void)
 	rt_window();
 }
 
+/* "98.9" style: tenths of MHz */
+static char *put_mhz(char *p, uint32_t tenths)
+{
+	p = APPS_PutInt(p, (int)(tenths / 10u));
+	*p++ = '.';
+	*p++ = (char)('0' + tenths % 10u);
+	*p = 0;
+	return p;
+}
+
+static char *put_str(char *p, const char *t)
+{
+	while (*t)
+		*p++ = *t++;
+	*p = 0;
+	return p;
+}
+
+static char *put_2(char *p, unsigned v)
+{
+	*p++ = (char)('0' + v / 10u % 10u);
+	*p++ = (char)('0' + v % 10u);
+	*p = 0;
+	return p;
+}
+
+/* the RDS page: everything the decoder has */
+static void rds_page(bool full)
+{
+	const RdsInfo_t *r = RDS_Info();
+	char *p, cs[5];
+
+	for (unsigned i = 0; i < UI_RDS_LINES; i++)
+		s_r.line[i][0] = 0;
+	put_mhz(s_r.right, s_khz / 100u);
+
+	p = put_str(s_r.line[0], "PI ");               /* "PI 54A2 KZZU ECC A0" */
+	if (r->pi) {
+		p = put_hex(p, r->pi, 4);
+		RDS_CallSign(r->pi, cs);
+		if (cs[0]) {
+			*p++ = ' ';
+			p = put_str(p, cs);
+		}
+	} else
+		p = put_str(p, "----");
+	if (r->ecc) {
+		p = put_str(p, " ECC ");
+		put_hex(p, r->ecc, 2);
+	}
+	p = put_str(s_r.line[1], "PS  ");
+	put_str(p, r->ps);
+	p = put_str(s_r.line[2], "PTY ");
+	p = APPS_PutInt(p, r->pty);
+	*p++ = ' ';
+	put_str(p, RDS_PtyName(r->pty));
+	p = put_str(s_r.line[3], "PTYN ");
+	put_str(p, r->ptyn);
+	p = put_str(s_r.line[4], r->tp ? "TP1 " : "TP0 ");   /* "TP1 TA0 MUSIC DI 0001" */
+	p = put_str(p, r->ta ? "TA1 " : "TA0 ");
+	p = put_str(p, r->ms ? "MUSIC DI " : "SPEECH DI ");
+	for (int b = 3; b >= 0; b--)
+		*p++ = (char)('0' + ((r->di >> b) & 1u));
+	*p = 0;
+	if (r->ct) {                                     /* "UTC 2026-11-27 07:45", "LOCAL 23:45 -8.0H" */
+		int32_t m;
+		p = put_str(s_r.line[5], "UTC ");
+		p = APPS_PutInt(p, r->ct_year);
+		*p++ = '-';
+		p = put_2(p, r->ct_month);
+		*p++ = '-';
+		p = put_2(p, r->ct_day);
+		*p++ = ' ';
+		p = put_2(p, r->ct_hour);
+		*p++ = ':';
+		put_2(p, r->ct_min);
+		m = (int32_t)r->ct_hour * 60 + r->ct_min + r->ct_offset * 30;
+		m = (m % 1440 + 1440) % 1440;
+		p = put_str(s_r.line[6], "LOCAL ");
+		p = put_2(p, (unsigned)(m / 60));
+		*p++ = ':';
+		p = put_2(p, (unsigned)(m % 60));
+		*p++ = ' ';
+		*p++ = r->ct_offset < 0 ? '-' : '+';
+		{
+			unsigned h = (unsigned)(r->ct_offset < 0 ? -r->ct_offset : r->ct_offset);
+			p = APPS_PutInt(p, (int)(h / 2u));
+			p = put_str(p, h & 1u ? ".5H" : ".0H");
+		}
+	} else
+		put_str(s_r.line[5], "UTC NOT YET (4A)");
+	p = put_str(s_r.line[7], "AF");                  /* as many as fit */
+	for (unsigned i = 0; i < r->naf && p - s_r.line[7] <= 15; i++) {
+		*p++ = ' ';
+		p = put_mhz(p, 875u + r->af[i]);
+	}
+	for (unsigned l = 0; l < 3u; l++) {             /* radio text, 3 lines */
+		for (unsigned i = 0; i < 21u; i++)
+			s_r.line[8 + l][i] = r->rt[21u * l + i];
+		s_r.line[8 + l][21] = 0;
+	}
+	p = put_str(s_r.line[11], r->sync ? "S " : "- ");   /* "S P 109/199 0 2 4 A" */
+	p = put_str(p, r->pilot ? "P " : "- ");
+	p = APPS_PutInt(p, (int)(r->blocks_ok > 9999u ? 9999u : r->blocks_ok));
+	*p++ = '/';
+	p = APPS_PutInt(p, (int)(r->blocks_bad > 9999u ? 9999u : r->blocks_bad));
+	for (unsigned t = 0; t < 16u && p - s_r.line[11] < 19; t++)   /* group types seen, hex */
+		if (r->group_seen & (1u << t)) {
+			*p++ = ' ';
+			*p++ = (char)(t < 10u ? '0' + t : 'A' + t - 10u);
+		}
+	*p = 0;
+	UI_RdsDraw(&s_r, full);
+}
+
+static void draw(bool full)
+{
+	if (s_rds_view)
+		rds_page(full);
+	else
+		UI_FmDraw(&s_f, full);
+}
+
 static void tune(uint32_t khz)
 {
 	s_f.ps[0] = s_f.rt[0] = 0;
@@ -140,7 +267,7 @@ static void tune(uint32_t khz)
 		khz = FMRX_MIN_KHZ;
 	s_khz = khz;
 	freq_text();
-	UI_FmDraw(&s_f, false);              /* the new number first: tuning takes a moment */
+	draw(false);              /* the new number first: tuning takes a moment */
 	(void)FMRX_Tune(khz);
 }
 
@@ -365,7 +492,7 @@ static void start(uint32_t mode)
 	gFmStall = stall_show;
 	trace(1, 0);
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
-	UI_FmDraw(&s_f, false);
+	draw(false);
 	FMRX_SetVolume(s_vol);
 	s_ok = FMRX_Open(s_khz, mode);
 	gFmTrace = 0;
@@ -379,7 +506,7 @@ static void start(uint32_t mode)
 		copy(s_f.bottom, "1 KHZ TONE */#:VOL", sizeof s_f.bottom);
 	else
 		hint();
-	UI_FmDraw(&s_f, false);
+	draw(false);
 }
 
 static void level(void)
@@ -399,11 +526,12 @@ static void enter(void)
 	s_f = (UiFm_t){ 0 };
 	s_f.vol = s_vol;
 	s_ok = s_started = false;
+	s_rds_view = false;
 	freq_text();
 	last_try();
 	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	s_f.bottom_warn = true;
-	UI_FmDraw(&s_f, true);
+	draw(true);
 	RADIO_ProbeBegin();                  /* the BK4819 quiet: no squelch, no audio */
 }
 
@@ -426,6 +554,11 @@ static AppsResult_t key(KEY_Code_t k)
 			start(FMRX_RX | FMRX_FAST);
 		else if (k == KEY_2)
 			start(FMRX_DAC);
+		return APPS_STAY;
+	}
+	if (k == KEY_ACT_AB && (s_mode & FMRX_RX)) {   /* all of RDS, or the FM screen */
+		s_rds_view = !s_rds_view;
+		draw(true);
 		return APPS_STAY;
 	}
 	if (!(s_mode & FMRX_RX) && d >= 0)
@@ -462,7 +595,7 @@ static AppsResult_t key(KEY_Code_t k)
 		s_f.vol = s_vol;
 		FMRX_SetVolume(s_vol);
 	}
-	UI_FmDraw(&s_f, false);
+	draw(false);
 	return APPS_STAY;
 }
 
@@ -483,7 +616,7 @@ static AppsResult_t tick(bool full)
 			s_seek = false;
 			hint();
 		}
-		UI_FmDraw(&s_f, false);
+		draw(false);
 	}
 	if (s_msg_ms && (s_msg_ms = s_msg_ms > APP_TICK_MS ? (uint16_t)(s_msg_ms - APP_TICK_MS) : 0) == 0)
 		hint();
@@ -500,17 +633,17 @@ static AppsResult_t tick(bool full)
 			redraw = true;
 		}
 		if (redraw)
-			UI_FmDraw(&s_f, false);
+			draw(false);
 	}
 	if ((s_ms = (uint16_t)(s_ms + APP_TICK_MS)) >= 1000u) {
 		s_ms = 0;
 		diag();
 		if (s_ok && !s_seek)
 			level();
-		UI_FmDraw(&s_f, false);
+		draw(false);
 	}
 	if (full)
-		UI_FmDraw(&s_f, true);
+		draw(true);
 	return APPS_STAY;
 }
 

@@ -284,6 +284,20 @@ int main(int argc, char **argv)
 		snprintf(path, sizeof path, "%s/app_fm_rds.ppm", dir);
 		dump(path);
 
+		/* the RDS page (A/B), as the FM app fills it */
+		static UiRds_t rp;
+		static const char *const RL[UI_RDS_LINES] = {
+			"PI 2D09 KKZX", "PS  KKZX", "PTY 10 COUNTRY", "PTYN COUNTRY!", "TP1 TA0 MUSIC DI 0001",
+			"UTC 2026-11-27 07:45", "LOCAL 23:45 -8.0H", "AF 98.9 99.9", "NOW PLAYING: SOME SON",
+			"G BY SOMEONE ON KKZX ", "98.9                 ", "S P 453/0 0 2 4 A" };
+		memset(&rp, 0, sizeof rp);
+		strcpy(rp.right, "98.9");
+		for (int i = 0; i < UI_RDS_LINES; i++)
+			strcpy(rp.line[i], RL[i]);
+		UI_RdsDraw(&rp, true);
+		snprintf(path, sizeof path, "%s/app_rds.ppm", dir);
+		dump(path);
+
 		/* channel book, drawn with the menu screen */
 		static const char *const CH[] = { "001 CALLING", "002 145.500", "005 CITY RPTR", "012 W1AW",
 		                                  "013 GMRS 20", "020 MARINE 16", "021 NOAA 1" };
