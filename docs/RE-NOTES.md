@@ -399,6 +399,16 @@ never reads it directly. It may be JieLi's own factory data. `VM` itself holds o
   no FM receiver code (`fm_inside` is a library only in JieLi's sound-box SDKs, licence unknown), so the DSP has to
   be understood from the stock code and written fresh.
 
+#### FM receiver: the raw samples, and RDS (cable monitor, 2026-11-26)
+
+| What | Found |
+| --- | --- |
+| Raw block | 512 32-bit words per FM interrupt (`fm_adc_dat`, two halves of 0x800 bytes; the finished half is `base + ((~HF_CON1 << 6) & 0x800)`, as `fmhw_isr`) |
+| Format | one real stream, sign-extended, about ±50,000; neighbours correlate 0.88. It is already the demodulated FM baseband (MPX): the 19 kHz pilot stands 27 dB over the floor, the 38 kHz stereo band is there |
+| Rate | about 600,000 samples a second (pilot measured at 18,998-19,001 Hz assuming 600 kHz) |
+| Clicks | short positive bursts (2-3 samples, +30,000 to +40,000); with `fm_dem` running about 1,000 a second, without it about 8,000 |
+| RDS | present on KKZX 98.9 (RSSI -37): a pilot-locked BPSK carrier at 57 kHz with the carrier suppressed (squared-signal lock 0.14-0.23 against 0.02 noise, no tone). Too weak to decode bits in 2.2 s captures (about -5 dB in its band); needs a stronger signal or better antenna. Capture: the 57 kHz band mixed down on the radio (oscillator, CIC2 / 128 to 4.7 kHz complex), decoded on the PC with `tools/rds_decode.py` |
+
 #### FM receiver: what our FM radio is built on (2026-11-24)
 
 | What | Found |
