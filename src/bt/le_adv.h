@@ -77,4 +77,14 @@ void LeList_Age(LeList_t *l, uint32_t now_ms, uint32_t max_age_ms);
 /* Indexes into l->dev, strongest last RSSI first (ties: the most recently heard first). Returns how many. */
 int  LeList_Sorted(const LeList_t *l, uint8_t order[LE_LIST_MAX]);
 
+/* ------------------------------------------------------------------ the radio's own beacon (BT_LeAdvStart) */
+/* Each writes AD structures into out (BT_ADV_MAX bytes) and returns the length, or 0 if it doesn't fit.
+ * All start with Flags = 0x06 (LE general discoverable, no BR/EDR). */
+uint8_t LeAdv_BuildName(uint8_t *out, const char *name);                 /* the complete local name */
+/* Eddystone-URL (service 0xFEAA, frame 0x10): "https://" / "http://" (with or without "www.") and ".com/", ".org/",
+ * ... are shortened as the format says; tx_dbm is the calibrated power at 0 m. */
+uint8_t LeAdv_BuildEddystoneUrl(uint8_t *out, const char *url, int8_t tx_dbm);
+/* iBeacon: Apple's company ID, type 0x02 0x15, 16-byte UUID, major, minor, measured power at 1 m */
+uint8_t LeAdv_BuildIBeacon(uint8_t *out, const uint8_t uuid[16], uint16_t major, uint16_t minor, int8_t rssi_1m);
+
 #endif

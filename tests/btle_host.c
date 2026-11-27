@@ -127,6 +127,30 @@ int main(void)
 		}
 	}
 
+	/* the beacon builders, read back with the parser */
+	{
+		uint8_t o[BT_ADV_MAX];
+		uint8_t n = LeAdv_BuildName(o, "UV5R-MINI");
+		CHECK(n == 3 + 2 + 9);
+		CHECK(LeAdv_Parse(o, n, &in) && in.flags == 0x06 && in.name_full && !strcmp(in.name, "UV5R-MINI"));
+		CHECK(LeAdv_BuildName(o, "A NAME FAR TOO LONG FOR ONE ADV") == 0);
+
+		static const uint8_t want[] = { 2, 1, 6, 3, 3, 0xAA, 0xFE, 13, 0x16, 0xAA, 0xFE, 0x10, 0xEC,
+		                                3, 'g', 'o', 'o', '.', 'g', 'l', 0x00 };  /* https:// goo.gl ".com/" */
+		n = LeAdv_BuildEddystoneUrl(o, "https://goo.gl.com/", -20);
+		CHECK(n == sizeof want && !memcmp(o, want, n));
+		CHECK(LeAdv_Parse(o, n, &in) && in.kind == LE_KIND_EDDYSTONE);
+		n = LeAdv_BuildEddystoneUrl(o, "http://www.example.org", 0);
+		CHECK(n && o[13] == 0 && !memcmp(o + 14, "example", 7) && o[21] == 8 && o[7] == 14);
+		CHECK(LeAdv_BuildEddystoneUrl(o, "ftp://x", 0) == 0);
+		CHECK(LeAdv_BuildEddystoneUrl(o, "https://a-very-long-host-name-here.example", 0) == 0);
+
+		static const uint8_t uuid[16] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+		n = LeAdv_BuildIBeacon(o, uuid, 0x1234, 0x5678, -59);
+		CHECK(n == 30 && o[25] == 0x12 && o[26] == 0x34 && o[28] == 0x78 && (int8_t)o[29] == -59);
+		CHECK(LeAdv_Parse(o, n, &in) && in.kind == LE_KIND_IBEACON);
+	}
+
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;
 }

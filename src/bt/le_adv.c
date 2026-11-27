@@ -271,3 +271,99 @@ int LeList_Sorted(const LeList_t *l, uint8_t order[LE_LIST_MAX])
 	}
 	return n;
 }
+
+/* ------------------------------------------------------------------ the radio's own beacon */
+static uint8_t put_flags(uint8_t *o)
+{
+	o[0] = 2;
+	o[1] = AD_FLAGS;
+	o[2] = 0x06;
+	return 3;
+}
+
+uint8_t LeAdv_BuildName(uint8_t *out, const char *name)
+{
+	uint8_t n = put_flags(out), k = 0;
+	while (name[k])
+		k++;
+	if (n + 2u + k > BT_ADV_MAX)
+		return 0;
+	out[n++] = (uint8_t)(k + 1u);
+	out[n++] = AD_NAME_FULL;
+	for (uint8_t i = 0; i < k; i++)
+		out[n++] = (uint8_t)name[i];
+	return n;
+}
+
+static bool starts(const char *s, const char *p)
+{
+	while (*p)
+		if (*s++ != *p++)
+			return false;
+	return true;
+}
+
+uint8_t LeAdv_BuildEddystoneUrl(uint8_t *out, const char *url, int8_t tx_dbm)
+{
+	/* the URL scheme prefixes and the expansion codes of the Eddystone-URL format */
+	static const char *const SCHEMES[] = { "http://www.", "https://www.", "http://", "https://" };
+	static const char *const CODES[] = { ".com/", ".org/", ".edu/", ".net/", ".info/", ".biz/", ".gov/",
+	                                     ".com", ".org", ".edu", ".net", ".info", ".biz", ".gov" };
+	uint8_t n = put_flags(out), len_at, s;
+
+	out[n++] = 3;                        /* the complete 16-bit service list: Eddystone */
+	out[n++] = AD_UUID16_ALL;
+	out[n++] = 0xAA;
+	out[n++] = 0xFE;
+	len_at = n++;
+	out[n++] = AD_SVC_DATA16;
+	out[n++] = 0xAA;
+	out[n++] = 0xFE;
+	out[n++] = 0x10;                     /* URL frame */
+	out[n++] = (uint8_t)tx_dbm;
+	for (s = 0; s < 4; s++)
+		if (starts(url, SCHEMES[s]))
+			break;
+	if (s == 4)
+		return 0;
+	out[n++] = s;
+	url += starts(url, "http://www.") ? 11 : starts(url, "https://www.") ? 12 : starts(url, "http://") ? 7 : 8;
+	while (*url) {
+		uint8_t c;
+		for (c = 0; c < sizeof CODES / sizeof CODES[0]; c++)
+			if (starts(url, CODES[c]))
+				break;
+		if (n >= BT_ADV_MAX)
+			return 0;
+		if (c < sizeof CODES / sizeof CODES[0]) {
+			out[n++] = c;
+			for (const char *k = CODES[c]; *k; k++)   /* skip the text the code stands for */
+				url++;
+		} else {
+			if ((uint8_t)*url <= 0x20 || (uint8_t)*url >= 0x7F)
+				return 0;
+			out[n++] = (uint8_t)*url++;
+		}
+	}
+	out[len_at] = (uint8_t)(n - len_at - 1u);
+	return n;
+}
+
+uint8_t LeAdv_BuildIBeacon(uint8_t *out, const uint8_t uuid[16], uint16_t major, uint16_t minor, int8_t rssi_1m)
+{
+	uint8_t n = put_flags(out);
+	out[n++] = 26;
+	out[n++] = AD_MANUFACTURER;
+	out[n++] = (uint8_t)CO_APPLE;
+	out[n++] = (uint8_t)(CO_APPLE >> 8);
+	out[n++] = 0x02;
+	out[n++] = 0x15;
+	for (int i = 0; i < 16; i++)
+		out[n++] = uuid[i];
+	out[n++] = (uint8_t)(major >> 8);
+	out[n++] = (uint8_t)major;
+	out[n++] = (uint8_t)(minor >> 8);
+	out[n++] = (uint8_t)minor;
+	out[n++] = (uint8_t)rssi_1m;
+	return n;
+}
