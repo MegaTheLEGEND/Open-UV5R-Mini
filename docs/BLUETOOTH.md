@@ -157,9 +157,9 @@ heard (16, strongest first, aged out after 30 s). Pure C, tested on the PC: `pyt
 | Feature | Possible? | Why / what it needs | State |
 | --- | --- | --- | --- |
 | BT info: backend, links, address, the stock BTIF bytes | yes | nothing more | **app `BT INFO`** (`ENABLE_APP_BTINFO`) |
-| BLE scanner: devices nearby, name, RSSI, kind, raw data | yes | HCI LE scanning and advertising reports from the controller (the BLE backend below) | **app `BLE SCAN`** (`ENABLE_APP_BTSCAN`): list and details work; it says "no BLE scanning in this build" until a backend scans. Debug builds take made-up reports on the cable (`!app adv`) |
-| The radio's own beacon (e.g. an Eddystone URL or a name) | yes | HCI LE advertising (the BLE backend) | API only |
-| Serial link to a PC or phone | yes | classic SPP: the SDK edition (`bt_spp.c`, Wireless CPS). BLE data: a GATT server (JieLi's `btstack.a`, or NimBLE) | SDK edition, not run |
+| BLE scanner: devices nearby, name, RSSI, kind, raw data | yes | LE scanning on the controller (the BLE backend below) | **app `BLE SCAN`** (`ENABLE_APP_BTSCAN`) on the BLE backend; emulator-tested, not on a radio. Debug builds also take made-up reports on the cable (`!app adv`) |
+| The radio's own beacon (its name, an iBeacon or an Eddystone URL) | yes | LE advertising (the BLE backend) | **app `BT BEACON`** (`ENABLE_APP_BTBEACON`); emulator-tested, not on a radio |
+| Serial link to a PC or phone | yes | classic SPP: the SDK edition (`bt_spp.c`, Wireless CPS). BLE data: a GATT server (JieLi's `btstack.a`, or NimBLE) | **app `BT SERIAL`** (`ENABLE_APP_BTSERIAL`) for any backend with a link: the SDK edition today (not run); the BLE backend has none yet |
 | BLE remote / keyboard for your own phone (media keys, camera shutter) | yes, later | HID over GATT: a host stack (`btstack.a` has it; the SDK's `hid` app) | todo |
 | Classic device discovery (inquiry) | probably | the controller has inquiry; needs the classic HCI commands | todo |
 | Connection sniffer (following other devices' links) | no | the controller reports only advertisements and our own links: no promiscuous mode, no raw packets | — |
@@ -197,6 +197,48 @@ build as the FM receiver is, with HCI commands sent to it directly. The scanner 
   `0x1E1900`..; RE-NOTES "Radio clocks"); stock's start-up order (`sub_01E0173E`) is the reference. The same set-up
   may help the weak FM radio too (FM shares the BT_RF pin).
 
-Next, in order: (1) the OS stand-ins, tested on the PC where possible; (2) a debug build that starts the controller
-and sends HCI Reset and Read BD_ADDR, checked on the cable monitor; (3) LE scanning into `BT_LePoll`; (4) LE
-advertising. None of this has run on a radio.
+### The BLE backend, built (2026-11-27)
+
+`ENABLE_BT_LE` (features.mk, on when `build/sdk/btctrler.a` is there and the FM glue is built):
+`src/platform/jl_sdk/bt_le.c` (bt/bt.h on the controller) and `bt_glue.c` (the stand-ins). What reading the library
+showed, and what we did:
+
+- **No OS needed.** The SDK's controller task (`btctrler_task`, read from the library's LLVM bitcode with
+  `clang -S -emit-llvm`) is `hci_controller_init()`, then a loop: take a message (`os_taskq_pend`), hand it to
+  `ll_hci_cmd_handler` / `ll_event_handler`, run `hci_controller_run_loop()`. The controller's own work runs in
+  cooperative "threads" inside the library. So `BTLE_Tick` (called from `APP_Tick`) runs that loop body from our
+  main loop, and `os_taskq_post_type` is a 16-message queue (`bt_glue.c`). No second stack, no context switch.
+- **JieLi's own host interface, as their host uses it** (`config_btctler_hci_standard = 0`): `ll_hci_scan_set_params`,
+  `ll_hci_scan_enable`, `ll_hci_adv_set_params`, `ll_hci_adv_set_data`, `ll_hci_adv_enable`. Events come back as
+  standard HCI event packets to `hci_packet_handler` (the in-chip transport `hci_transport_h4_controller_instance`),
+  where LE Advertising Reports (0x3E/0x02) become `BT_LePoll` reports.
+- **Settings are ours** (`config_*` in `bt_glue.c`): BLE only, scanning and advertising, no connections, normal mode.
+  `bt_glue.c` is compiled as LLVM bitcode (`-flto`), so link-time optimisation sees these values with the library and
+  drops classic Bluetooth, TWS and the test modes: **Bluetooth adds about 25 KB of code** (image 142 KB of 479 KB)
+  instead of about 285 KB, and 3.8 KB of RAM.
+- **RAM:** the controller's variables are in low RAM 0x3000..0xC000 (`btram`, firmware.ld; stock's RAM code ran
+  there, ours does not), cleared and filled at every Bluetooth start; the rest of that region is the Bluetooth heap
+  (`malloc` takes from it while Bluetooth runs, `free` goes by address, so the key beeps' DAC keeps the FM heap).
+  To make room in `.bss` for the library's few plain variables, the key test's flash check now borrows the update
+  loader's buffer (`UPDATE_Scratch`) instead of 8 KB of its own.
+- **Interrupts:** the controller asks for 38 (receive) and 39 (events), priority 2; they are real interrupt
+  functions in the library. The Bluetooth start switches interrupts on; FM's open and close (key beeps) leave the
+  table alone while Bluetooth runs.
+- **Kept out:** two symbols would have pulled JieLi's start-up code and its settings-flash driver (`vm.c`, which
+  erases the VM area) out of `cpu.a`; `bt_glue.c` defines harmless stand-ins (`__BT_UPDATA_JUMP`,
+  `spi_cache_way_switch`). Storage calls (`syscfg_*`) read nothing and write nothing (AGENTS.md rule 6). The address
+  is a random static one made at start, not the stock one.
+- **Clocks and power** as stock's Bluetooth start-up: CLK_CON1 radio clocks, VDC13 1.40 V, `bt_pll_para(24 MHz,
+  48 MHz)`, `bt_max_pwr_set(…, BLE 7)` (+2.1 dBm).
+- **Starts only on demand:** the first `BT_LeScanStart` / `BT_LeAdvStart` (BLE SCAN, BT BEACON) starts it, and
+  leaving the app stops it. BT INFO shows CONTROL: OFF, STEP n (where a start stopped) or ON with the events seen.
+  Debug builds: `!app bt` in BLE SCAN prints the same.
+- **Tested in the emulator** (`python emu/bt_ours.py --isa ../pi32v2-isa --quiet --adv`): the start runs to the
+  end (about 190 000 instructions, with JieLi's calibration delays skipped and the SAR ADC's done bit faked), the
+  scan and advertising commands reach the controller (1 and 5 messages), stopping works. The analog block
+  (WLA_CON 0x1E1900..) gets the same 16 registers as stock's Bluetooth start-up (build/bt_init.txt); 9 end on
+  the same value, the others on calibration results, which come from the real chip. The emulator has no radio,
+  so no packets. **Not run on a radio.**
+
+Still not possible without more: a serial link over BLE (needs a GATT server: JieLi's `btstack.a` or NimBLE), the
+BLE remote (HID over GATT, same) and classic device discovery (classic is switched off to save 260 KB).
