@@ -49,3 +49,17 @@ int BT_Send(const uint8_t *data, uint16_t len)
 		return -1;
 	return spp_api->send_data(0, (void *)data, len) == SPP_USER_ERR_NONE ? 0 : -1;
 }
+
+/* The rest of bt/bt.h: this backend is SPP only so far. */
+uint8_t     BT_Caps(void) { return BT_CAP_SPP; }
+const char *BT_Backend(void) { return "JL SDK"; }
+bool        BT_GetAddress(uint8_t addr[6]) { (void)addr; return false; }
+bool        BT_LeScanStart(bool active) { (void)active; return false; }
+void        BT_LeScanStop(void) {}
+bool        BT_LePoll(BT_LeReport_t *out) { (void)out; return false; }
+bool        BT_LeAdvStart(const uint8_t *data, uint8_t len, uint16_t interval_ms)
+{
+	(void)data; (void)len; (void)interval_ms;
+	return false;
+}
+void        BT_LeAdvStop(void) {}
