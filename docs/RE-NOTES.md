@@ -465,6 +465,10 @@ mixer, RE-NOTES "Audio"), and what stock does with the BK4819 and the amp while 
 | UART clock | 48 MHz (`sub_01E4317C`, matches the 9600 baud seen on the cable) |
 | Tick | timer at `0x1E0500`, interrupt 5, handler `0x01E568C4` (clears pending with CON `|= 0x4000`, counts in RAM `0x199E4`); set up by `sub_01E46946` |
 | Watchdog | P33 `0x80` (`WDT_CON`). Early in `main` stock clears its enable bit (`p33_and(0x80, 0xEF)`), writes 0 and then 12 (`sub_01E46924`); clear = `p33_or(0x80, 0x40)`. 12 is 4 s in JieLi's usual table (not checked) |
+| CPU runs at the flash clock | Measured with the cable monitor (2026-11-26): the flash (SFC) divider, `SYS_DIV` `0x1E0008` bits 12-14, divides the CPU and the core tick timer too. With `CLK_CON2` = 480 MHz / 4: flash / 3 gave 40 MHz, / 2 60, / 1 120 (core tick timer `0x10F0EC`/`F0`/`F4` against the PC clock, and a timed RAM loop). The crystal (CPU on it, `CLK_CON0` `0x103`) read 8 MHz and the RC 5.5 MHz through the same / 3. Stock puts the flash divider at / 1 and slows the flash's SPI clock in the flash controller instead (`sub_01E69A4E`, RAM routine `0x02000114`): wait for the cache idle (`0x101000` bit 5) and the controller not busy (`0x1F0200` bit 31), controller off (bit 0), `BAUD` `0x1F0204`, `CON` bits 20-23 = MHz * 30 / 1000, controller on. We use BAUD 5 (20 MHz SPI) and 3 (tested live) |
+| Core tick timer | `TTMR_CON` `0x10F0EC` (1 = count), `TTMR_CNT` `0x10F0F0`, `TTMR_PRD` `0x10F0F4`. Counts the CPU (HSB) clock: stock sets its 100 Hz OS tick as PRD = HSB / 100 (`sub_01E20E40`, HSB in RAM `0xD054`) |
+| Timer 3 | `0x1E0700`, with CON bit 3 (meant as the crystal): counts about 2.69 MHz, not 24 (8192 FM interrupts in 6.94 s, PC-timed, 2026-11-26) |
+| Stacks | Stock sets `sp` and `ssp` to 0xD910 but runs its main code as RTOS tasks on stacks of their own, so 0xD910 holds only interrupts. Interrupts always start at `ssp` (seen with an entry recorder on the FM vector: every entry at 0xD904). A bare-metal main on `sp` = 0xD910 with `ssp` = 0xD910 gets its outer stack frames overwritten by every interrupt; our start-up gives interrupts their own stack |
 
 ## NRF (V0.27) and NRFB (V0.04)
 

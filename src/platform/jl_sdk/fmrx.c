@@ -207,7 +207,8 @@ static void crumb(uint32_t step)
 }
 
 static void exc_log(uint32_t n, uint32_t pc, uint32_t rs);
-/* an exception while FM runs: note where (screen and cable), then wait for the watchdog to restart the radio */
+/* an exception while FM runs: note where (screen and cable), show it about 4 s, then let the watchdog restart the
+ * radio (it used to keep the watchdog fed for ever, so Sean had to power-cycle it) */
 #ifdef __PI32V2__
 #define EXC_HANDLER(n)                                                                  \
 	static IRQ_HANDLER void exc##n(void)                                                \
@@ -221,9 +222,10 @@ static void exc_log(uint32_t n, uint32_t pc, uint32_t rs);
 		exc_log((n), pc, rs);                                                           \
 		if (gFmExc)                                                                     \
 			gFmExc((n), pc, rs);                                                        \
-		for (;;)                                                                        \
-			if (gFmExc)                                                                 \
-				SYSTEM_WatchdogClear();                                                 \
+		for (unsigned i = 0; gFmExc && i < 40u; i++)                                    \
+			SYSTEM_DelayMs(100);                 /* the screen shows it about 4 s */     \
+		for (;;)                                 /* then the watchdog restarts the radio */ \
+			;                                                                           \
 	}
 #else
 #define EXC_HANDLER(n) static void exc##n(void) { gFmCrumb.exc = (n) + 1u; }
@@ -468,16 +470,28 @@ uint32_t FMRX_SysMHz(void)
 
 /* The FM clock, as stock sets it. Stock's own FM open, run in the emulator (emu/fm_trace.py, 2026-11-25), calls
  * clk_set("sys") with: CLK_CON0 0x1E000C = 0x102 (CPU on the 24 MHz crystal while switching), CLK_CON2 = 0x53 then
- * 0x63 (the 480 MHz PLL output / 4 = 120 MHz), SYS_DIV = 3, the flash clock (mask ROM), SYS_DIV = 0x200 (LSB / 3 =
- * 40 MHz), CLK_CON0 = 0x1C2 (back on the PLL). So stock runs FM at 120 MHz, not 96 (our 96 MHz left the main code
- * no time on Sean's radio, 2026-11-25: FM hissed, keys and the power switch went dead). We do the same, but keep the
- * flash below its present speed with the flash divider (/ 3 = 40 MHz) instead of the ROM call. PLL_CON1 0x1E0044
- * bit 24 (480 MHz output on) is set first in case the bootloader left it off. Runs from RAM with interrupts off. */
+ * 0x63 (the 480 MHz PLL output / 4 = 120 MHz), SYS_DIV = 3, the flash clock, SYS_DIV = 0x200 (LSB / 3 = 40 MHz),
+ * CLK_CON0 = 0x1C2 (back on the PLL). So stock runs FM at 120 MHz.
+ * The CPU runs at the flash (SFC) clock: the flash divider (SYS_DIV bits 12-14) divides the CPU too (cable monitor,
+ * 2026-11-26: with flash / 3 the core tick timer and a timed loop both showed 40 MHz, with / 2 60, with / 1 120;
+ * fm_dem took 1.8 ms at / 3 and 0.4 ms at / 1, against an FM interrupt every 0.85 ms). So, as stock does (stock
+ * sub_01E69A4E and its RAM routine 0x02000114), the flash divider goes to / 1 and the flash's own SPI clock is
+ * slowed instead: with the cache idle and the flash controller (JL_SFC 0x1F0200) not busy, controller off, BAUD
+ * 0x1F0204 = 5 (120 / 6 = 20 MHz on the SPI wires), CON bits 20-23 = 3 (stock: MHz * 30 / 1000), controller on.
+ * Both values ran on Sean's radio from the cable monitor (2026-11-26). PLL_CON1 0x1E0044 bit 24 (480 MHz output on)
+ * is set first in case the bootloader left it off. Runs from RAM with interrupts off, the CPU on the crystal. */
 #define CLK_CON0    REG32(0x001E000Cu)
 #define CLK_CON1    REG32(0x001E0010u)
+#define SFC_CON     REG32(0x001F0200u)
+#define SFC_BAUD    REG32(0x001F0204u)
+#define DSP_CON     REG32(0x00101000u)
+#define SFC_FAST_BAUD 5u
+#define SFC_FAST_RDLY 3u
 uint32_t gFmClkCon1Was;
 #define PLL_CON1_   REG32(0x001E0044u)
-__attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t div, uint32_t con2)
+static uint32_t s_old_sfc_con, s_old_sfc_baud;
+__attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t div, uint32_t con2, uint32_t sfc_con,
+                                                                       uint32_t sfc_baud)
 {
 	uint32_t was = IRQ_Save(), con0 = CLK_CON0;
 
@@ -487,6 +501,14 @@ __attribute__((section(".ramfunc.fm"), noinline)) static void clock_set(uint32_t
 		;
 	CLK_CON2 = con2;
 	__asm__ volatile("csync");
+	while (!(DSP_CON & 0x20u))               /* flash cache idle */
+		;
+	while (SFC_CON & 0x80000000u)            /* flash controller not busy */
+		;
+	SFC_CON &= ~1u;
+	SFC_BAUD = sfc_baud;
+	SFC_CON = sfc_con & ~1u;
+	SFC_CON |= sfc_con & 1u;
 	CLK_SYS_DIV = div;
 	__asm__ volatile("csync");
 	for (volatile uint32_t i = 0; i < 100u; i++)
@@ -502,6 +524,8 @@ static void clock_fast(void)
 {
 	s_old_div = CLK_SYS_DIV;
 	s_old_con2 = CLK_CON2;
+	s_old_sfc_con = SFC_CON;
+	s_old_sfc_baud = SFC_BAUD;
 	if (((CLK_CON0 >> 6) & 7u) != 7u || (s_old_div & 0xFFu) != 0u)
 		return;                          /* not on the PLL as seen on the radio: leave it */
 	if (!(PLL_CON1_ & 1u << 24)) {
@@ -509,7 +533,8 @@ static void clock_fast(void)
 		for (volatile uint32_t i = 0; i < 20000u; i++)
 			;
 	}
-	clock_set((s_old_div & ~(7u << 8 | 7u << 12)) | 2u << 8 | 2u << 12, (s_old_con2 & ~0x3Fu) | 3u | 8u << 2);
+	clock_set((s_old_div & ~(7u << 8 | 7u << 12)) | 2u << 8, (s_old_con2 & ~0x3Fu) | 3u | 8u << 2,
+	          (s_old_sfc_con & ~(0xFu << 20)) | SFC_FAST_RDLY << 20, SFC_FAST_BAUD);
 	s_fast = true;
 }
 
@@ -517,7 +542,7 @@ static void clock_back(void)
 {
 	if (!s_fast)
 		return;
-	clock_set(s_old_div, s_old_con2);
+	clock_set(s_old_div, s_old_con2, s_old_sfc_con, s_old_sfc_baud);
 	s_fast = false;
 }
 
