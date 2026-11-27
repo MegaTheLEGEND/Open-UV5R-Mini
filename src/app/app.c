@@ -43,6 +43,9 @@
 #include "ui/screen_menu.h"
 #include "ui/theme.h"
 #include "ui/status.h"
+#if APP_FM_ENABLE
+#include "platform/jl_sdk/fmrx.h"
+#endif
 
 
 typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT, SCREEN_APP, SCREEN_HELP } Screen_t;
@@ -2264,6 +2267,9 @@ void APP_Init(void)
 	KEYBOARD_Init();
 	if (UPDATE_Requested())
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
+#if APP_FM_ENABLE
+	gRadioBeepHook = FMRX_Beep;  /* key beeps on the MCU's DAC, as stock; not the BK4819 (it blipped on the air) */
+#endif
 	BK4819_Init();
 	/* = held at power-on without PTT-A (the update mode's check, update_radio.c, without the PTT): the menu, opened
 	 * at its hidden items (region, TX lock). Read here, as UPDATE_Requested reads it: rows all low, PC2 low. */
@@ -2796,6 +2802,9 @@ void APP_Tick(void)
 		}
 	}
 	gAppsUptimeMs += APP_TICK_MS;
+#if APP_FM_ENABLE
+	FMRX_BeepTick(APP_TICK_MS);          /* keeps the beep's samples coming; the DAC off after 3 s quiet */
+#endif
 	{
 		static RadioState_t last;
 		RadioState_t st = RADIO_State();

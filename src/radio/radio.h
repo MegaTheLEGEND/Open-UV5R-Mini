@@ -55,6 +55,9 @@ const char  *RADIO_TxRefusal(void);        /* why transmit is refused here (for 
 bool         RADIO_StartTx(void);          /* false if refused */
 void         RADIO_EndTx(void);
 void         RADIO_Beep(uint16_t hz, uint16_t ms);
+/* When set and it returns true, it played the beep (the MCU's DAC, app.c); otherwise the BK4819's tone generator on
+ * its transmit audio path does, which can put a blip on the air (Sean, 2026-11-27). */
+extern bool (*gRadioBeepHook)(uint16_t hz, uint16_t ms);
 void         RADIO_Monitor(bool on);        /* squelch held open while on */
 void         RADIO_RxSleep(void);           /* the receiver (BK4819) asleep until RADIO_Apply or RADIO_StartTx */
 bool         RADIO_RxAsleep(void);

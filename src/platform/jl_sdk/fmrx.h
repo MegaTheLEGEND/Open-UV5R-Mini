@@ -94,6 +94,11 @@ extern uint32_t gFmClkCon1Was;           /* CLK_CON1 as the bootloader left it, 
 uint32_t FMRX_SysMHz(void);      /* the CPU clock now, from the clock registers */
 bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the radio */
 void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
+/* Key beeps on the DAC (opened for them when the FM radio isn't using it; closed after 3 s of quiet). false: no DAC
+ * now (the FM radio has it, or it didn't open), so make the beep another way. FMRX_BeepTick every tick. */
+bool     FMRX_Beep(uint16_t hz, uint16_t ms);
+void     FMRX_BeepTick(uint16_t dt_ms);
+bool     FMRX_Beeping(void);
 void     FMRX_Close(void);
 bool     FMRX_IsOpen(void);
 /* true when the receiver was stopped because its interrupt came far too often (FMRX_Open then returns false):

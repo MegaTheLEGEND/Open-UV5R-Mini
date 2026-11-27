@@ -560,11 +560,17 @@ void RADIO_TxTail(void)
 }
 
 /* A short local tone (key beep, errors), never sent over the air. */
+bool (*gRadioBeepHook)(uint16_t hz, uint16_t ms);
+
 void RADIO_Beep(uint16_t hz, uint16_t ms)
 {
 	/* not while transmitting; not while the spectrum probes either: each step turns the receive path on again,
 	 * which with the beep's audio routing played receiver noise (radio, 2026-11-24: "white noise" on UP/DOWN) */
-	if (s_state == RADIO_TX || s_probe)
+	if (s_state == RADIO_TX)
+		return;
+	if (gRadioBeepHook && gRadioBeepHook(hz, ms))
+		return;                          /* the MCU's DAC played it (app.c): the BK4819 untouched */
+	if (s_probe)
 		return;
 	IO_Amp(AUDIO_BEEP, true);
 	BK4819_Beep(hz);
