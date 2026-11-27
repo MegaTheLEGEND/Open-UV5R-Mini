@@ -49,7 +49,7 @@ static uint8_t   s_reg = 0x67;
 static uint16_t  s_mask = 0x01FF;
 static bool      s_inv;
 
-static uint16_t level(void)
+static uint16_t src_read(void)
 {
 	uint16_t v = BK4819_ReadRegister(s_reg) & s_mask;
 	return s_inv ? (uint16_t)(s_mask - v) : v;
@@ -102,7 +102,7 @@ static void noise_floor(void)
 {
 	uint32_t sum = 0;
 	for (unsigned i = 0; i < 64u; i++)
-		sum += level();
+		sum += src_read();
 	s_floor = (uint16_t)(sum / 64u);
 	s_thr_hi = (uint16_t)(s_floor + s_margin);
 	s_thr_lo = (uint16_t)(s_floor + s_margin * 3u / 5u);
@@ -121,7 +121,7 @@ static void capture(uint32_t ms)
 	end = ms * (SYSTEM_TicksPerSec() / 1000u);
 	t0 = last = SYSTEM_Raw();
 	do {
-		uint16_t r = level();
+		uint16_t r = src_read();
 		bool nl = r >= s_thr_hi ? true : r <= s_thr_lo ? false : level;
 		t = SYSTEM_Raw();
 		if (r > s_peak)
