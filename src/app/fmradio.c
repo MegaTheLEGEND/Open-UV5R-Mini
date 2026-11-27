@@ -401,7 +401,7 @@ static void enter(void)
 	s_ok = s_started = false;
 	freq_text();
 	last_try();
-	copy(s_f.bottom, "MENU:FM 1:RX 2:TONE", sizeof s_f.bottom);
+	copy(s_f.bottom, "STARTING...", sizeof s_f.bottom);
 	s_f.bottom_warn = true;
 	UI_FmDraw(&s_f, true);
 	RADIO_ProbeBegin();                  /* the BK4819 quiet: no squelch, no audio */
@@ -468,15 +468,9 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
-#if FM_DEV_AUTOSTART
-	if (!s_started) {                    /* development: start the receiver by itself */
+	if (!s_started) {                    /* the receiver starts by itself on the first tick, after the screen is up
+	                                      * (Sean, 2026-11-26: no key press to start it) */
 		start(FMRX_DAC | FMRX_RX | FMRX_FAST);
-		return APPS_STAY;
-	}
-#endif
-	if (!s_started) {
-		if (full)
-			UI_FmDraw(&s_f, true);
 		return APPS_STAY;
 	}
 	if (s_ok && !(s_mode & FMRX_RX))
