@@ -142,5 +142,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_SNAKE = { "SNAKE", enter, key, tick, leave, false, false };
+const AppDef_t APP_SNAKE = { "SNAKE", enter, key, tick, leave, false, false, "2 4 6 8 STEER\nUP/DN   UP / DOWN\nMENU    PLAY AGAIN\nEXIT    LEAVE" };
 #endif

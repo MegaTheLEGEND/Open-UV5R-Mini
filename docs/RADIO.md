@@ -52,11 +52,17 @@ Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 
 | MENU (5) | open the menu; in the menu, edit / confirm; in frequency entry, accept |
 | UP (6) / DOWN (7) | step up / down; menu up / down |
 | EXIT (8) | cancel entry; leave the menu |
-| `*` (12) | wide / narrow |
+| `*` (12) | wide / narrow; held: scan; F then `*`: tone scan |
+| `#` (20) | F (the function key, as the UV-K5's): a tap turns it on and off, shown as a yellow F at the left of every top bar; held 1 s: key lock |
 | A/B (3) | side A / B |
 | V/M (2) | VFO / channel mode |
-| flashlight (4) | lamp off, on, strobe (as stock; strobe rate is a guess) |
-| 0–9 | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz) |
+| flashlight (4) | on every screen: lamp off, on, strobe (as stock; strobe rate is a guess); held: the key help page for that screen, EXIT leaves it |
+| 0–9 | frequency entry: six digits, MHz then kHz (`145520` = 145.520 MHz); held, or F then the digit: see below |
+
+Held (half a second), or F then the key, on the main screen (after the UV-K5 open firmware's layout; ours where the
+radio has no such thing): 1 step, 2 A/B, 3 VFO/MR, 4 signal meter, 5 spectrum, 6 power, 7 VOX, 8 dual watch,
+9 monitor, 0 FM radio, F then UP/DOWN squelch. Keys with a held job act when let go. In an app, F stays on until `#`
+is tapped again and UP/DOWN then stand for the app's `#` and `*` (FM volume up/down, spectrum step).
 
 Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
 

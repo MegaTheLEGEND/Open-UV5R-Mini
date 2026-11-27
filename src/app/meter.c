@@ -245,5 +245,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_METER = { "SIGNAL METER", enter, key, tick, leave, false, true };
+const AppDef_t APP_METER = { "SIGNAL METER", enter, key, tick, leave, false, true, "UP/DN   CH OR STEP\n0-9     FREQ OR CH\nVM      VFO / MR\n* F+DN  TICK SOUND\nF+UP    PEAK RESET\nPTT     TRANSMIT\nEXIT    LEAVE" };
 #endif

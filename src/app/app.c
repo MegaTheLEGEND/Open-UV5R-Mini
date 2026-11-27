@@ -41,15 +41,20 @@
 #include "ui/screen_main.h"
 #include "ui/screen_menu.h"
 #include "ui/theme.h"
+#include "ui/status.h"
 
 
-typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT, SCREEN_APP } Screen_t;
+typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT, SCREEN_APP, SCREEN_HELP } Screen_t;
 
 static Screen_t s_screen;
 static bool     s_redraw = true;         /* whole screen */
 #define LAMP_STROBE_MS 500u          /* strobe half-period: a guess, the stock rate is not read yet */
 static uint8_t  s_lamp_mode;             /* 0 off, 1 on, 2 strobe (stock flashlight key) */
 static uint16_t s_lamp_ms;
+/* The function key (#, as the UV-K5's F; Sean, 2026-11-27): a tap switches F on and off, shown at the left of every
+ * top bar. On the main screen F then a key does what holding that key does, and F goes off; in an app F stays on and
+ * UP / DOWN stand for # and * (the apps' second pair). */
+static bool     s_fkey;
 static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
@@ -298,12 +303,38 @@ static void side_view(UiSide_t *u, uint8_t n, const Vfo_t *vf, bool mr, int ch, 
 	u->meter = -1;
 }
 
+/* gUiStatus (ui/status.h): F and the battery, for every screen's top bar */
+static void status_fill(void)
+{
+	UiStatus_t *v = &gUiStatus;
+	int lvl = BATTERY_Level();
+
+	v->fkey = s_fkey;
+	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
+	v->battery_low = BATTERY_Low();
+	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
+	v->battery_text[0] = 0;
+	if (s_batt_show && BATTERY_Raw()) {            /* "84%" or "4.1V" (K5 feature 4.8) */
+		char *p = v->battery_text;
+		if (s_batt_show == 1) {
+			p = put_num(p, BATTERY_Percent());
+			*p++ = '%';
+		} else {
+			uint16_t mv = (uint16_t)(BATTERY_Millivolts() + 50u);
+			*p++ = (char)('0' + mv / 1000u % 10u);
+			*p++ = '.';
+			*p++ = (char)('0' + mv / 100u % 10u);
+			*p++ = 'V';
+		}
+		*p = 0;
+	}
+}
+
 static void main_view(UiMain_t *v)
 {
 	uint8_t other = (uint8_t)(s_active ^ 1u), tuned = (uint8_t)(s_active ^ (s_peek ? 1u : 0u));
 	const Side_t *o = &s_side[other];
 	RadioState_t st = RADIO_State();
-	int lvl = BATTERY_Level();
 	char b[12];
 
 	/* while dual watch looks at the other side, gVfo is that side's; the active side is in s_side[] */
@@ -345,24 +376,11 @@ static void main_view(UiMain_t *v)
 	v->strobe = s_lamp_mode == 2;
 	v->warning = !CALIB_Present();
 	v->locked = gStock.raw[SET_KEY_LOCK] != 0;
-	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
-	v->battery_low = BATTERY_Low();
-	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
-	v->battery_text[0] = 0;
-	if (s_batt_show && BATTERY_Raw()) {            /* "84%" or "4.1V" (K5 feature 4.8) */
-		char *p = v->battery_text;
-		if (s_batt_show == 1) {
-			p = put_num(p, BATTERY_Percent());
-			*p++ = '%';
-		} else {
-			uint16_t mv = (uint16_t)(BATTERY_Millivolts() + 50u);
-			*p++ = (char)('0' + mv / 1000u % 10u);
-			*p++ = '.';
-			*p++ = (char)('0' + mv / 100u % 10u);
-			*p++ = 'V';
-		}
-		*p = 0;
-	}
+	v->fkey = gUiStatus.fkey;            /* status_fill */
+	v->battery = gUiStatus.battery;
+	v->battery_low = gUiStatus.battery_low;
+	v->battery_hide = gUiStatus.battery_hide;
+	copy_text(v->battery_text, gUiStatus.battery_text, sizeof v->battery_text);
 
 	/* bottom line, most important first */
 	v->bottom_color = COLOR_DIM;
@@ -1238,9 +1256,97 @@ static void scan_start(int dir)
 	s_entry_len = 0;
 }
 
+static void key_action(uint8_t a);
+#if SETTINGS_ENABLE_SAVE
+static void save_soon(void);
+#endif
+#if APP_FM_ENABLE
+static void app_open(const AppDef_t *a);
+#endif
+
+/* The flashlight key, on every screen: off, on, strobe (stock 0x01E537C8: RAM 0x198C0+2831, mod 3) */
+static void lamp_step(void)
+{
+	s_lamp_mode = (uint8_t)((s_lamp_mode + 1u) % 3u);
+	s_lamp_ms = 0;
+	IO_Lamp(s_lamp_mode != 0);
+	s_redraw = s_redraw || s_screen == SCREEN_MAIN;
+}
+
+/* Held, or F then the key, on the main screen: the UV-K5's (egzumer's) layout where this radio has the same thing,
+ * our nearest feature where it hasn't (K5: 1 band, 4 frequency copy, 8 reverse, 9 call channel). Returns false for
+ * a key with no second job, which then does its usual one. */
+static bool key_fn(KEY_Code_t k, bool held)
+{
+	switch (k) {
+	case KEY_1: {                        /* the next tuning step */
+		static char t[16] = "STEP ";
+		char b[12];
+		menu_change(M_STEP, +1);
+		copy_text(t + 5, fmt_step(b, RADIO_Steps[gVfo.step]), sizeof t - 5u);
+		note(t, COLOR_INFO);
+		s_redraw = true;
+#if SETTINGS_ENABLE_SAVE
+		save_soon();
+#endif
+		return true;
+	}
+	case KEY_2: key_action(KA_AB); return true;
+	case KEY_3: key_action(KA_VM); return true;
+	case KEY_4: key_action(KA_METER); return true;
+	case KEY_5: key_action(KA_SPECTRUM); return true;
+	case KEY_6:
+		key_action(KA_POWER);
+		note(gVfo.power == POWER_LOW ? "POWER LOW" : "POWER HIGH", COLOR_INFO);
+		return true;
+	case KEY_7:                          /* VOX on / off (stock setting 0x3A) */
+		gStock.raw[0x3A] = !gStock.raw[0x3A];
+		VOX_Reset();
+		note(gStock.raw[0x3A] ? "VOX ON" : "VOX OFF", COLOR_INFO);
+#if SETTINGS_ENABLE_SAVE
+		save_soon();
+#endif
+		return true;
+	case KEY_8: key_action(KA_DW); return true;
+	case KEY_9:
+		key_action(KA_MONITOR);
+		note(RADIO_MonitorOn() ? "MONITOR ON" : "MONITOR OFF", COLOR_INFO);
+		return true;
+	case KEY_0:
+#if APP_FM_ENABLE
+		app_open(&APP_FM);
+#else
+		RADIO_Beep(400, 120);
+#endif
+		return true;
+	case KEY_STAR:                       /* held: scan; F then *: the tone scan (K5: CTCSS / DCS scan) */
+		if (held)
+			key_action(KA_SCAN);
+		else if (!s_mr)
+			tscan_start();
+		return true;
+	case KEY_ACT_UP: key_action(KA_SQL_UP); return true;
+	case KEY_ACT_DOWN: key_action(KA_SQL_DOWN); return true;
+	case KEY_ACT_EXIT: return true;      /* F off, nothing else */
+	default: return false;
+	}
+}
+
 static void key_main(KEY_Code_t k)
 {
-	int d = KEY_Digit(k);
+	int d;
+
+	if (KEY_IS_LONG(k) && !s_entry_len && !s_tscan && !SCAN_Active()) {
+		key_fn(KEY_BASE(k), true);
+		return;
+	}
+	k = KEY_BASE(k);                     /* while typing or scanning, a held key is the key */
+	d = KEY_Digit(k);
+	if (s_fkey && !s_entry_len && !s_tscan && !SCAN_Active()) {
+		s_fkey = false;
+		if (key_fn(k, false))
+			return;
+	}
 
 	if (s_tscan) {                       /* any key ends the tone scan */
 		tscan_stop();
@@ -1292,12 +1398,8 @@ static void key_main(KEY_Code_t k)
 	} else if (k == KEY_ACT_BW) {
 		gVfo.narrow = !gVfo.narrow;
 		RADIO_Apply();
-	} else if (k == KEY_ACT_LAMP) {
-		/* stock 0x01E537C8: the flashlight key steps off, on, strobe (RAM 0x198C0+2831, mod 3) */
-		s_lamp_mode = (uint8_t)((s_lamp_mode + 1u) % 3u);
-		s_lamp_ms = 0;
-		IO_Lamp(s_lamp_mode != 0);
-	}
+	} else if (k == KEY_ACT_LAMP)
+		lamp_step();
 	else if (k == KEY_ACT_AB || k == KEY_ACT_VM) {
 		menu_change(k == KEY_ACT_AB ? M_AB : M_MEM, 0);
 		s_redraw = true;
@@ -1312,8 +1414,7 @@ static bool s_rescue_armed;              /* ABOUT: * pressed once, a second * re
 static void draw_about(void)
 {
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
-	ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
-	UI_PrintString("ABOUT", 49, 2, COLOR_TEXT, COLOR_BAR, 1);
+	UI_TitleBar("ABOUT", 0);
 	UI_PrintString(FW_NAME, 22, 20, COLOR_ACCENT, COLOR_BG, 1);
 	UI_PrintString("VERSION", 4, 38, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString(FW_VERSION, 58, 38, COLOR_TEXT, COLOR_BG, 1);
@@ -1721,35 +1822,157 @@ static void key_menu(KEY_Code_t k)
 static KEY_Code_t s_key_held = KEY_INVALID;
 static bool       s_wait_release;
 
+/* Most keys act when pressed. Keys with a second job held act when let go if they were let go soon enough, or as
+ * KEY_LONG(key) once held KEY_LONG_MS (as on the UV-K5): the lamp (help), # (F; held: the key lock), and on the
+ * main screen the digits and * (key_fn). */
+static bool key_holds(KEY_Code_t k)
+{
+	if (k == KEY_HASH || k == KEY_ACT_LAMP)
+		return true;
+	return s_screen == SCREEN_MAIN && (KEY_Digit(k) >= 0 || k == KEY_STAR);
+}
+
 static KEY_Code_t key_event(void)
 {
-	static KEY_Code_t last = KEY_INVALID;
+	static KEY_Code_t last = KEY_INVALID, queued = KEY_INVALID;
 	static uint16_t held;
-	KEY_Code_t k = KEYBOARD_Poll();
+	static bool pend, fired;             /* last waits for its let-go; its held job was done (or not wanted) */
+	KEY_Code_t k = KEYBOARD_Poll(), out = KEY_INVALID;
 
 	s_key_held = k;
 	if (s_wait_release) {                    /* a key held since power-on: nothing until it is let go */
 		if (k == KEY_INVALID)
 			s_wait_release = false;
-		last = KEY_INVALID;
+		last = queued = KEY_INVALID;
+		pend = false;
 		return KEY_INVALID;
 	}
+	if (queued != KEY_INVALID) {             /* a press that came with another key's let-go */
+		out = queued;
+		queued = KEY_INVALID;
+		return out;
+	}
 	if (k != last) {
+		if (pend && !fired)
+			out = last;                      /* let go soon enough: the tap */
 		last = k;
 		held = 0;
-		return k;
+		pend = fired = false;
+		if (k != KEY_INVALID) {
+			if (key_holds(k))
+				pend = true;
+			else if (out == KEY_INVALID)
+				return k;
+			else
+				queued = k;
+		}
+		return out;
 	}
 	if (k == KEY_INVALID)
 		return KEY_INVALID;
 	if (held < 0xFFFFu)
 		held++;
+	if (RADIO_State() == RADIO_TX)
+		fired = true;                        /* a key held for its DTMF tone does nothing when let go */
 	if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
 		if (held >= 50 && held % 10 == 0)
 			return k;
 	}
-	if (k == KEY_HASH && held == KEY_LOCK_MS / APP_TICK_MS)
+	if (pend && !fired && k == KEY_HASH && held == KEY_LOCK_MS / APP_TICK_MS) {
+		fired = true;
 		return KEY_ACT_LOCK;                 /* # held: lock or unlock the keys */
+	}
+	if (pend && !fired && k != KEY_HASH && held == KEY_LONG_MS / APP_TICK_MS) {
+		fired = true;
+		return KEY_LONG(k);
+	}
 	return KEY_INVALID;
+}
+
+/* ------------------------------------------------------------------------------------------- key help */
+/* The lamp key held, on any screen: what the keys do there (Sean, 2026-11-27). EXIT goes back. */
+static Screen_t s_help_from;
+
+static void help_open(void)
+{
+	if (s_screen != SCREEN_HELP)
+		s_help_from = s_screen;
+	s_screen = SCREEN_HELP;
+	s_redraw = true;
+}
+
+static void help_close(void)
+{
+	s_screen = s_help_from;
+	s_redraw = true;
+}
+
+static const char *const HELP_MAIN[] = {
+	"HOLD, OR F THEN KEY:",
+	"1 STEP     2 A/B",
+	"3 VFO/MR   4 METER",
+	"5 SPECTRUM 6 POWER",
+	"7 VOX      8 DUAL W",
+	"9 MONITOR  0 FM RADIO",
+	"* SCAN     F * TONES",
+	"F UP/DN    SQUELCH",
+	"TAP: # F   * W/N",
+	"HOLD # KEY LOCK",
+	"= AS SET IN MENU",
+	0
+};
+
+static const char *const HELP_MENU[] = {
+	"UP/DN   MOVE",
+	"0-9     ITEM NUMBER",
+	"MENU    OPEN / SET",
+	"EXIT    BACK",
+	"# TAP   F ON/OFF",
+	"# HOLD  KEY LOCK",
+	"LAMP    LIGHT",
+	"LAMP HOLD  THIS PAGE",
+	0
+};
+
+static void draw_help(void)
+{
+	const char *const *l = HELP_MAIN;
+	const char *title = "MAIN";
+	const char *app = 0;
+	uint8_t y = 14;
+
+	if (s_help_from == SCREEN_MENU || s_help_from == SCREEN_ABOUT) {
+		l = HELP_MENU;
+		title = "MENU";
+	} else if (s_help_from == SCREEN_APP && s_app) {
+		l = 0;
+		title = s_app->name;
+		app = s_app->help;
+	}
+	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+	UI_TitleBar("KEYS", title);
+	for (; l && *l; l++, y = (uint8_t)(y + 9))
+		UI_PrintString(*l, 2, y, l == HELP_MAIN ? COLOR_INFO : COLOR_TEXT, COLOR_BG, 1);
+	if (app) {                           /* the app's lines, "\n" between */
+		char b[22];
+		unsigned n = 0;
+		for (const char *p = app;; p++) {
+			if (*p == '\n' || !*p) {
+				b[n] = 0;
+				UI_PrintString(b, 2, y, COLOR_TEXT, COLOR_BG, 1);
+				y = (uint8_t)(y + 9);
+				n = 0;
+				if (!*p)
+					break;
+			} else if (n < sizeof b - 1u)
+				b[n++] = *p;
+		}
+	}
+	if (s_help_from == SCREEN_APP) {
+		UI_PrintString("# TAP   F ON/OFF", 2, y, COLOR_DIM, COLOR_BG, 1);
+		UI_PrintString("LAMP    LIGHT", 2, (uint8_t)(y + 9), COLOR_DIM, COLOR_BG, 1);
+	}
+	UI_PrintString("EXIT: BACK", 2, 118, COLOR_DIM, COLOR_BG, 1);
 }
 
 /* ------------------------------------------------------------------------------------------- entry points */
@@ -2330,7 +2553,8 @@ static void sleep_enter(void)
 	ST7735S_SetBacklight(false);
 	s_light_on = false;
 	ST7735S_Sleep(true);
-	duty_start();
+	if (s_screen != SCREEN_APP)          /* an app has the receiver (or the FM radio) to itself */
+		duty_start();
 }
 
 static void sleep_wake(void)
@@ -2367,7 +2591,8 @@ static void sleep_tick(bool busy)
 		s_blink_ms = (uint16_t)(((unsigned)s_blink_ms + APP_TICK_MS) % 5000u);
 		if (RADIO_State() != RADIO_RX_OPEN)
 			IO_LedRx(s_blink_ms < 50u);
-		duty_tick(SLEEP_OFF_MS, SLEEP_LISTEN_MS);
+		if (s_screen != SCREEN_APP)
+			duty_tick(SLEEP_OFF_MS, SLEEP_LISTEN_MS);
 		return;
 	}
 	if (s_idle_sleep_ms < 0xFFFF0000u)
@@ -2598,7 +2823,7 @@ void APP_Tick(void)
 	}
 
 	k = key_event();
-	if (s_asleep && k != KEY_INVALID) {
+	if (s_asleep && (k != KEY_INVALID || s_key_held != KEY_INVALID)) {
 		sleep_wake();                      /* the key that wakes the radio does nothing else */
 		k = KEY_INVALID;
 		s_wait_release = true;
@@ -2622,7 +2847,7 @@ void APP_Tick(void)
 		} else if (RADIO_TxToneOn())
 			RADIO_TxToneOff();
 	}
-	if (k != KEY_INVALID)                        /* a press lights the screen and still does its job */
+	if (k != KEY_INVALID || s_key_held != KEY_INVALID)   /* a press lights the screen and still does its job */
 		light_wake();
 	/* Key lock (stock setting 0x1B, kept across power-off): # held 1 s locks and unlocks; while locked, only PTT
 	 * works. Auto lock (setting 0x10): locks after KEY_AUTOLOCK_MS on the main screen with no key (our timing). */
@@ -2635,7 +2860,9 @@ void APP_Tick(void)
 #endif
 		s_idle_ms = 0;
 		k = KEY_INVALID;
-	} else if (k != KEY_INVALID && gStock.raw[SET_KEY_LOCK]) {
+	} else if (k != KEY_INVALID && gStock.raw[SET_KEY_LOCK] && k != KEY_ACT_LAMP && k != KEY_LONG(KEY_ACT_LAMP)
+	           && !(s_screen == SCREEN_HELP && k == KEY_ACT_EXIT)) {
+		/* the flashlight and its help still work while locked */
 		if (k != KEY_HASH)
 			note("LOCKED: HOLD #", COLOR_WARN);
 		k = KEY_INVALID;
@@ -2650,7 +2877,8 @@ void APP_Tick(void)
 #endif
 	}
 	/* menu time-out (stock setting 0x21: 5-50 s in 5 s steps, then 60 s), not while a value is being edited */
-	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_screen == SCREEN_APP || s_menu_edit || s_menu_hidden)
+	if (k != KEY_INVALID || s_screen == SCREEN_MAIN || s_screen == SCREEN_APP || s_screen == SCREEN_HELP
+	    || s_menu_edit || s_menu_hidden)
 		s_menu_ms = 0;
 	else if ((s_menu_ms += APP_TICK_MS) >= (gStock.raw[0x21] < 10 ? 5000u * (gStock.raw[0x21] + 1u) : 60000u)) {
 		s_menu_ms = 0;
@@ -2673,10 +2901,25 @@ void APP_Tick(void)
 		/* = is eq_tick's on the main screen; an app gets it as a key */
 		if (gStock.raw[SET_BEEP])
 			RADIO_Beep(1000, 40);
-		if (s_screen == SCREEN_MAIN)
+		if (k == KEY_ACT_LAMP)                   /* every screen: tap the light, hold for the keys */
+			lamp_step();
+		else if (k == KEY_LONG(KEY_ACT_LAMP))
+			help_open();
+		else if (s_screen == SCREEN_HELP) {
+			if (k == KEY_ACT_EXIT)
+				help_close();
+		} else if (k == KEY_HASH && !(s_screen == SCREEN_MENU && s_menu_edit && s_menu_sel == M_CHNAME))
+			s_fkey = !s_fkey;                    /* F; # still moves the cursor in a channel name */
+		else if (s_screen == SCREEN_MAIN)
 			key_main(k);
 		else if (s_screen == SCREEN_APP) {
-			AppsResult_t r = s_app ? s_app->key(k) : APPS_EXIT;
+			KEY_Code_t a = KEY_BASE(k);
+			AppsResult_t r;
+			if (s_fkey && a == KEY_ACT_UP)       /* F in an app: UP / DOWN are the app's # and * */
+				a = KEY_HASH;
+			else if (s_fkey && a == KEY_ACT_DOWN)
+				a = KEY_STAR;
+			r = s_app ? s_app->key(a) : APPS_EXIT;
 			if (r != APPS_STAY)
 				app_close(r);
 		} else if (s_screen == SCREEN_ABOUT) {
@@ -2697,7 +2940,7 @@ void APP_Tick(void)
 			}
 		}
 		else
-			key_menu(k);
+			key_menu(KEY_BASE(k));
 	}
 
 	eq_tick(ptt);
@@ -2707,21 +2950,28 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 		saving = s_save_due;             /* a change still to be written: stay awake until it is */
 #endif
+		/* every screen sleeps the same way (Sean, 2026-11-27); an app keeps running with its screen off */
 		sleep_tick(ptt || s_key_held != KEY_INVALID || RADIO_State() != RADIO_RX || SCAN_Active() || s_tscan
-		           || s_screen == SCREEN_APP
 		           || s_entry_len || s_eot || s_tail_ms || saving);
 	}
-	if (s_asleep)
-		;                                  /* the panel is off: nothing drawn */
-	else if (s_screen == SCREEN_APP) {
-		AppsResult_t r = s_app ? s_app->tick(s_redraw) : APPS_EXIT;
+	status_fill();
+	if (s_redraw)
+		UI_StatusHide();                   /* the screen draws its bar again, or has none */
+	if (s_screen == SCREEN_APP) {          /* asleep too: the FM radio plays on */
+		AppsResult_t r = s_app ? s_app->tick(s_redraw && !s_asleep) : APPS_EXIT;
 		if (r != APPS_STAY)
 			app_close(r);
-	} else if (s_screen == SCREEN_MAIN) {
+	} else if (s_asleep)
+		;                                  /* the panel is off: nothing drawn */
+	else if (s_screen == SCREEN_MAIN) {
 		draw_main();
 	} else if (s_redraw && s_screen == SCREEN_ABOUT)
 		draw_about();
-	else if (s_redraw)
+	else if (s_redraw && s_screen == SCREEN_HELP)
+		draw_help();
+	else if (s_redraw && s_screen != SCREEN_HELP)
 		draw_menu();
+	if (!s_asleep && s_screen != SCREEN_MAIN)
+		UI_StatusRefresh();
 	s_redraw = false;
 }

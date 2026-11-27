@@ -3,6 +3,7 @@
 #include "driver/st7735s.h"
 #include "ui/helper.h"
 #include "ui/theme.h"
+#include "ui/status.h"
 
 static unsigned text_len(const char *s)
 {
@@ -12,12 +13,10 @@ static unsigned text_len(const char *s)
 	return n;
 }
 
+/* F, the title, the app's own text and the battery, as on every screen (ui/status.h) */
 static void title_bar(const char *title, const char *right)
 {
-	ST7735S_FillRect(0, 0, LCD_WIDTH, 11, COLOR_BAR);
-	UI_PrintString(title, 2, 2, COLOR_TEXT, COLOR_BAR, 1);
-	if (right)
-		UI_PrintString(right, (uint8_t)(126 - 6 * text_len(right)), 2, COLOR_DIM, COLOR_BAR, 1);
+	UI_TitleBar(title, right);
 }
 
 /* ------------------------------------------------------------------------------------------- spectrum */
@@ -187,8 +186,7 @@ void UI_GameCell(uint8_t x, uint8_t y, uint16_t color)
 
 void UI_GameScore(const char *text)
 {
-	ST7735S_FillRect(60, 0, 68, 11, COLOR_BAR);
-	UI_PrintString(text, (uint8_t)(126 - 6 * text_len(text)), 2, COLOR_WARN, COLOR_BAR, 1);
+	UI_TitleRight(text, COLOR_WARN);
 }
 
 /* ------------------------------------------------------------------------------------------- FM radio */

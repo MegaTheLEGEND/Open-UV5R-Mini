@@ -7,6 +7,7 @@
 #include "ui/screen_menu.h"
 #include "ui/screen_apps.h"
 #include "ui/theme.h"
+#include "ui/status.h"
 
 bool test_pins[128];
 static uint16_t fb[LCD_HEIGHT][LCD_WIDTH];
@@ -73,6 +74,7 @@ static void side(UiSide_t *s, uint32_t f, const char *label, int tone_kind, cons
 
 int main(int argc, char **argv)
 {
+	gUiStatus.battery = 3;                   /* the apps' bars: battery icon, F on in the FM radio */
 	const char *dir = argc > 1 ? argv[1] : ".";
 	char path[512];
 	UiMain_t v;
@@ -93,7 +95,7 @@ int main(int argc, char **argv)
 	/* receiving on A, dual watch and lamp on, then B in channel mode with DCS and a shift */
 	v.side[0].state = UI_STATE_RX;
 	v.side[0].meter = 6;
-	v.dual_watch = v.lamp = v.locked = v.scan = v.warning = true;
+	v.dual_watch = v.lamp = v.locked = v.scan = v.warning = v.fkey = true;   /* F on too */
 	strcpy(v.battery_text, "100%");               /* MENU -> BATTERY: PERCENT; every status icon on */
 	side(&v.side[1], 43950000u, "012 439.500", UI_TONE_DCS, "D023N");
 	v.side[1].shift = -1;
@@ -270,8 +272,10 @@ int main(int argc, char **argv)
 		strcpy(fm.diag[0], "S9 CK0200/01C2 H10272");
 		strcpy(fm.diag[1], "IRQ/S 1172 PK 9311");
 		strcpy(fm.diag[2], "OUT/S 48000 DR 0 A0");
-		strcpy(fm.bottom, "=:SEEK */#:VOL");
+		strcpy(fm.bottom, "=SEEK A/B RDS * F+UP");
+		gUiStatus.fkey = true;
 		UI_FmDraw(&fm, true);
+		gUiStatus.fkey = false;
 		snprintf(path, sizeof path, "%s/app_fm.ppm", dir);
 		dump(path);
 

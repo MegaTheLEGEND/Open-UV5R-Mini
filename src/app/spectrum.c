@@ -282,5 +282,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave, true, false };
+const AppDef_t APP_SPECTRUM = { "SPECTRUM", enter, key, tick, leave, true, false, "UP/DN   MOVE\n0-9     FREQUENCY\n* F+DN  STEP SMALLER\nF+UP    STEP BIGGER\n=       FREEZE\nMENU    TUNE THERE\nPTT     TX AT CENTRE\nEXIT    LEAVE" };
 #endif

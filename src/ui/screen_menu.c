@@ -3,6 +3,7 @@
 #include "driver/st7735s.h"
 #include "ui/helper.h"
 #include "ui/theme.h"
+#include "ui/status.h"
 
 static int s_top = -1;                 /* the first row drawn last time; -1 = rows need clearing */
 
@@ -25,14 +26,11 @@ void UI_MenuDraw(const UiMenu_t *m, bool full)
 
 	if (full) {
 		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
-		ST7735S_FillRect(0, 0, 128, 11, COLOR_BAR);
-		UI_PrintString(m->title ? m->title : "MENU", 2, 2, COLOR_TEXT, COLOR_BAR, 1);
+		UI_TitleBar(m->title ? m->title : "MENU", 0);
 		ST7735S_FillRect(0, 98, 128, 1, COLOR_DIM);
 		s_top = -1;
 	}
-	ST7735S_FillRect(80, 0, 48, 11, COLOR_BAR);
-	UI_PrintString(m->corner, (uint8_t)(126 - 6 * text_len(m->corner)), 2, m->corner_warn ? COLOR_WARN : COLOR_DIM,
-	               COLOR_BAR, 1);
+	UI_TitleRight(m->corner, m->corner_warn ? COLOR_WARN : COLOR_DIM);
 	if (m->top != s_top) {
 		s_top = m->top;
 		ST7735S_FillRect(0, 12, 128, 12 * UI_MENU_ROWS + 2, COLOR_BG);

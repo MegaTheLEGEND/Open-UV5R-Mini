@@ -1,6 +1,6 @@
 /* Open-UV5R-Mini: the main screen. Both sides, A and B, are shown at once, each in its own panel.
  *
- *   y 0-10    status bar: squelch, dual watch, scan, lamp, warning, battery
+ *   y 0-10    status bar: F, squelch, dual watch, scan, lamp, warning, battery (ui/status.h)
  *   y 13-60   side A: badge, channel label, receive/transmit icon and S-meter; the frequency; mode tags
  *   y 64-111  side B: the same
  *   y 116-127 bottom line: DTMF heard and notifications (TX refused, saved, tone match); blank otherwise
@@ -36,6 +36,7 @@ typedef struct {
 	uint8_t  active;        /* the side keys act on */
 	char     entry[10];     /* typed digits, shown large on the active side; "" when not typing */
 	uint8_t  squelch;
+	bool     fkey;          /* the function key is on */
 	bool     dual_watch, scan, scan_hold, lamp, strobe, warning, locked;
 	int8_t   battery;       /* 0..4 bars, -1 unknown */
 	bool     battery_low, battery_hide;

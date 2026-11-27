@@ -3,6 +3,7 @@
 #include "driver/st7735s.h"
 #include "ui/helper.h"
 #include "ui/icons.h"
+#include "ui/status.h"
 #include "ui/theme.h"
 
 #define BAR_H     11u
@@ -73,23 +74,11 @@ static void flag_icon(const Icon_t *icon, uint8_t x, bool on, uint16_t color)
 
 static void draw_battery(const UiMain_t *v)
 {
-	const uint8_t x = 109;
-	uint16_t c = v->battery_low ? COLOR_TX : COLOR_RX;
+	UiStatus_t s = { .battery = v->battery, .battery_low = v->battery_low, .battery_hide = v->battery_hide };
 
-	ST7735S_FillRect(98, 1, (uint8_t)(LCD_WIDTH - 98), 9, COLOR_BAR);   /* the text is wider than the icon */
-	if (v->battery_hide)
-		return;
-	if (v->battery_text[0]) {               /* percent or volts, right-aligned */
-		uint8_t n = 0;
-		while (v->battery_text[n])
-			n++;
-		UI_PrintString(v->battery_text, (uint8_t)(LCD_WIDTH - 1 - 6 * n), 2, v->battery_low ? COLOR_TX : COLOR_TEXT,
-		               COLOR_BAR, 1);
-		return;
-	}
-	UI_DrawIcon(&ICON_STATUS_BATTERY, x, 1, v->battery_low ? COLOR_TX : COLOR_DIM, COLOR_BAR);
-	for (int i = 0; i < 4; i++)       /* four cells of 2 x 5 inside the frame */
-		ST7735S_FillRect((uint8_t)(x + 2 + 3 * i), 3, 2, 5, i < v->battery ? c : COLOR_BAR);
+	for (unsigned i = 0; i < sizeof s.battery_text; i++)
+		s.battery_text[i] = v->battery_text[i];
+	UI_DrawBattery(&s);                  /* the same as on every other screen (ui/status.c) */
 }
 
 static void draw_status(const UiMain_t *v, bool full)
@@ -100,28 +89,31 @@ static void draw_status(const UiMain_t *v, bool full)
 	if (full) {
 		ST7735S_FillRect(0, 0, LCD_WIDTH, BAR_H, COLOR_BAR);
 	}
+	/* F at the far left, as on every screen (ui/status.h) */
+	if (full || v->fkey != o->fkey)
+		UI_DrawFKey(v->fkey);
 	/* no volume: the radio has a knob. Squelch and dual watch as tags with their value inside, as on the sides */
 	if (full || v->squelch != o->squelch) {
 		char t[5] = "SQ ";
 		t[3] = UI_FormatDec(b, v->squelch, 1)[0];
 		t[4] = 0;
-		pill_on(2, 1, t, COLOR_DIM, COLOR_BAR);
+		pill_on(12, 1, t, COLOR_DIM, COLOR_BAR);
 	}
 	if (full || v->dual_watch != o->dual_watch) {
 		if (v->dual_watch)
-			pill_on(33, 1, "DW", COLOR_INFO, COLOR_BAR);
+			pill_on(41, 1, "DW", COLOR_INFO, COLOR_BAR);
 		else
-			ST7735S_FillRect(33, 1, 15, 9, COLOR_BAR);
+			ST7735S_FillRect(41, 1, 15, 9, COLOR_BAR);
 	}
-	/* the icons sit left of x 98 so a battery percentage ("100%", from x 103) has room */
+	/* the icons sit left of x 102 so a battery percentage ("100%", from x 103) has room */
 	if (full || v->scan != o->scan || v->scan_hold != o->scan_hold)
-		flag_icon(&ICON_STATUS_SCAN, 52, v->scan, v->scan_hold ? COLOR_RX : COLOR_WARN);
+		flag_icon(&ICON_STATUS_SCAN, 58, v->scan, v->scan_hold ? COLOR_RX : COLOR_WARN);
 	if (full || v->lamp != o->lamp || v->strobe != o->strobe)
-		flag_icon(&ICON_STATUS_LAMP, 64, v->lamp, v->strobe ? COLOR_TX : COLOR_WARN);
+		flag_icon(&ICON_STATUS_LAMP, 69, v->lamp, v->strobe ? COLOR_TX : COLOR_WARN);
 	if (full || v->warning != o->warning)
-		flag_icon(&ICON_STATUS_WARNING, 76, v->warning, COLOR_TX);
+		flag_icon(&ICON_STATUS_WARNING, 80, v->warning, COLOR_TX);
 	if (full || v->locked != o->locked)
-		flag_icon(&ICON_STATUS_LOCK, 88, v->locked, COLOR_WARN);
+		flag_icon(&ICON_STATUS_LOCK, 92, v->locked, COLOR_WARN);
 	if (full || v->battery != o->battery || v->battery_low != o->battery_low || v->battery_hide != o->battery_hide
 	    || differ(v->battery_text, o->battery_text))
 		draw_battery(v);

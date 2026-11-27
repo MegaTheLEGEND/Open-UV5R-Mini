@@ -79,7 +79,7 @@ static void say(const char *t, bool warn)
 
 static void hint(void)
 {
-	copy(s_f.bottom, s_seek ? "SEARCHING..." : "=SEEK */#VOL A/B RDS", sizeof s_f.bottom);
+	copy(s_f.bottom, s_seek ? "SEARCHING..." : "=SEEK A/B RDS * F+UP", sizeof s_f.bottom);
 	s_f.bottom_warn = false;
 }
 
@@ -503,7 +503,7 @@ static void start(uint32_t mode)
 	if (!s_ok)
 		say(FMRX_TooFast() ? "FM CLOCK WRONG: OFF" : "FM DID NOT START", true);
 	else if (!(mode & FMRX_RX))
-		copy(s_f.bottom, "1 KHZ TONE */#:VOL", sizeof s_f.bottom);
+		copy(s_f.bottom, "1KHZ TONE VOL * F+UP", sizeof s_f.bottom);
 	else
 		hint();
 	draw(false);
@@ -647,5 +647,5 @@ static AppsResult_t tick(bool full)
 	return APPS_STAY;
 }
 
-const AppDef_t APP_FM = { "FM RADIO", enter, key, tick, leave, false, false };
+const AppDef_t APP_FM = { "FM RADIO", enter, key, tick, leave, false, false, "UP/DN   TUNE\n0-9     FREQUENCY\n=       SEEK ON/OFF\n* F+DN  VOLUME -\nF+UP    VOLUME +\nA/B     RDS PAGE\nEXIT    LEAVE" };
 #endif

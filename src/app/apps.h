@@ -51,6 +51,7 @@ typedef struct {
 	void         (*leave)(void);
 	bool         ptt_tunes;              /* PTT transmits on gAppsTune (the spectrum's centre), on the selected side */
 	bool         ptt_stays;              /* PTT transmits on the selected side and the app stays open */
+	const char  *help;                   /* the key help page (lamp held): lines of up to 21 characters, "\n" between */
 } AppDef_t;
 
 /* app.c's services for the apps: the selected side, changed as the main screen's keys would (channel mode with the

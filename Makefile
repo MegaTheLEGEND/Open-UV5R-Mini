@@ -24,7 +24,7 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
        src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
        src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c \
-       src/ui/screen_apps.c
+       src/ui/screen_apps.c src/ui/status.c
 ASM := src/start.S src/update/handover.S
 
 include features.mk

@@ -85,8 +85,8 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.15 | Reordered, renamed menu entries | have | sections CHANNEL, SCAN, TRANSMIT, SYSTEM, numbered on across them; a typed number jumps to its item |
 | 4.16 | Navigation layout per radio model (`SetNav`) | n/a | one keypad here |
 | 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | have | # held locks keys; MENU → SYSTEM → LOCK PTT makes the lock hold PTT too; PC-checked only |
-| 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); # held locks; no F layer yet [4.3] |
-| 4.19 | F+UP / F+DOWN squelch, saved; F+F1 / F+F2 step | partial | no F key here: SQUELCH + and SQUELCH - as `=` key actions (press, double, hold); step keys todo |
+| 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `#` is F (tap; indicator on every top bar), held 1 s locks; digits and `*` held, or F then the key, as the K5 layout (docs/RADIO.md, Keys); `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); not assignable per key yet; PC-checked only [4.3] |
+| 4.19 | F+UP / F+DOWN squelch, saved; F+F1 / F+F2 step | partial | F then UP/DOWN: squelch; also SQUELCH + and SQUELCH - as `=` key actions; F then 1 (or 1 held): next step; PC-checked only |
 | 4.20 | Quick actions: RX mode, main VFO only, wide/narrow, 1750, mute, audio profile, max power, offset removal | partial | `*` toggles wide/narrow; the rest todo |
 | 4.21 | Long-press EXIT restores the full VFO state | todo | |
 | 4.22 | PTT modes: Classic or OnePush (`SetPTT`) | todo | |

@@ -41,7 +41,7 @@ def main():
     subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror',
                     '-I', os.path.join(ROOT, 'tests', 'stubs'), '-I', SRC,
                     os.path.join(ROOT, 'tests', 'ui_preview.c'), os.path.join(SRC, 'ui', 'screen_main.c'), os.path.join(SRC, 'ui', 'screen_menu.c'),
-                    os.path.join(SRC, 'ui', 'screen_apps.c'),
+                    os.path.join(SRC, 'ui', 'screen_apps.c'), os.path.join(SRC, 'ui', 'status.c'),
                     os.path.join(SRC, 'ui', 'helper.c'), os.path.join(SRC, 'ui', 'font.c'),
                     os.path.join(SRC, 'ui', 'icons.c'), '-o', exe], check=True)
     r = subprocess.run([exe, OUT])

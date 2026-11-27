@@ -16,6 +16,11 @@
 #define KEY_ACT_VM    KEY_VM       /* VFO / channel mode */
 #define KEY_ACT_LOCK  ((KEY_Code_t)0xFE)   /* not a key: # held for KEY_LOCK_MS (app.c key_event) */
 #define KEY_LOCK_MS      1000u
+/* a key held this long does its second job (app.c key_event): KEY_LONG(key); a shorter press acts when let go */
+#define KEY_LONG_MS      500u
+#define KEY_LONG(k)      ((KEY_Code_t)((unsigned)(k) | 0x40u))
+#define KEY_IS_LONG(k)   (((unsigned)(k) & 0xC0u) == 0x40u)
+#define KEY_BASE(k)      (KEY_IS_LONG(k) ? (KEY_Code_t)((unsigned)(k) & 0x3Fu) : (k))
 #define KEY_AUTOLOCK_MS  15000u            /* auto lock (stock setting 0x10) after this long with no key; our choice */
 
 /* digit value of a key, or -1 */
