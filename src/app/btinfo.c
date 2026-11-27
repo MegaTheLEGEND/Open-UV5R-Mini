@@ -7,13 +7,16 @@
 #if APP_BTINFO_ENABLE
 #include "bt/bt.h"
 #include "driver/flash.h"
+#if BT_LE_ENABLE
+#include "platform/jl_sdk/bt_le.h"
+#endif
 #include "ui/screen_apps.h"
 
 #define BTIF_ADDR 0xFE000u               /* NRF (docs/FIRMWARE.md); this firmware is built for NRF only */
 
 static struct {
 	UiInfo_t p;
-	char     caps[13], scan[13], link[13], addr[13], btif0[13], btif1[13];
+	char     caps[13], scan[13], link[13], addr[13], btif0[13], btif1[13], stack[13];
 	uint16_t ms;
 } S __attribute__((section(".ram2.btinfo")));
 
@@ -54,6 +57,20 @@ static void fill(void)
 	if (!(c & (BT_CAP_LE_SCAN | BT_CAP_LE_ADV)))
 		put(o, "-");
 	put(S.link, !BT_IsAvailable() ? "-" : BT_IsConnected() ? "CONNECTED" : "WAITING");
+#if BT_LE_ENABLE
+	/* the BLE backend: OFF, how far its start got (1-5) if it stopped there, or ON and the events it has sent */
+	if (!gBtLe.step)
+		put(S.stack, "OFF");
+	else if (gBtLe.step == 6) {
+		o = put(S.stack, "ON EV ");
+		APPS_PutInt(o, (int)(gBtLe.events % 100000u));
+	} else {
+		o = put(S.stack, "STEP ");
+		APPS_PutInt(o, gBtLe.step);
+	}
+#else
+	put(S.stack, "NOT BUILT");
+#endif
 	if (BT_GetAddress(a))
 		hex(S.addr, a, 6);
 	else
@@ -83,7 +100,7 @@ static void enter(void)
 	S.p.label[4] = "ADDRESS";  S.p.value[4] = S.addr;
 	S.p.label[5] = "BTIF 0-5"; S.p.value[5] = S.btif0;
 	S.p.label[6] = "BTIF 6-9"; S.p.value[6] = S.btif1;
-	S.p.label[7] = "CHIP";     S.p.value[7] = "AC695N BT5";
+	S.p.label[7] = "CONTROL";  S.p.value[7] = S.stack;
 	S.p.hint = "ANY KEY: BACK";
 	S.ms = 0;
 	fill();

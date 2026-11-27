@@ -15,6 +15,9 @@
 #include "bt/bt.h"
 #include "bt/le_adv.h"
 #include "driver/st7735s.h"
+#if BT_LE_ENABLE
+#include "platform/jl_sdk/bt_le.h"
+#endif
 #include "ui/helper.h"
 #include "ui/status.h"
 #include "ui/theme.h"
@@ -312,13 +315,33 @@ static bool mon(const char *a)
 		}
 		return true;
 	}
+#if BT_LE_ENABLE
+	if (mword(&a, "bt")) {               /* the BLE backend: start step, events, messages, reports */
+		char b[64], *o = put(b, "@step ");
+		o = APPS_PutInt(o, gBtLe.step);
+		o = put(o, " starts ");
+		o = APPS_PutInt(o, (int)gBtLe.starts);
+		o = put(o, " events ");
+		o = APPS_PutInt(o, (int)gBtLe.events);
+		o = put(o, " last ");
+		o = APPS_PutInt(o, gBtLe.last_event);
+		*o++ = '/';
+		o = APPS_PutInt(o, gBtLe.last_sub);
+		o = put(o, " msgs ");
+		o = APPS_PutInt(o, (int)gBtLe.msgs);
+		o = put(o, " reports ");
+		APPS_PutInt(o, (int)BTLE_Reports());
+		MON_Line(b);
+		return true;
+	}
+#endif
 	if (mword(&a, "clear")) {
 		LeList_Clear(&S.list);
 		resort();
 		S.redraw = S.full = true;
 		return true;
 	}
-	MON_Line("@app: adv ADDR12HEX RSSI [TYPE0-4] [DATAHEX], list, clear");
+	MON_Line("@app: adv ADDR12HEX RSSI [TYPE0-4] [DATAHEX], list, clear, bt");
 	return mword(&a, "help");
 }
 #endif
