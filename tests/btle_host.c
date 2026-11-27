@@ -2,9 +2,18 @@
 #include <stdio.h>
 #include <string.h>
 #include "bt/le_adv.h"
+#include "bt/gatt.h"
 
 static int fails, checks;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; printf("FAIL line %d: %s\n", __LINE__, #c); } } while (0)
+
+static uint8_t rx_buf[64];
+static int rx_len;
+static void on_rx(const uint8_t *d, uint16_t n)
+{
+	memcpy(rx_buf + rx_len, d, n);
+	rx_len += n;
+}
 
 static BT_LeReport_t rep(uint8_t last, int8_t rssi, uint8_t type, const uint8_t *d, uint8_t n)
 {
@@ -149,6 +158,100 @@ int main(void)
 		n = LeAdv_BuildIBeacon(o, uuid, 0x1234, 0x5678, -59);
 		CHECK(n == 30 && o[25] == 0x12 && o[26] == 0x34 && o[28] == 0x78 && (int8_t)o[29] == -59);
 		CHECK(LeAdv_Parse(o, n, &in) && in.kind == LE_KIND_IBEACON);
+	}
+
+	/* the GATT server: a phone finds the serial service, switches notifications on and writes */
+	{
+		uint8_t o[GATT_MTU + 4];
+		uint16_t cid;
+		int n;
+		GATT_Reset("UV5R-MINI", on_rx);
+		static const uint8_t mtu[] = { 0x02, 0xF7, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, mtu, sizeof mtu, o, &cid);
+		CHECK(n == 3 && cid == 4 && o[0] == 0x03 && o[1] == 23 && o[2] == 0);
+
+		static const uint8_t grp[] = { 0x10, 0x01, 0x00, 0xFF, 0xFF, 0x00, 0x28 };
+		n = GATT_Input(L2CAP_CID_ATT, grp, sizeof grp, o, &cid);
+		CHECK(n == 2 + 6 && o[0] == 0x11 && o[1] == 6 && o[2] == 1 && o[4] == 5 && o[6] == 0x00 && o[7] == 0x18);
+		static const uint8_t grp2[] = { 0x10, 0x06, 0x00, 0xFF, 0xFF, 0x00, 0x28 };
+		n = GATT_Input(L2CAP_CID_ATT, grp2, sizeof grp2, o, &cid);
+		CHECK(n == 2 + 20 && o[1] == 20 && o[2] == GATT_H_NUS && o[4] == GATT_H_LAST && o[6] == 0x9E && o[21] == 0x6E);
+		static const uint8_t grp3[] = { 0x10, 0x0C, 0x00, 0xFF, 0xFF, 0x00, 0x28 };
+		n = GATT_Input(L2CAP_CID_ATT, grp3, sizeof grp3, o, &cid);
+		CHECK(n == 5 && o[0] == 0x01 && o[1] == 0x10 && o[4] == 0x0A);
+
+		static const uint8_t chr[] = { 0x08, 0x06, 0x00, 0x0B, 0x00, 0x03, 0x28 };
+		n = GATT_Input(L2CAP_CID_ATT, chr, sizeof chr, o, &cid);    /* 21-byte entries: one per answer */
+		CHECK(n == 2 + 21 && o[1] == 21 && o[2] == GATT_H_RX_DECL && o[4] == 0x0C && o[5] == GATT_H_RX && o[22] == 0x6E);
+		static const uint8_t chr2[] = { 0x08, 0x08, 0x00, 0x0B, 0x00, 0x03, 0x28 };
+		n = GATT_Input(L2CAP_CID_ATT, chr2, sizeof chr2, o, &cid);
+		CHECK(n == 23 && o[2] == GATT_H_TX_DECL && o[4] == 0x10 && o[5] == GATT_H_TX && o[19] == 0x03);
+
+		static const uint8_t info[] = { 0x04, 0x0A, 0x00, 0x0B, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, info, sizeof info, o, &cid);    /* 128-bit first: one entry */
+		CHECK(n == 2 + 18 && o[1] == 2 && o[2] == GATT_H_TX && o[19] == 0x6E);
+		static const uint8_t info2[] = { 0x04, 0x0B, 0x00, 0x0B, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, info2, sizeof info2, o, &cid);
+		CHECK(n == 6 && o[1] == 1 && o[2] == GATT_H_TX_CCCD && o[4] == 0x02 && o[5] == 0x29);
+
+		static const uint8_t find[] = { 0x06, 0x01, 0x00, 0xFF, 0xFF, 0x00, 0x28,
+		                                0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, 0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E };
+		n = GATT_Input(L2CAP_CID_ATT, find, sizeof find, o, &cid);
+		CHECK(n == 5 && o[0] == 0x07 && o[1] == GATT_H_NUS && o[3] == GATT_H_LAST);
+
+		static const uint8_t rname[] = { 0x0A, GATT_H_NAME, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, rname, sizeof rname, o, &cid);
+		CHECK(n == 10 && o[0] == 0x0B && !memcmp(o + 1, "UV5R-MINI", 9));
+		static const uint8_t blob[] = { 0x0C, GATT_H_NAME, 0x00, 5, 0 };
+		n = GATT_Input(L2CAP_CID_ATT, blob, sizeof blob, o, &cid);
+		CHECK(n == 5 && o[0] == 0x0D && !memcmp(o + 1, "MINI", 4));
+		static const uint8_t rtx[] = { 0x0A, GATT_H_TX, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, rtx, sizeof rtx, o, &cid);
+		CHECK(n == 5 && o[0] == 0x01 && o[4] == 0x02);
+		static const uint8_t rbad[] = { 0x0A, 0x40, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, rbad, sizeof rbad, o, &cid);
+		CHECK(n == 5 && o[4] == 0x01);
+
+		CHECK(!GATT_NotifyOn());
+		static const uint8_t cccd[] = { 0x12, GATT_H_TX_CCCD, 0x00, 0x01, 0x00 };
+		n = GATT_Input(L2CAP_CID_ATT, cccd, sizeof cccd, o, &cid);
+		CHECK(n == 1 && o[0] == 0x13 && GATT_NotifyOn());
+
+		static const uint8_t wr[] = { 0x52, GATT_H_RX, 0x00, 'H', 'I' };
+		n = GATT_Input(L2CAP_CID_ATT, wr, sizeof wr, o, &cid);
+		CHECK(n == 0 && rx_len == 2 && !memcmp(rx_buf, "HI", 2));
+		static const uint8_t wreq[] = { 0x12, GATT_H_RX, 0x00, '!' };
+		n = GATT_Input(L2CAP_CID_ATT, wreq, sizeof wreq, o, &cid);
+		CHECK(n == 1 && o[0] == 0x13 && rx_len == 3 && rx_buf[2] == '!');
+		static const uint8_t wname[] = { 0x12, GATT_H_NAME, 0x00, 'X' };
+		n = GATT_Input(L2CAP_CID_ATT, wname, sizeof wname, o, &cid);
+		CHECK(n == 5 && o[4] == 0x03);
+
+		static const uint8_t odd[] = { 0x20, 0x01 };
+		CHECK(GATT_Input(L2CAP_CID_ATT, odd, sizeof odd, o, &cid) == 5 && o[4] == 0x06);
+		static const uint8_t cmd[] = { 0x60, 0x01 };
+		CHECK(GATT_Input(L2CAP_CID_ATT, cmd, sizeof cmd, o, &cid) == 0);
+		static const uint8_t conf[] = { 0x1E };
+		CHECK(GATT_Input(L2CAP_CID_ATT, conf, sizeof conf, o, &cid) == 0);
+
+		static const uint8_t pair[] = { 0x01, 0x03, 0x00, 0x01, 0x10, 0x07, 0x07 };
+		n = GATT_Input(L2CAP_CID_SMP, pair, sizeof pair, o, &cid);
+		CHECK(n == 2 && cid == 6 && o[0] == 0x05 && o[1] == 0x05);
+		static const uint8_t sig[] = { 0x12, 0x07, 0x08, 0x00, 6, 0, 6, 0, 0, 0, 0x2C, 0x01 };
+		n = GATT_Input(L2CAP_CID_SIG, sig, sizeof sig, o, &cid);
+		CHECK(n == 6 && cid == 5 && o[0] == 0x01 && o[1] == 0x07 && o[4] == 0 && o[5] == 0);
+		static const uint8_t sigrsp[] = { 0x13, 0x07, 0x02, 0x00, 0, 0 };
+		CHECK(GATT_Input(L2CAP_CID_SIG, sigrsp, sizeof sigrsp, o, &cid) == 0);
+
+		n = GATT_Notify((const uint8_t *)"0123456789ABCDEFGHIJKLMN", 24, o);
+		CHECK(n == 23 && o[0] == 0x1B && o[1] == GATT_H_TX && o[22] == 'J');
+
+		GATT_Reset("A-NAME-LONGER-THAN-20-CHARS", 0);
+		CHECK(!GATT_NotifyOn());
+		n = GATT_Input(L2CAP_CID_ATT, rname, sizeof rname, o, &cid);
+		CHECK(n == 21);
+		n = GATT_Input(L2CAP_CID_ATT, wr, sizeof wr, o, &cid);    /* no handler: dropped */
+		CHECK(n == 0 && rx_len == 3);
 	}
 
 	printf("%d checks, %d failed\n", checks, fails);
