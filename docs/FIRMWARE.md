@@ -23,7 +23,7 @@ JieLi "ENC": each byte is XORed with the low byte of a CRC16-CCITT LFSR, which t
 
 ## app.bin
 
-- Startup at 0x01E00100: `call`, set `sp`/`ssp` = 0xD910, copy .data from 0x01E77BA0 to RAM
+- Startup at 0x01E00100: `call`, set `sp`/`ssp` = 0xD910 (stock's main code then runs as RTOS tasks on their own stacks), copy .data from 0x01E77BA0 to RAM
   0x800000 region, zero .bss, clear `icfg` bits 8–9, call init, jump to `main`.
 - 95.4% of bytes decode as pi32v2 by linear sweep (the rest is text/tables).
 - Contains the JieLi soundbox SDK (Bluetooth HFP/A2DP, FM, USB audio) plus the radio application:

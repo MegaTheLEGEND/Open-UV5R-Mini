@@ -6,7 +6,8 @@
  *   0x1000 and runs at 0x02001000, the instruction alias of RAM, as the stock app runs its own RAM code
  *   (docs/RE-NOTES.md, "First boot").
  * RAM:  our .data and .bss at 0x14000..0x22000, inside the range the stock app keeps for its own variables, so
- *   the low RAM stays as the bootloader left it. The stacks are at 0xD910 (start.S), as stock.
+ *   the low RAM stays as the bootloader left it. The main stack is at 0xD910 (start.S), as stock;
+ *   the interrupt stack is in .bss (start.S).
  * RAM2: 0x22000..0x2BF00, also the stock app's and free under ours: the FM radio's heap and DAC buffer (.ram2,
  *   not cleared at start). 0x2BF00 is the interrupt vector table (fixed in hardware; driver/irq.h).
  * JieLi's FM and DAC libraries (ENABLE_APP_FM) bring sections of their own names: their code goes with .text,
