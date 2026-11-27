@@ -2785,7 +2785,16 @@ void APP_Tick(void)
 		side_switch();                     /* the transmission on the other side is over: back to the selected one */
 		s_tx_swapped = false;
 	}
-	RADIO_Tick();
+	{
+		/* radio.c counts in 10 ms steps (beep length, squelch open / close, tone checks): one step each 10 ms of real
+		 * time, however often this tick runs (Sean, 2026-11-27: at 2 ms ticks the beeps ran 5x long) */
+		static uint16_t radio_ms;
+		radio_ms = (uint16_t)(radio_ms + APP_TICK_MS);
+		while (radio_ms >= 10u) {
+			radio_ms = (uint16_t)(radio_ms - 10u);
+			RADIO_Tick();
+		}
+	}
 	gAppsUptimeMs += APP_TICK_MS;
 	{
 		static RadioState_t last;
