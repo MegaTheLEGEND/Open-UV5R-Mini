@@ -275,6 +275,15 @@ int main(int argc, char **argv)
 		snprintf(path, sizeof path, "%s/app_fm.ppm", dir);
 		dump(path);
 
+		/* FM radio in a normal build: no diagnostics, RDS station name and radio text instead */
+		memset(fm.diag, 0, sizeof fm.diag);
+		strcpy(fm.freq, "98.9");
+		strcpy(fm.ps, "KKZX    ");
+		strcpy(fm.rt, "NOW PLAYING: SOME SON");
+		UI_FmDraw(&fm, true);
+		snprintf(path, sizeof path, "%s/app_fm_rds.ppm", dir);
+		dump(path);
+
 		/* channel book, drawn with the menu screen */
 		static const char *const CH[] = { "001 CALLING", "002 145.500", "005 CITY RPTR", "012 W1AW",
 		                                  "013 GMRS 20", "020 MARINE 16", "021 NOAA 1" };

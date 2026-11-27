@@ -73,7 +73,8 @@ void UI_GameScore(const char *text);
  *   y 16-39   the frequency, large ("101.5"), "MHZ" beside it
  *   y 46-53   the level bar
  *   y 60      volume
- *   y 74-104  three lines of diagnostics (dim): how far the receiver got, interrupts, DAC
+ *   y 74-104  three lines of diagnostics (dim): how far the receiver got, interrupts, DAC; when they are empty,
+ *             RDS: the station name (large, y 74) and the radio text (y 96)
  *   y 116     typed digits, a message, or the keys */
 typedef struct {
 	char    freq[8];                     /* "101.5" */
@@ -81,6 +82,8 @@ typedef struct {
 	uint8_t level;                       /* 0..100 */
 	uint8_t vol;                         /* 0..15 */
 	char    diag[3][22];
+	char    ps[9];                       /* RDS station name, "" for none */
+	char    rt[22];                      /* RDS radio text, the part shown */
 	char    bottom[22];
 	bool    bottom_warn;
 } UiFm_t;

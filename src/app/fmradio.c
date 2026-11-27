@@ -19,6 +19,7 @@
 #include "app/keys.h"
 #include "platform/jl_sdk/fmrx.h"
 #include "radio/radio.h"
+#include "radio/rds.h"
 #include "ui/screen_apps.h"
 #include "driver/system.h"
 #include "ui/helper.h"
@@ -37,6 +38,8 @@ static uint16_t s_ms, s_msg_ms;
 static uint32_t s_last_irqs, s_last_out;
 static bool     s_ok, s_started;
 static uint32_t s_mode;
+static uint8_t  s_rt_len, s_rt_off;      /* RDS radio text: its length, where the scrolling window starts */
+static uint16_t s_rt_ms;
 
 static char *put_hex(char *p, uint32_t v, int digits)
 {
@@ -90,8 +93,47 @@ static void typed_text(void)
 	s_msg_ms = 0;
 }
 
+/* the radio text window: 21 characters of it, scrolling when it is longer */
+static void rt_window(void)
+{
+	const char *rt = RDS_Info()->rt;
+	unsigned i;
+
+	if (s_rt_len <= 21u) {
+		for (i = 0; i < s_rt_len; i++)
+			s_f.rt[i] = rt[i];
+		s_f.rt[i] = 0;
+		return;
+	}
+	for (i = 0; i < 21u; i++) {          /* round and round, three spaces between the end and the start */
+		unsigned k = (s_rt_off + i) % (s_rt_len + 3u);
+		s_f.rt[i] = k < s_rt_len ? rt[k] : ' ';
+	}
+	s_f.rt[21] = 0;
+}
+
+/* RDS changed: the station name (once its PI is known) and the radio text */
+static void rds_text(void)
+{
+	const RdsInfo_t *r = RDS_Info();
+	unsigned n = 64;
+
+	if (r->pi)
+		copy(s_f.ps, r->ps, sizeof s_f.ps);
+	else
+		s_f.ps[0] = 0;
+	while (n && r->rt[n - 1u] == ' ')
+		n--;
+	if (n != s_rt_len)
+		s_rt_off = 0;
+	s_rt_len = (uint8_t)n;
+	rt_window();
+}
+
 static void tune(uint32_t khz)
 {
+	s_f.ps[0] = s_f.rt[0] = 0;
+	s_rt_len = s_rt_off = 0;
 	if (khz < FMRX_MIN_KHZ)
 		khz = FMRX_MAX_KHZ;
 	else if (khz > FMRX_MAX_KHZ)
@@ -163,6 +205,18 @@ static void diag(void)
 	p = APPS_PutInt(p, (int)(st.dac_drop > 99999u ? 99999u : st.dac_drop));
 	*p++ = ' '; *p++ = 'A';
 	APPS_PutInt(p, (int)(st.asserts > 99u ? 99u : st.asserts));
+
+	{                                    /* RDS on the first line: "R2D09 P S 453/0" = PI, pilot locked, block sync,
+	                                      * good / bad blocks */
+		const RdsInfo_t *r = RDS_Info();
+		p = s_f.diag[0];
+		*p++ = 'R';
+		p = put_hex(p, r->pi, 4);
+		*p++ = ' '; *p++ = r->pilot ? 'P' : '-'; *p++ = ' '; *p++ = r->sync ? 'S' : '-'; *p++ = ' ';
+		p = APPS_PutInt(p, (int)(r->blocks_ok > 99999u ? 99999u : r->blocks_ok));
+		*p++ = '/';
+		APPS_PutInt(p, (int)(r->blocks_bad > 9999u ? 9999u : r->blocks_bad));
+	}
 }
 
 /* the breadcrumbs of the last start, before this one: "LAST 57 G4 M3", "IRQS 0 EXC 0", "PC 01E0ABCD 01E0AB00" */
@@ -439,6 +493,21 @@ static AppsResult_t tick(bool full)
 	}
 	if (s_msg_ms && (s_msg_ms = s_msg_ms > APP_TICK_MS ? (uint16_t)(s_msg_ms - APP_TICK_MS) : 0) == 0)
 		hint();
+	if (s_ok && (s_mode & FMRX_RX)) {    /* RDS: decode what the FM interrupt gathered; the text scrolls */
+		bool redraw = false;
+		if (RDS_Poll()) {
+			rds_text();
+			redraw = true;
+		}
+		if (s_rt_len > 21u && (s_rt_ms = (uint16_t)(s_rt_ms + APP_TICK_MS)) >= 400u) {
+			s_rt_ms = 0;
+			s_rt_off = (uint8_t)((s_rt_off + 1u) % (s_rt_len + 3u));
+			rt_window();
+			redraw = true;
+		}
+		if (redraw)
+			UI_FmDraw(&s_f, false);
+	}
 	if ((s_ms = (uint16_t)(s_ms + APP_TICK_MS)) >= 1000u) {
 		s_ms = 0;
 		diag();

@@ -6,6 +6,7 @@
 #include "driver/irq.h"
 #include "driver/system.h"
 #include "driver/uart.h"
+#include "radio/rds.h"
 
 static void ls(const char *s);
 static void ld(uint32_t v);
@@ -317,6 +318,9 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
+	/* RDS: the raw FM samples of the block just demodulated (the half the DMA is not filling; HF_CON1 bit 5 says
+	 * which, as for the RDS captures on Sean's radio, 2026-11-26) */
+	RDS_FeBlock((const volatile int32_t *)(fm_adc_dat + ((~REG32(0x001F1714u) << 6) & 0x800u)), 512u);
 	if (s_isr_log < 3u) {                /* the first calls after the FM block restart, on the cable */
 		uint32_t pc = 0;
 #ifdef __PI32V2__
@@ -1188,7 +1192,10 @@ bool FMRX_Tune(uint32_t khz)
 {
 	if (!s_open || !(s_mode & FMRX_RX) || khz < FMRX_MIN_KHZ || khz > FMRX_MAX_KHZ)
 		return false;
-	return fm_inside_freq_set(khz) != 0;
+	bool found = fm_inside_freq_set(khz) != 0;
+
+	RDS_Reset(0);                        /* a new station: decode from scratch */
+	return found;
 }
 
 int FMRX_Rssi(void) { return s_open && (s_mode & FMRX_RX) ? fm_inside_rssi_read() : 0; }

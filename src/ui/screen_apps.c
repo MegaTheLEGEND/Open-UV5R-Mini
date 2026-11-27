@@ -226,6 +226,18 @@ void UI_FmDraw(const UiFm_t *f, bool full)
 	for (int i = 0; i < 3; i++)
 		if (full || differ(f->diag[i], o->diag[i]))
 			UI_PrintPadded(f->diag[i], 2, (uint8_t)(74 + 11 * i), COLOR_DIM, COLOR_BG, 21);
+	if (!f->diag[0][0] && !f->diag[1][0] && !f->diag[2][0]) {   /* RDS where the diagnostics would be */
+		if (full || differ(f->ps, o->ps)) {
+			unsigned n = text_len(f->ps);
+			while (n && f->ps[n - 1u] == ' ')   /* centred on the name, not its padding */
+				n--;
+			ST7735S_FillRect(0, 72, LCD_WIDTH, 18, COLOR_BG);
+			UI_PrintString(f->ps, (uint8_t)(n * 12u < LCD_WIDTH ? (LCD_WIDTH - n * 12u) / 2u : 0u), 74, COLOR_TEXT,
+			               COLOR_BG, 2);
+		}
+		if (full || differ(f->rt, o->rt))
+			UI_PrintPadded(f->rt, 2, 96, COLOR_INFO, COLOR_BG, 21);
+	}
 	if (full || differ(f->bottom, o->bottom) || f->bottom_warn != o->bottom_warn)
 		UI_PrintPadded(f->bottom, 2, 116, f->bottom_warn ? COLOR_WARN : COLOR_DIM, COLOR_BG, 21);
 	s_fm_shown = *f;

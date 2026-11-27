@@ -23,7 +23,7 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/driver/irq.c \
        src/ui/font.c src/ui/helper.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
        src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
-       src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c \
+       src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c \
        src/ui/screen_apps.c
 ASM := src/start.S src/update/handover.S
 
@@ -52,7 +52,7 @@ ifeq ($(ENABLE_APP_FM),1)
 LIBS := --start-group build/sdk/cpu.a build/sdk/media.a --end-group \
         $(wildcard $(if $(TOOLCHAIN),$(TOOLCHAIN)/../lib/clang/*/lib/pi32v2/libclang_rt.builtins.a,))
 else
-SRC := $(filter-out src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c,$(SRC))
+SRC := $(filter-out src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c,$(SRC))
 LIBS :=
 endif
 
