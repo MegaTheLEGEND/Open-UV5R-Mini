@@ -691,3 +691,16 @@ Timing: one counter at `0x198C0+5214` (`h[2607]`), decremented on every call of 
 ### Keypad (checked on a radio, key test ROWS readout, 2026-11-21)
 
 Wired to GND: V/M on PC5, A/B on PC3, flashlight on PC4 (PC2: no key). Row PA6: Menu PC5, Up PC4, Down PC3, Exit PC2. Row PA7: 7 8 9 # on PC5..PC2. Row PA8: 4 5 6 0. Row PA9: 1 2 3 *. The scan needs a settle wait after switching a row: 1 us was too short, 20 us works.
+
+## Boot ROM: entering the USB download (rescue) mode from software (2026-11-27)
+
+From the boot ROM dumped from Sean's radio (0x110000, 64 KB; read in the rescue mode, kept in the git-ignored
+`firmware/backups/`):
+
+| What | Where | Fact |
+| --- | --- | --- |
+| Boot tag | RAM `0x10804`, 8 bytes | `75 73 62 ED 63 81 67 EF` ("usb"...) = USB download mode; `75 61 72 74 D9 C4 05 A8` ("uart"...) = UART download mode. The ROM checks it when no USB key was sent, then clears it, so the next power-on boots normally (ROM `0x001102E8`; the tag words at `0x001102CE`/`0x001102D6`) |
+| USB keys | ROM `0x00112002` loop | `0x16EF` (the usual key, as jl-uboot-tool's docs say) and `0x6B7C` (another mode) |
+| Soft reset | ROM `0x001102DE` | P33 register `0xA0` (`P3_PR_PWR`, public BR23 SDK) written with `0x10`, then a loop |
+
+Our DEBUGGING builds use it: MENU → ABOUT, `*` twice (`src/app/app.c`). Not run on a radio yet.
