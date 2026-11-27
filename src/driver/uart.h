@@ -17,6 +17,9 @@
 #include <stdint.h>
 
 void UART_Init(uint32_t baud);
+/* The UART off and the USB pins back as they were before the first UART_Init (the USB controller as the loader left
+ * it), e.g. before restarting into the boot ROM's USB download mode. */
+void UART_Release(void);
 void UART_SetBaud(uint32_t baud);
 void UART_Send(const uint8_t *data, uint32_t len);
 /* Up to max bytes, waiting at most timeout_ms for the first; returns the count (0 on time-out). */

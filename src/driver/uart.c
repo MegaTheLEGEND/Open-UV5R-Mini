@@ -194,6 +194,16 @@ void UART_RouteSkip(int reg, uint32_t mask)
 	route_usb_pins();
 }
 
+void UART_Release(void)
+{
+	CON1 = 0;
+	CON0 = CON_CLR_TX | CON_CLR_RX | CON_CLR_OT;
+	if (!s_have_orig)
+		return;
+	for (int i = UART_ROUTE_REGS - 1; i >= 0; i--)   /* the IO map first, the USB controller last */
+		*route_reg(i) = s_orig[i];
+}
+
 void UART_Init(uint32_t baud)
 {
 	CON1 = 0;

@@ -37,6 +37,7 @@
 #include "driver/keyboard.h"
 #include "driver/st7735s.h"
 #include "driver/system.h"
+#include "driver/uart.h"
 #include "ui/helper.h"
 #include "ui/screen_main.h"
 #include "ui/screen_menu.h"
@@ -1444,6 +1445,14 @@ static void draw_about(void)
 static void reboot_to_rescue(void)
 {
 	IRQ_GlobalOff();
+	/* Sean, 2026-11-27: the first try restarted but the PC found nothing. Our cable UART had the USB pins (D+ / D-)
+	 * and the USB controller off, and the soft reset may leave those as they are: give them back, and hold off a
+	 * moment so the PC sees the line let go before the ROM starts its USB device. */
+	UART_Release();
+	for (unsigned i = 0; i < 300u; i++) {
+		SYSTEM_WatchdogClear();
+		SYSTEM_DelayUs(1000);
+	}
 	*(volatile uint32_t *)0x00010804u = 0xED627375u;   /* "usb" 0xED */
 	*(volatile uint32_t *)0x00010808u = 0xEF678163u;
 	P33_Write(0xA0u, 0x10u);
