@@ -2767,8 +2767,11 @@ void APP_Tick(void)
 		s_tx_refused = s_tx_why || !RADIO_StartTx();
 		if (s_tx_refused)
 			RADIO_Beep(400, 150);
-		else
+		else {
 			ptt_id_start(1);
+			if (DEBUG_ON)                    /* what keyed it (Sean, 2026-11-27: TX on EXIT and on blowing into the mic) */
+				note(ptt_a && ptt_b ? "TX BY PTT-A+B" : ptt_a ? "TX BY PTT-A" : "TX BY PTT-B", COLOR_WARN);
+		}
 	} else if (!ptt && s_ptt_down) {
 		if (RADIO_State() == RADIO_TX) {
 			DTMFSEQ_Stop();                /* an up code still going is cut short */
@@ -2832,6 +2835,8 @@ void APP_Tick(void)
 		if (v == VOX_START && !tx_busy_locked() && !tx_batt_locked()) {
 			dw_end();
 			RADIO_StartTx();
+			if (DEBUG_ON)
+				note("TX BY VOX", COLOR_WARN);
 		} else if (v == VOX_STOP)
 			RADIO_EndTx();
 	}
