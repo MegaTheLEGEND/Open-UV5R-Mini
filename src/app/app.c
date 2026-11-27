@@ -2047,15 +2047,18 @@ static bool splash(void)
 		blank = b[i] == 0xFFu;
 	if (blank)
 		return false;
-	ST7735S_SetWindow(0, 0, 128, 128);
+	/* two rows at a time: the flash and the LCD share SPI1 (the LCD's pixels go out by DMA), so each read finishes
+	 * before its rows are drawn and each window ends before the next read (Sean, 2026-11-27: reading inside one
+	 * open window drew two white rows, then black, then the radio restarted) */
 	for (uint32_t a = 0; a < 128u * 128u * 2u; a += sizeof b) {
 		if (a)
 			EXTFLASH_Read(SPLASH_ADDR + a, b, sizeof b);
+		ST7735S_SetWindow(0, (uint8_t)(a / 256u), 128, (uint8_t)(sizeof b / 256u));
 		for (unsigned i = 0; i < sizeof b; i += 2u)
 			ST7735S_PushPixel((uint16_t)(b[i] | b[i + 1u] << 8));
+		ST7735S_End();
 		SYSTEM_WatchdogClear();
 	}
-	ST7735S_End();
 	ST7735S_SetBacklight(true);
 	return true;
 }
@@ -2329,16 +2332,9 @@ void APP_Init(void)
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	gAppsFlashOk = s_xf_ok;
-	{
-		/* the radio's own power-on picture while the beep's audio starts (Sean, 2026-11-27; ROADMAP 4.8) */
-		uint32_t t0 = SYSTEM_Ms();
-		bool shown = s_xf_ok && splash();
-#if APP_FM_ENABLE
-		FMRX_BeepPrepare();
-#endif
-		while (shown && SYSTEM_Ms() - t0 < SPLASH_MIN_MS)
-			SYSTEM_DelayMs(10);
-	}
+	/* the radio's own power-on picture while the rest starts, the beeps' audio last (Sean, 2026-11-27; ROADMAP 4.8) */
+	uint32_t splash_t0 = SYSTEM_Ms();
+	bool splash_on = s_xf_ok && splash();
 	if (s_xf_ok) {
 		static uint8_t cal[CALIB_LEN];
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
@@ -2361,6 +2357,11 @@ void APP_Init(void)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 #endif
 	BT_Init(0);
+#if APP_FM_ENABLE
+	FMRX_BeepPrepare();                  /* the beeps' DAC, with everything else ready (behind the picture) */
+#endif
+	while (splash_on && SYSTEM_Ms() - splash_t0 < SPLASH_MIN_MS)
+		SYSTEM_DelayMs(10);
 	go(SCREEN_MAIN);
 	if (hidden_menu) {
 		s_menu_hidden = true;
