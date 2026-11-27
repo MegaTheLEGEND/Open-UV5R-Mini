@@ -279,9 +279,10 @@ void delay(volatile uint32_t n)          /* JieLi's busy loop: a count, not a ti
 	SYSTEM_WatchdogClear();
 	gFmDelays++;
 	gFmDelayFrom = (uint32_t)(uintptr_t)__builtin_return_address(0);
-	/* the screen line costs about as much as a short delay: every call only once the receiver starts (step 71),
-	 * else the DAC trim's thousands of delays took minutes (Sean's tenth try, 2026-11-25) */
-	if (gFmBeat && (gFmCrumb.step >= 71u || (gFmDelays & 1023u) == 0u))
+	/* the screen line costs far more than a short delay: only every 1024th call. Every call from step 71 on made
+	 * fm_inside_on take about 19 s (Sean's radio, cable log 2026-11-26: about 2000 delays, 4000 screen lines); the
+	 * DAC trim's thousands of delays once took minutes (Sean's tenth try, 2026-11-25) */
+	if (gFmBeat && (gFmDelays & 1023u) == 0u)
 		gFmBeat();
 	while (n--)
 		__asm__ volatile("nop");

@@ -701,7 +701,7 @@ __attribute__((unused)) static IRQ_HANDLER void fm_isr_ours(void)
  *   f            restart the FM block in stock's order (fm_block_restart)
  *   c A [r0 r1 r2 r3]  call the function at A, print r0
  *   x            leave the monitor, carry on with the FM start */
-#define FM_MONITOR 1
+#define FM_MONITOR 0
 
 static void canary_fill(void);
 static void canary_log(const char *when);
