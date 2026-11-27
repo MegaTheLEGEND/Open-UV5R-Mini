@@ -1228,5 +1228,21 @@ void FMRX_Stats(FmrxStats_t *s)
 		ls(" peak ");
 		ld(s->peak);
 		lend();
+		{
+			const RdsInfo_t *r = RDS_Info();
+			ls("FMLOG rds pi ");
+			lh(r->pi);
+			ls(" pilot ");
+			ld(r->pilot);
+			ls(" sync ");
+			ld(r->sync);
+			ls(" ok ");
+			ld(r->blocks_ok);
+			ls(" bad ");
+			ld(r->blocks_bad);
+			ls(" ps ");
+			ls(r->ps);
+			lend();
+		}
 	}
 }
