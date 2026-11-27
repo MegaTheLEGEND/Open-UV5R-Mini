@@ -26,7 +26,8 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c \
        src/ui/screen_apps.c src/ui/status.c \
        src/app/monitor.c src/app/aprs.c src/radio/ax25.c src/radio/aprs.c src/radio/fskrx.c \
-       src/app/subghz.c src/radio/ook.c
+       src/app/subghz.c src/radio/ook.c \
+       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c
 ASM := src/start.S src/update/handover.S
 
 include features.mk
@@ -50,6 +51,12 @@ SRC := $(filter-out src/app/aprs.c src/radio/aprs.c src/radio/fskrx.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_SUBGHZ),0)
 SRC := $(filter-out src/app/subghz.c src/radio/ook.c,$(SRC))
+endif
+ifeq ($(ENABLE_APP_BTSCAN),0)
+SRC := $(filter-out src/app/btscan.c src/bt/le_adv.c,$(SRC))
+endif
+ifeq ($(ENABLE_APP_BTINFO),0)
+SRC := $(filter-out src/app/btinfo.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_SNAKE),0)
 SRC := $(filter-out src/app/snake.c,$(SRC))

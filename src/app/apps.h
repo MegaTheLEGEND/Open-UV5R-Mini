@@ -9,6 +9,8 @@
  *   ENABLE_APP_SUBGHZ    app/subghz.c    315/433 MHz remote controls, receive only
  *   ENABLE_APP_SNAKE     app/snake.c     a snake game
  *   ENABLE_APP_FM        app/fmradio.c   FM broadcast radio (needs JieLi's libraries, features.mk)
+ *   ENABLE_APP_BTSCAN    app/btscan.c    BLE devices nearby (needs a Bluetooth backend that scans; bt/bt.h)
+ *   ENABLE_APP_BTINFO    app/btinfo.c    what the Bluetooth backend can do, the radio's BT address, BTIF
  *
  * app.c opens an app from the menu (or an = key action), hands it every key and calls its tick every APP_TICK_MS
  * while it is open. PTT closes it first. Drawing goes through ui/screen_apps.c (or the menu screen). */
@@ -39,6 +41,12 @@
 #endif
 #ifndef APP_SUBGHZ_ENABLE
 #define APP_SUBGHZ_ENABLE 1
+#endif
+#ifndef APP_BTSCAN_ENABLE
+#define APP_BTSCAN_ENABLE 1
+#endif
+#ifndef APP_BTINFO_ENABLE
+#define APP_BTINFO_ENABLE 1
 #endif
 #ifndef APP_FM_ENABLE
 #define APP_FM_ENABLE 0
@@ -121,6 +129,12 @@ extern const AppDef_t APP_SUBGHZ;
 #endif
 #if APP_SNAKE_ENABLE
 extern const AppDef_t APP_SNAKE;
+#endif
+#if APP_BTSCAN_ENABLE
+extern const AppDef_t APP_BTSCAN;
+#endif
+#if APP_BTINFO_ENABLE
+extern const AppDef_t APP_BTINFO;
 #endif
 
 /* "145.520" (MHz, 3 decimals) from 10 Hz units; returns the end */
