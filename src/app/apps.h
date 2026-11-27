@@ -13,6 +13,7 @@
  *   ENABLE_APP_BTINFO    app/btinfo.c    what the Bluetooth backend can do, the radio's BT address, BTIF
  *   ENABLE_APP_BTBEACON  app/btbeacon.c  the radio's own BLE beacon: name, iBeacon or Eddystone URL
  *   ENABLE_APP_BTSERIAL  app/btserial.c  a terminal on the Bluetooth serial link
+ *   ENABLE_APP_BTCHIRP   app/btchirp.c   CHIRP programming over the Bluetooth serial link
  *
  * app.c opens an app from the menu (or an = key action), hands it every key and calls its tick every APP_TICK_MS
  * while it is open. PTT closes it first. Drawing goes through ui/screen_apps.c (or the menu screen). */
@@ -56,6 +57,9 @@
 #ifndef APP_BTSERIAL_ENABLE
 #define APP_BTSERIAL_ENABLE 1
 #endif
+#ifndef APP_BTCHIRP_ENABLE
+#define APP_BTCHIRP_ENABLE 1
+#endif
 #ifndef APP_FM_ENABLE
 #define APP_FM_ENABLE 0
 #endif
@@ -65,6 +69,7 @@ typedef enum {
 	APPS_EXIT,                           /* back to the menu */
 	APPS_TUNE,                           /* back to the main screen, the VFO tuned to gAppsTune */
 	APPS_CHANNEL,                        /* back to the main screen on channel gAppsChannel (0-based) */
+	APPS_RELOAD,                         /* stay open; the channels and settings changed (BT CHIRP): load them again */
 } AppsResult_t;
 
 typedef struct {
@@ -149,6 +154,9 @@ extern const AppDef_t APP_BTBEACON;
 #endif
 #if APP_BTSERIAL_ENABLE
 extern const AppDef_t APP_BTSERIAL;
+#endif
+#if APP_BTCHIRP_ENABLE
+extern const AppDef_t APP_BTCHIRP;
 #endif
 
 /* "145.520" (MHz, 3 decimals) from 10 Hz units; returns the end */

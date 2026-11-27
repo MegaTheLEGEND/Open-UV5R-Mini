@@ -35,6 +35,20 @@
 #include "store/settings.h"
 #if PROGRAM_BT
 #include "bt/bt.h"
+#if BT_LE_ENABLE && !defined PROGRAM_HOST_TEST
+#include "driver/system.h"
+#include "platform/jl_sdk/bt_le.h"
+/* The BLE backend runs from the main loop: while a session waits for bytes, keep the controller running. */
+static void bt_wait_ms(uint32_t ms)
+{
+	uint32_t t0 = SYSTEM_Ms();
+	do {
+		BTLE_Tick();
+		SYSTEM_WatchdogClear();
+	} while ((uint32_t)(SYSTEM_Ms() - t0) < ms);
+}
+#define PROGRAM_WAIT_MS(ms) bt_wait_ms(ms)
+#endif
 #endif
 #ifndef PROGRAM_HOST_TEST
 #include "driver/system.h"
@@ -313,7 +327,11 @@ static bool write_block(uint32_t a, const uint8_t *d, uint32_t n)
  * one writer, one reader, so the two counters need no lock. Stock stages 1100 bytes; CHIRP waits for each reply,
  * so the longest it sends at once is one write (4 + 0x40 bytes). When full, the rest is dropped. */
 #define BT_Q 1024u
+#ifdef PROGRAM_HOST_TEST
 static volatile uint8_t  s_bt_q[BT_Q];
+#else
+static volatile uint8_t  s_bt_q[BT_Q] __attribute__((section(".ram2.program")));   /* .bss is full */
+#endif
 static volatile uint32_t s_bt_w, s_bt_r;
 static uint8_t           s_bt_window[16];
 
@@ -522,15 +540,26 @@ int PROGRAM_Poll(void)
 	int got;
 
 #if PROGRAM_BT
-	got = bt_take(b, sizeof b);          /* Bluetooth does not use the cable's pins: read even when they clash */
-	if (hello(s_bt_window, b, got))
-		return start(LINK_BT);
+	if ((got = PROGRAM_PollBt()) != PROGRAM_IDLE)
+		return got;
 #endif
 	if (s_off)
 		return PROGRAM_IDLE;
 	got = UART_Receive(b, sizeof b, 0);
 	return PROGRAM_PollBytes(b, got);
 }
+
+#if PROGRAM_BT
+int PROGRAM_PollBt(void)
+{
+	uint8_t b[32];
+	int got = bt_take(b, sizeof b);      /* Bluetooth does not use the cable's pins: read even when they clash */
+
+	if (hello(s_bt_window, b, got))
+		return start(LINK_BT);
+	return PROGRAM_IDLE;
+}
+#endif
 
 int PROGRAM_PollBytes(const uint8_t *b, int got)
 {

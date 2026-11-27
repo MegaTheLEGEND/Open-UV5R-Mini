@@ -579,7 +579,7 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 /* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
 #define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
                     + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE + APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE \
-                    + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE)
+                    + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE + APP_BTCHIRP_ENABLE)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
@@ -609,6 +609,9 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #endif
 #if APP_BTSERIAL_ENABLE
 	&APP_BTSERIAL,
+#endif
+#if APP_BTCHIRP_ENABLE
+	&APP_BTCHIRP,
 #endif
 #if APP_BTINFO_ENABLE
 	&APP_BTINFO,
@@ -2515,7 +2518,7 @@ void APP_Init(void)
 	if (s_xf_ok)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 #endif
-#if PROGRAM_ENABLE && PROGRAM_BT
+#if PROGRAM_ENABLE && PROGRAM_BT && !BT_LE_ENABLE
 	BT_Init(PROGRAM_BtReceive);  /* CHIRP over Bluetooth SPP (Bluetooth edition) */
 #else
 	BT_Init(0);
@@ -2889,6 +2892,17 @@ static bool ptt_debounced(bool raw, unsigned i)
 	return state[i];
 }
 
+/* what an app's key or tick returned */
+static void app_result(AppsResult_t r)
+{
+	if (r == APPS_RELOAD) {              /* BT CHIRP wrote new channels and settings: as after a cable upload */
+		start_from_stock();
+		return;
+	}
+	if (r != APPS_STAY)
+		app_close(r);
+}
+
 void APP_Tick(void)
 {
 	KEY_Code_t k;
@@ -3210,8 +3224,7 @@ void APP_Tick(void)
 				a = KEY_STAR;
 			s_fkey = false;                      /* F is for one key, then off */
 			r = s_app ? s_app->key(a) : APPS_EXIT;
-			if (r != APPS_STAY)
-				app_close(r);
+			app_result(r);
 		} else if (s_screen == SCREEN_ABOUT) {
 			s_fkey = false;
 #if DEBUGGING
@@ -3251,8 +3264,7 @@ void APP_Tick(void)
 		UI_StatusHide();                   /* the screen draws its bar again, or has none */
 	if (s_screen == SCREEN_APP) {          /* asleep too: the FM radio plays on */
 		AppsResult_t r = s_app ? s_app->tick(s_redraw && !s_asleep) : APPS_EXIT;
-		if (r != APPS_STAY)
-			app_close(r);
+		app_result(r);
 	} else if (s_asleep)
 		;                                  /* the panel is off: nothing drawn */
 	else if (s_screen == SCREEN_MAIN) {

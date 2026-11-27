@@ -30,6 +30,12 @@ enum { PROGRAM_IDLE, PROGRAM_DONE_READ, PROGRAM_DONE_WRITTEN };
 void PROGRAM_BtReceive(const uint8_t *data, uint16_t len);
 #endif
 
+#if PROGRAM_BT
+/* The BLE edition's BT CHIRP app calls this every tick while it is open: a session when CHIRP says hello over
+ * Bluetooth (blocking, as PROGRAM_Poll), else PROGRAM_IDLE. */
+int PROGRAM_PollBt(void);
+#endif
+
 /* Set up the cable UART at 115200 (call once at start-up). */
 void PROGRAM_Init(void);
 

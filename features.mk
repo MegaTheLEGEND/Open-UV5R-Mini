@@ -64,6 +64,10 @@ ENABLE_APP_BTINFO   ?= 1
 ENABLE_APP_BTBEACON ?= 1
 # BT SERIAL: a small terminal on the Bluetooth serial link (src/app/btserial.c). Needs a serial link (SDK edition).
 ENABLE_APP_BTSERIAL ?= 1
+# BT CHIRP: CHIRP programming over the BLE serial link (src/app/btchirp.c, the cable's protocol from
+# src/app/program.c); on the PC tools/ble_serial.py bridges it to a TCP port CHIRP opens. Needs ENABLE_CHIRP and the
+# BLE backend (ENABLE_BT_LE); without them the app says so.
+ENABLE_APP_BTCHIRP  ?= 1
 # A snake game (src/app/snake.c).
 ENABLE_APP_SNAKE    ?= 1
 # FM broadcast radio, 64-108 MHz through the speaker (src/app/fmradio.c, src/platform/jl_sdk/fmrx.c). Needs JieLi's
@@ -106,5 +110,9 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DAPP_APRS_ENABLE=$(ENABLE_APP_APRS) -DAPP_SUBGHZ_ENABLE=$(ENABLE_APP_SUBGHZ) \
                  -DAPP_BTSCAN_ENABLE=$(ENABLE_APP_BTSCAN) -DAPP_BTINFO_ENABLE=$(ENABLE_APP_BTINFO) \
                  -DAPP_BTBEACON_ENABLE=$(ENABLE_APP_BTBEACON) -DAPP_BTSERIAL_ENABLE=$(ENABLE_APP_BTSERIAL) \
-                 -DBT_LE_ENABLE=$(ENABLE_BT_LE) \
+                 -DAPP_BTCHIRP_ENABLE=$(ENABLE_APP_BTCHIRP) -DBT_LE_ENABLE=$(ENABLE_BT_LE) \
                  -DDEBUGGING=$(ENABLE_DEBUGGING)
+# CHIRP over the BLE serial link: the BT CHIRP app with the BLE backend and CHIRP programming
+ifeq ($(ENABLE_BT_LE)$(ENABLE_APP_BTCHIRP)$(ENABLE_CHIRP),111)
+FEATURE_FLAGS += -DPROGRAM_BT=1
+endif
