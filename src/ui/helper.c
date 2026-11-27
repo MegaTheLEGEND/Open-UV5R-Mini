@@ -4,6 +4,7 @@
 #include "driver/st7735s.h"
 #include "board.h"
 #include "ui/font.h"
+#include "app/monitor.h"
 
 static void draw_char(char c, uint8_t x, uint8_t y, uint16_t fg, uint16_t bg, uint8_t scale)
 {
@@ -12,6 +13,9 @@ static void draw_char(char c, uint8_t x, uint8_t y, uint16_t fg, uint16_t bg, ui
 	if (c < FONT_FIRST || c > FONT_LAST)
 		c = '?';
 	const uint8_t *glyph = gFont5x7[c - FONT_FIRST];
+#if DEBUGGING
+	MON_Char(c, x, y, scale);            /* what the screen says, for the PC (!screen) */
+#endif
 
 	/* 6 columns (5 + 1 spacing) by 8 rows, row-major as the panel expects */
 	ST7735S_SetWindow(x, y, 6 * scale, 8 * scale);

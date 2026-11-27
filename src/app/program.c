@@ -423,6 +423,14 @@ int PROGRAM_Poll(void)
 
 	if (s_off)
 		return PROGRAM_IDLE;
+	got = UART_Receive(b, sizeof b, 0);
+	return PROGRAM_PollBytes(b, got);
+}
+
+int PROGRAM_PollBytes(const uint8_t *b, int got)
+{
+	if (s_off)
+		return PROGRAM_IDLE;
 #ifndef PROGRAM_HOST_TEST
 	if (++s_check_ms >= 200u) {          /* every 200 polls: has something else broken the flash since start-up? */
 		s_check_ms = 0;
@@ -437,8 +445,6 @@ int PROGRAM_Poll(void)
 		}
 	}
 #endif
-	got = UART_Receive(b, sizeof b, 0);
-
 	for (int i = 0; i < got; i++) {
 		for (int j = 0; j < 15; j++)
 			s_window[j] = s_window[j + 1];

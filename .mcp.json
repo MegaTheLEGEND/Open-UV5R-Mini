@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "uv5r-radio": {
+      "command": "python",
+      "args": ["tools/radio_mcp.py"]
+    }
+  }
+}

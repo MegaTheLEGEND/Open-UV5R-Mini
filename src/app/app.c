@@ -15,6 +15,8 @@
 #if KEYTEST_ENABLE
 #include "app/keytest.h"
 #endif
+#include "app/monitor.h"
+#include "driver/uart.h"
 #include "app/program.h"
 #include "app/version.h"
 #include "radio/radio.h"
@@ -1858,6 +1860,16 @@ static void key_menu(KEY_Code_t k)
 }
 /* press events, with repeat for UP/DOWN after 0.5 s */
 static KEY_Code_t s_key_held = KEY_INVALID;
+#if DEBUGGING
+static KEY_Code_t s_mon_key = KEY_INVALID;
+static uint16_t   s_mon_key_ms;
+
+void APP_MonKey(KEY_Code_t k, uint16_t ms)
+{
+	s_mon_key = k;
+	s_mon_key_ms = ms;
+}
+#endif
 static bool       s_wait_release;
 
 /* Most keys act when pressed. Keys with a second job held act when let go if they were let go soon enough, or as
@@ -1876,6 +1888,13 @@ static KEY_Code_t key_event(void)
 	static uint16_t held, rep, cand_ms;  /* ms */
 	static bool pend, fired;             /* last waits for its let-go; its held job was done (or not wanted) */
 	KEY_Code_t raw = KEYBOARD_Poll(), k, out = KEY_INVALID;
+
+#if DEBUGGING
+	if (s_mon_key_ms) {                      /* a key pressed from the PC (!key): held for its time */
+		raw = s_mon_key;
+		s_mon_key_ms = s_mon_key_ms > APP_TICK_MS ? (uint16_t)(s_mon_key_ms - APP_TICK_MS) : 0;
+	}
+#endif
 
 	/* a new reading counts once it has stayed KEY_DEBOUNCE_MS (the loop polls every few ms now) */
 	if (raw != cand) {
@@ -2828,7 +2847,15 @@ void APP_Tick(void)
 	SYSTEM_WatchdogClear();
 
 	if (PROGRAM_ENABLE && s_xf_ok && RADIO_State() != RADIO_TX) {
+#if DEBUGGING
+		uint8_t mb[32];
+		int mn = UART_Receive(mb, sizeof mb, 0);
+		int p;
+		MON_Feed(mb, mn);                /* the PC's monitor commands ('!' lines), then CHIRP sees the same bytes */
+		p = PROGRAM_PollBytes(mb, mn);
+#else
 		int p = PROGRAM_Poll();          /* a whole CHIRP session runs inside this call */
+#endif
 		if (p == PROGRAM_DONE_WRITTEN)
 			start_from_stock();          /* new channels and settings */
 		if (p != PROGRAM_IDLE) {
@@ -3187,3 +3214,41 @@ void APP_Tick(void)
 		UI_StatusRefresh();
 	s_redraw = false;
 }
+
+#if DEBUGGING
+/* !state on the cable (app/monitor.h) */
+void APP_MonState(char *out, unsigned max)
+{
+	static const char *const SCR[] = { "MAIN", "MENU", "ABOUT", "APP", "HELP" };
+	char b[160], *o = b;
+	const char *q;
+	uint16_t r = RADIO_Rssi();
+
+	for (q = "screen "; *q; ) *o++ = *q++;
+	for (q = SCR[s_screen]; *q; ) *o++ = *q++;
+	if (s_screen == SCREEN_APP && s_app) {
+		for (q = " app "; *q; ) *o++ = *q++;
+		for (q = s_app->name; *q; q++)
+			*o++ = *q == ' ' ? '_' : *q;
+	}
+	for (q = " freq "; *q; ) *o++ = *q++;
+	o = APPS_FormatMhz(o, gVfo.freq);
+	for (q = RADIO_State() == RADIO_TX ? " TX" : " RX"; *q; ) *o++ = *q++;
+	for (q = " rssi "; *q; ) *o++ = *q++;
+	o = APPS_PutInt(o, r ? (int)(r / 2u) - 160 : -160);
+	for (q = RADIO_Carrier() ? " carrier" : " quiet"; *q; ) *o++ = *q++;
+	for (q = s_mr ? " MR " : " VFO "; *q; ) *o++ = *q++;
+	o = APPS_PutInt(o, s_ch);
+	for (q = " up_ms "; *q; ) *o++ = *q++;
+	o = APPS_PutInt(o, (int)gAppsUptimeMs);
+	for (q = " tick "; *q; ) *o++ = *q++;
+	o = APPS_PutInt(o, gAppTickMs);
+	*o = 0;
+	{
+		unsigned i = 0;
+		for (; i + 1u < max && b[i]; i++)
+			out[i] = b[i];
+		out[i] = 0;
+	}
+}
+#endif

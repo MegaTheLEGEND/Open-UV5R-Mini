@@ -33,5 +33,11 @@ void FSKRX_Stop(void);
 /* Every main-loop tick. Returns the length of an AX.25 frame just received (FCS left off) and sets *frame. */
 unsigned FSKRX_Poll(const uint8_t **frame);
 const FskRxStat_t *FSKRX_Stat(void);
+/* the last FSKRX_RAW FIFO words, oldest first; returns how many */
+#define FSKRX_RAW 32u
+unsigned FSKRX_Raw(uint16_t *out);
+/* a fixed sync word instead of the two taking turns (0, 0 = take turns again); takes effect at once */
+void FSKRX_SetSync(uint16_t hi, uint16_t lo);
+bool FSKRX_Inverted(void);               /* the 0x0101 sync word is in use now */
 
 #endif

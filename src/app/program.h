@@ -26,5 +26,7 @@ void PROGRAM_Init(void);
  * the PROGRAM screen) and returns how it ended: PROGRAM_DONE_WRITTEN means the channels or settings changed and the
  * app must reload them. */
 int  PROGRAM_Poll(void);
+/* the same with bytes already read from the cable (the debug monitor reads them first, app/monitor.h) */
+int  PROGRAM_PollBytes(const uint8_t *b, int got);
 
 #endif

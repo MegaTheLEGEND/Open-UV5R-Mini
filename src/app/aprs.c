@@ -18,6 +18,8 @@
 #if APP_APRS_ENABLE
 #include "app/app.h"
 #include "app/keys.h"
+#include "app/monitor.h"
+#include "driver/bk4819.h"
 #include "driver/st7735s.h"
 #include "radio/aprs.h"
 #include "radio/ax25.h"
@@ -336,6 +338,7 @@ static void heard(const uint8_t *frame, unsigned len)
 
 	if (!AX25_ToText(frame, len, text, sizeof text))
 		return;
+	MON_Event("aprs", text);
 	APRS_CallText(me, &s_c);
 	if (!APRS_Describe(text, me, &h))
 		return;
@@ -465,6 +468,166 @@ static void edit_key(KEY_Code_t k)
 	s_redraw = true;
 }
 
+/* ------------------------------------------------------------------ the cable monitor (debug builds) */
+#if DEBUGGING
+static char *ph(char *o, uint32_t v, unsigned d)
+{
+	for (unsigned k = d; k; k--) {
+		unsigned x = v >> (4u * (k - 1u)) & 15u;
+		*o++ = (char)(x < 10u ? '0' + x : 'A' + x - 10u);
+	}
+	*o = 0;
+	return o;
+}
+
+static bool mword(const char **s, const char *w)
+{
+	const char *p = *s;
+	while (*w)
+		if (*p++ != *w++)
+			return false;
+	if (*p && *p != ' ')
+		return false;
+	while (*p == ' ')
+		p++;
+	*s = p;
+	return true;
+}
+
+static uint32_t mhex(const char **s)
+{
+	uint32_t v = 0;
+	const char *p = *s;
+	for (;; p++) {
+		char c = *p;
+		if (c >= '0' && c <= '9') v = v << 4 | (uint32_t)(c - '0');
+		else if (c >= 'A' && c <= 'F') v = v << 4 | (uint32_t)(c - 'A' + 10);
+		else if (c >= 'a' && c <= 'f') v = v << 4 | (uint32_t)(c - 'a' + 10);
+		else break;
+	}
+	while (*p == ' ')
+		p++;
+	*s = p;
+	return v;
+}
+
+static bool mon(const char *a)
+{
+	char b[120], *o;
+	const FskRxStat_t *st = FSKRX_Stat();
+
+	if (mword(&a, "stat")) {
+		o = put(b, "@syncs ");
+		o = APPS_PutInt(o, st->syncs);
+		o = put(o, " done ");
+		o = APPS_PutInt(o, st->done);
+		o = put(o, " words ");
+		o = APPS_PutInt(o, st->words);
+		o = put(o, " frames ");
+		o = APPS_PutInt(o, st->frames);
+		o = put(o, " bad ");
+		o = APPS_PutInt(o, st->bad);
+		o = put(o, " mode ");
+		o = APPS_PutInt(o, st->mode);
+		o = put(o, " order ");
+		o = APPS_PutInt(o, st->order == 0xFF ? -1 : st->order);
+		o = put(o, FSKRX_Inverted() ? " sync 0101" : " sync FEFE");
+		MON_Line(b);
+		o = put(b, "@regs");
+		{
+			static const uint8_t R[] = { 0x02, 0x0C, 0x3F, 0x58, 0x59, 0x5A, 0x5B, 0x5C, 0x5D, 0x5E, 0x70, 0x72 };
+			for (unsigned i = 0; i < sizeof R; i++) {
+				*o++ = ' ';
+				o = ph(o, R[i], 2);
+				*o++ = '=';
+				o = ph(o, BK4819_ReadRegister(R[i]), 4);
+			}
+		}
+		MON_Line(b);
+		return true;
+	}
+	if (mword(&a, "raw")) {
+		static uint16_t w[FSKRX_RAW];
+		unsigned n = FSKRX_Raw(w);
+		for (unsigned i = 0; i < n; ) {
+			o = put(b, "@");
+			for (unsigned k = 0; k < 16u && i < n; k++, i++) {
+				o = ph(o, w[i], 4);
+				*o++ = ' ';
+			}
+			*o = 0;
+			MON_Line(b);
+		}
+		return true;
+	}
+	if (mword(&a, "mode")) {
+		s_mode = (uint8_t)(mhex(&a) & 1u);
+		FSKRX_Start(s_mode);
+		s_redraw = true;
+		return true;
+	}
+	if (mword(&a, "sync")) {             /* sync HHHH LLLL, or sync 0 0 = the flags, taking turns */
+		uint16_t hi = (uint16_t)mhex(&a);
+		FSKRX_SetSync(hi, (uint16_t)mhex(&a));
+		return true;
+	}
+	if (mword(&a, "restart")) {
+		FSKRX_Start(s_mode);
+		return true;
+	}
+	if (mword(&a, "beacon")) {
+		send_beacon();
+		MON_Line(s_say);
+		return true;
+	}
+	if (mword(&a, "conf")) {
+		o = put(b, "@call ");
+		o = APRS_CallText(o, &s_c);
+		o = put(o, " lat ");
+		o = APRS_LatText(o, s_c.lat);
+		o = put(o, " lon ");
+		o = APRS_LonText(o, s_c.lon);
+		o = put(o, " icon ");
+		o = put(o, APRS_IconName(s_c.icon));
+		o = put(o, " every ");
+		APPS_PutInt(o, s_c.every * 10);
+		MON_Line(b);
+		return true;
+	}
+	if (mword(&a, "heard")) {            /* heard <tnc2 text>: as if received (tests the list without a signal) */
+		uint8_t f[AX25_MAX_FRAME];
+		char src[10], dst[8], *p = src;
+		const char *t = a, *info;
+		unsigned n;
+		while (*t && *t != '>' && p < src + 9)
+			*p++ = *t++;
+		*p = 0;
+		if (*t++ != '>')
+			return false;
+		for (p = dst; *t && *t != ':' && *t != ',' && p < dst + 7; )
+			*p++ = *t++;
+		*p = 0;
+		for (info = t; *info && *info != ':'; info++)
+			;
+		if (!*info)
+			return false;
+		info++;
+		{
+			unsigned il = 0;
+			while (info[il])
+				il++;
+			n = AX25_BuildUi(f, sizeof f, dst, src, "", (const uint8_t *)info, il);
+		}
+		if (!n)
+			return false;
+		heard(f, n - 2u);
+		return true;
+	}
+	MON_Line("@app: stat raw mode N sync HHHH LLLL restart beacon conf heard TNC2");
+	return mword(&a, "help");
+}
+#endif
+
 /* ------------------------------------------------------------------ the app */
 static void enter(void)
 {
@@ -483,6 +646,9 @@ static void enter(void)
 	gVfo.ptt_id = 0;
 	RADIO_Apply();
 	FSKRX_Start(s_mode);
+#if DEBUGGING
+	gMonApp = mon;
+#endif
 	s_view = V_LIST;
 	s_sel = 0;
 	s_say_ms = 0;
@@ -496,6 +662,9 @@ static void leave(void)
 	uint8_t p[APRS_PACK_LEN];
 
 	FSKRX_Stop();
+#if DEBUGGING
+	gMonApp = 0;
+#endif
 	gVfo = s_vfo_was;
 	RADIO_Apply();
 	APP_HoldSaves(false);
@@ -571,6 +740,17 @@ static AppsResult_t tick(bool full)
 
 	if (n)
 		heard(f, n);
+#if DEBUGGING
+	{
+		static uint16_t syn;
+		if (FSKRX_Stat()->syncs != syn) {
+			char b[12];
+			syn = FSKRX_Stat()->syncs;
+			APPS_PutInt(b, syn);
+			MON_Event("fsk sync", b);
+		}
+	}
+#endif
 	if (s_say_ms && (s_say_ms = s_say_ms > APP_TICK_MS ? (uint16_t)(s_say_ms - APP_TICK_MS) : 0) == 0)
 		s_redraw = true;
 	if ((s_stat_ms = (uint16_t)(s_stat_ms + APP_TICK_MS)) >= 1000u) {   /* counts and ages */

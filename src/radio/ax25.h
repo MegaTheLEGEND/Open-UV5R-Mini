@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define AX25_MAX_FRAME 332u              /* 10 addresses, control, PID, 256 information, FCS */
+#define AX25_MAX_FRAME 256u              /* enough for APRS (the spec allows 332: 10 addresses, 256 information) */
 #define AX25_MIN_FRAME 18u               /* two addresses, control, one byte, FCS */
 
 uint16_t AX25_Fcs(const uint8_t *p, unsigned n);

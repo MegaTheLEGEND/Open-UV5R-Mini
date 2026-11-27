@@ -12,6 +12,7 @@
 #include "driver/gpio.h"
 #include "driver/spi1.h"
 #include "driver/system.h"
+#include "app/monitor.h"
 
 #define COL_OFFSET 32 /* MADCTL 0xA8 puts the 128 visible columns at 32..159 */
 #define BUF_LEN    512u
@@ -213,6 +214,10 @@ void ST7735S_FillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t color
 {
 	uint32_t n = (uint32_t)w * h * 2u;
 	uint8_t *b;
+
+#if DEBUGGING
+	MON_Clear(x, y, w, h);
+#endif
 
 	ST7735S_SetWindow(x, y, w, h);
 	SPI1_Wait();                             /* the buffer below may still be going out */
