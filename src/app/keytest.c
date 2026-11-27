@@ -18,6 +18,7 @@
 #include "driver/st7735s.h"
 #include "driver/system.h"
 #include "ui/helper.h"
+#include "update/update.h"
 
 #define WHITE  RGB565(255, 255, 255)
 #define BLACK  RGB565(0, 0, 0)
@@ -74,8 +75,10 @@ static void draw_flash_regs(void)
 
 #define TEST_SECTOR 0x40000u   /* inside the app slot, past our small app: only unused leftover bytes */
 
-static uint8_t sector_save[4096];  /* the sector as it was, put back after the test */
-static uint8_t sector_buf[4096];
+/* the sector as it was (put back after the test) and the test pattern: 8 KB of the update loader's buffer, free
+ * outside the power-on update mode (update/update.h UPDATE_Scratch), so they take no .bss */
+#define SECTOR_LEN 4096u
+static uint8_t *sector_save, *sector_buf;
 static uint8_t flash_step;         /* PTT A presses so far */
 
 static void show_result(const char *label, uint32_t value, bool good)
@@ -94,24 +97,29 @@ static uint32_t flash_write_test(void)
 	uint32_t r, i;
 
 	SYSTEM_WatchdogClear();
-	if ((r = FLASH_Read(TEST_SECTOR, sector_save, sizeof sector_save)) != FLASH_OK)
+	{
+		uint32_t len;
+		sector_save = UPDATE_Scratch(&len);
+		sector_buf = sector_save + SECTOR_LEN;
+	}
+	if ((r = FLASH_Read(TEST_SECTOR, sector_save, SECTOR_LEN)) != FLASH_OK)
 		return 0x10000000u | (r >> 24);
-	for (i = 0; i < sizeof sector_buf; i++)
+	for (i = 0; i < SECTOR_LEN; i++)
 		sector_buf[i] = (uint8_t)(i ^ (i >> 8) ^ 0x5A);
 
 	SYSTEM_WatchdogClear();
 	if ((r = FLASH_Erase4K(TEST_SECTOR)) != FLASH_OK)
 		return 0x20000000u | (r >> 24);
 	SYSTEM_WatchdogClear();
-	if ((r = FLASH_Program(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+	if ((r = FLASH_Program(TEST_SECTOR, sector_buf, SECTOR_LEN)) != FLASH_OK)
 		return 0x30000000u | (r >> 24);
 	SYSTEM_WatchdogClear();
-	for (i = 0; i < sizeof sector_buf; i++)
+	for (i = 0; i < SECTOR_LEN; i++)
 		sector_buf[i] = 0;
-	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, SECTOR_LEN)) != FLASH_OK)
 		return 0x40000000u | (r >> 24);
 	uint32_t bad = 0;
-	for (i = 0; i < sizeof sector_buf; i++)
+	for (i = 0; i < SECTOR_LEN; i++)
 		if (sector_buf[i] != (uint8_t)(i ^ (i >> 8) ^ 0x5A)) {
 			bad = 0x50000000u | i;
 			break;
@@ -122,12 +130,12 @@ static uint32_t flash_write_test(void)
 	if ((r = FLASH_Erase4K(TEST_SECTOR)) != FLASH_OK)
 		return 0x60000000u | (r >> 24);
 	SYSTEM_WatchdogClear();
-	if ((r = FLASH_Program(TEST_SECTOR, sector_save, sizeof sector_save)) != FLASH_OK)
+	if ((r = FLASH_Program(TEST_SECTOR, sector_save, SECTOR_LEN)) != FLASH_OK)
 		return 0x70000000u | (r >> 24);
 	SYSTEM_WatchdogClear();
-	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, sizeof sector_buf)) != FLASH_OK)
+	if ((r = FLASH_Read(TEST_SECTOR, sector_buf, SECTOR_LEN)) != FLASH_OK)
 		return 0x80000000u | (r >> 24);
-	for (i = 0; i < sizeof sector_buf; i++)
+	for (i = 0; i < SECTOR_LEN; i++)
 		if (sector_buf[i] != sector_save[i])
 			return 0x90000000u | i;
 	return bad;
