@@ -5,9 +5,9 @@ open firmware: a radio you can change in plain C.
 
 **Early, not ready for everyday use.** The firmware is our own code plus third-party code whose licence allows it
 ([docs/THIRD-PARTY.md](docs/THIRD-PARTY.md)); the stock firmware is used only as a reference for how the hardware
-works. Our own build now runs on a radio as a **receiver**: screen, every key,
-receive audio and a working squelch were checked on one radio (2026-11-21). Transmit is built in but compiled off,
-settings are not saved. On one radio (2026-11-22) our build was installed from stock, and stock put back, with only
+works. Our own build runs on a radio: screen, every key, receive audio and squelch (2026-11-21), transmit
+(2026-11-24), the apps and FM broadcast radio (2026-11-26), and the Bluetooth scanner and beacon (2026-11-27) were
+checked on one radio. Much else is written and tested on the PC only ([docs/ROADMAP.md](docs/ROADMAP.md)). On one radio (2026-11-22) our build was installed from stock, and stock put back, with only
 the programming cable (`tools/uv5r_flasher.py --loader-baud 9600`, about 10 minutes). That is one radio: keep the
 case-open ROM rescue route ([docs/TESTING.md](docs/TESTING.md)) at hand, and don't try it unless you can use it.
 
@@ -41,15 +41,32 @@ the file against its pinned SHA-256 and refuses any other file.
 | Own firmware: receiving (frequency, squelch, RSSI bar, audio) | **works on a radio** |
 | Own firmware: screen and keypad (every key), main screen with A and B together and icons | **works on a radio** |
 | Own firmware: dual watch | written; **doesn't work on a radio yet** (bug) |
-| CHIRP and Codeplug Studio programming | to do: CHIRP's existing UV-5R Mini driver should work unchanged |
+| CHIRP programming, over the cable or Bluetooth | written: CHIRP's own UV-5R Mini driver, unchanged, downloads and uploads on the PC (`tests/chirp_host.py`); over Bluetooth with BT CHIRP and `tools/ble_serial.py`; not yet on a radio. Codeplug Studio not tried |
 | Own firmware: cable update mode (so a radio can always be flashed again) | **works on one radio at 9600** (2026-11-22): ours installed and stock put back over the cable, both ways twice; 38400 and the official updater still to do |
 | Own firmware: channels, A/B and dual watch, scanning, CTCSS/DCS, DTMF, battery, menu | written the stock way; PC-tested, not all tried on a radio |
 | Own firmware: transmit, with a TX lock (ham, GMRS / PMR446 / UHF CB by region, unlocked) | **transmits on a radio** (2026-11-24); VOX, PTT-ID and roger beep written, not all tried |
-| Own firmware: saving settings and channels | on; PC-tested |
-| Own firmware: clocks, timer interrupts, FM broadcast radio, voice prompts | to do |
-| Bluetooth | to do; optional, through JieLi's own libraries |
+| Own firmware: saving settings and channels; channel names typed on the keypad | on; PC-tested |
+| Apps: spectrum, signal meter, channel book, system info, snake | **work on a radio** (2026-11-24) |
+| FM broadcast radio (the chip's own FM receiver), with RDS | **plays on a radio** (2026-11-26); RDS decodes, weak |
+| APRS (beacon out, packets in), sub-GHz remotes (receive) | written; tried on a radio: the sub-GHz receiver sees a remote but can't decode it (ROADMAP 3.15) |
+| Bluetooth (BLE): scanner, beacon, info | **work on a radio** (2026-11-27) |
+| Bluetooth (BLE): serial link, CHIRP over Bluetooth | written; PC- and emulator-tested |
+| Remote control from the PC over the cable (debug builds) | works (screen text, keys, registers; also as MCP tools) |
+| Own firmware: clocks, timer interrupts, voice prompts | to do |
 
 Details and the order of work: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+## What's on the radio
+
+| Menu | What |
+| --- | --- |
+| CHANNEL, SCAN, TRANSMIT, SYSTEM | the radio's settings, as stock's, numbered on across the sections |
+| APPS | FM RADIO, SPECTRUM, SIGNAL METER, CHANNELS, APRS, SUB-GHZ, SYSTEM INFO, SNAKE |
+| BLUETOOTH | BLE SCAN, BT BEACON, BT SERIAL, BT CHIRP, BT INFO ([docs/BLUETOOTH.md](docs/BLUETOOTH.md)) |
+| ABOUT | name, version, build |
+
+Text (channel names, call signs) is typed on the keypad as on a phone: 2 = A B C, F switches to numbers. Each app
+is its own switch in `features.mk`. Keys, menus and typing: **[docs/RADIO.md](docs/RADIO.md)**.
 
 ## Screenshots
 
@@ -59,13 +76,13 @@ Drawn on a PC by the firmware's own screen code (`python tests/ui_preview.py --s
 | --- | --- | --- |
 | ![Main screen](docs/screenshots/main_idle.png) | ![Receiving](docs/screenshots/main_rx.png) | ![Typing a frequency](docs/screenshots/main_entry.png) |
 
-| Menu: sections | A section, numbered on from the last | Editing a channel name | Hidden items (switched on with `=` held) |
+| Menu: sections | A section, numbered on from the last | Typing a channel name (ABC: letters) | Hidden items (switched on with `=` held) |
 | --- | --- | --- | --- |
 | ![Menu](docs/screenshots/menu.png) | ![Channel section](docs/screenshots/menu_channel.png) | ![Channel name](docs/screenshots/menu_name.png) | ![Hidden menu items](docs/screenshots/menu_hidden.png) |
 
-| Spectrum | Signal meter | Channel book | System info | Snake |
-| --- | --- | --- | --- | --- |
-| ![Spectrum](docs/screenshots/app_spectrum.png) | ![Signal meter](docs/screenshots/app_meter.png) | ![Channel book](docs/screenshots/app_channels.png) | ![System info](docs/screenshots/app_sysinfo.png) | ![Snake](docs/screenshots/app_snake.png) |
+| FM radio | Spectrum | Signal meter | Channel book | System info | Snake |
+| --- | --- | --- | --- | --- | --- |
+| ![FM radio](docs/screenshots/app_fm.png) | ![Spectrum](docs/screenshots/app_spectrum.png) | ![Signal meter](docs/screenshots/app_meter.png) | ![Channel book](docs/screenshots/app_channels.png) | ![System info](docs/screenshots/app_sysinfo.png) | ![Snake](docs/screenshots/app_snake.png) |
 
 ## Find your way
 
@@ -73,7 +90,7 @@ Drawn on a PC by the firmware's own screen code (`python tests/ui_preview.py --s
 | --- | --- |
 | `src/` | The radio firmware: `driver/` (chips), `radio/` (radio behaviour), `store/` (calibration, channels, settings), `app/` (keys, main loop), `ui/` (screens, icons), `update/` (cable update mode), `bsp/`, `bt/` |
 | `assets/` | Icons as editable pixel-art text, turned into C by `tools/mkassets.py` |
-| `tools/` | Unpack, build, check and flash `.ufw` files; disassembler; `tools/lift/` turns stock code into C |
+| `tools/` | Unpack, build, check and flash `.ufw` files; disassembler; `tools/lift/` turns stock code into C; remote control (`radiomon.py`), Bluetooth bridge for CHIRP (`ble_serial.py`), sub-GHz helpers |
 | `emu/` | Emulator that runs the real firmware on the PC, for tracing what the stock code does |
 | `tests/` | Tests run on the PC, and a preview of the screen (`tests/ui_preview.py`) |
 | `docs/` | Everything else, listed below |
@@ -104,7 +121,7 @@ contribute.
 | --- | --- |
 | [ROADMAP](docs/ROADMAP.md) | What's done and what's next |
 | [LAYOUT](docs/LAYOUT.md) | Where code goes, naming, and how icons and other assets are stored |
-| [RADIO](docs/RADIO.md) | The radio app: what it does, the keys, how to test it |
+| [RADIO](docs/RADIO.md) | The radio app: what it does, the keys, typing text, remote control from the PC, how to test it |
 | [TESTING](docs/TESTING.md) | Flashing a radio safely, and getting back to stock |
 | [BUILDING](docs/BUILDING.md) | Building the firmware and putting it on a radio: tools, commands, feature switches |
 | [PORTING](docs/PORTING.md) | How the C firmware was brought up on this chip |
@@ -114,7 +131,9 @@ contribute.
 | [UPDATE-MODE](docs/UPDATE-MODE.md) | How the radio receives new firmware |
 | [EMULATOR](docs/EMULATOR.md) | The emulator |
 | [LIFTER](docs/LIFTER.md) | Stock code to C, and the AI rewrite tool |
-| [BLUETOOTH](docs/BLUETOOTH.md) | Plans for Bluetooth |
+| [BLUETOOTH](docs/BLUETOOTH.md) | Bluetooth: the apps, CHIRP over Bluetooth, how the BLE backend works |
+| [K5-FEATURES](docs/K5-FEATURES.md) | The UV-K5 custom firmware's features, and which of them we have |
+| [THIRD-PARTY](docs/THIRD-PARTY.md) | Third-party code and libraries, and their licences |
 
 ## Licence
 

@@ -1,13 +1,18 @@
-# Bluetooth (optional edition)
+# Bluetooth
 
 The UV-5R Mini's Bluetooth (used by the stock firmware for **Wireless CPS**) runs on the AC695N's built-in
 Bluetooth radio. JieLi only ships its Bluetooth controller and stack as closed, precompiled libraries
-(`btctrler.a`, `btstack.a`), so this project offers two builds:
+(`btctrler.a`, `btstack.a`), so what a build has depends on which of them it links:
 
 | Build | Bluetooth | Contains closed code | How |
 | --- | --- | --- | --- |
-| **Open** (default) | no | no | `make` in this repo, bare metal (`src/main.c`, `src/bt/bt_none.c`) |
-| **Bluetooth edition** | yes (SPP serial port) | yes, JieLi's libraries from **your own** SDK copy | the radio app built as a task inside JieLi's AC695N SDK |
+| **BLE** (the normal build when JieLi's libraries are in `build/sdk/`) | BLE: scanner, beacon, a serial link to a PC or phone, CHIRP over Bluetooth | yes: JieLi's controller library `btctrler.a` (Apache-2.0, from their public SDK) | `make` in this repo with `ENABLE_BT_LE` (features.mk), bare metal; [below](#the-ble-backend-built-2026-11-27) |
+| **Open** (no JieLi libraries) | no | no | `make` without `build/sdk/` (`src/bt/bt_none.c`); the Bluetooth apps say "none" |
+| **SDK edition** (not finished) | classic SPP serial port | yes, JieLi's libraries | the radio app built as a task inside JieLi's AC695N SDK |
+
+**On the radio:** MENU → BLUETOOTH has BLE SCAN, BT BEACON, BT SERIAL, BT CHIRP and BT INFO. Bluetooth is on only
+while one of them is open. BLE SCAN, BT BEACON and BT INFO work on Sean's radio (2026-11-27); BT SERIAL and BT CHIRP
+over BLE are written and emulator-tested, not yet tried on a radio.
 
 **Update 2026-11-23: where the SDK comes from.** JieLi publishes an SDK for this chip family under Apache-2.0:
 [fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK) has `cpu/br23/` (BR23 = the AC695N's family) with
@@ -23,8 +28,9 @@ with pi32v2-llvm through the drop-in, using `tools/sdk/build_sdk.sh`, our own sm
 firmware package (the SDK's packaging step needs JieLi-only tools), a check that link-time optimisation kept
 everything the Bluetooth libraries need, and any run on a chip.
 
-This repository never contains JieLi code or libraries. The Bluetooth edition is built locally from an SDK
-copy you supply, and the resulting firmware must not be redistributed unless JieLi's terms allow it.
+This repository never contains JieLi code or libraries: `tools/sdk/fm_libs.sh` copies them from your clone of the
+public SDK into `build/sdk/` (never committed). Their licence (Apache-2.0) allows images built with them to be
+shared, with the licence kept ([THIRD-PARTY.md](THIRD-PARTY.md)).
 
 ## Why it is a separate build
 
@@ -61,6 +67,10 @@ Steps:
 | Part | State |
 | --- | --- |
 | `src/bt/bt.h` interface, open stubs | done |
+| BLE backend (`src/platform/jl_sdk/bt_le.c`, `bt_glue.c`, `ENABLE_BT_LE`) | **scanning and advertising work on Sean's radio** (2026-11-27); one connection for the serial link: emulator-tested |
+| GATT server with the Nordic UART Service (`src/bt/gatt.c`) | done, PC-tested (`tests/btle_host.py`) |
+| Apps BLE SCAN, BT BEACON, BT INFO | work on Sean's radio |
+| Apps BT SERIAL, BT CHIRP; PC bridge `tools/ble_serial.py` | written; not tried on a radio |
 | SPP glue (`src/platform/jl_sdk/bt_spp.c`) | written against the SDK's `spp_user.h`; not compiled yet |
 | OS task glue (`src/platform/jl_sdk/radio_task.c`) | written against the SDK's `os_api.h`; not compiled yet |
 | Key-test app | shows the Bluetooth state and echoes received bytes back (loopback test) |
@@ -132,9 +142,9 @@ instead of failing. All calls are from the main loop; received data and scan rep
 | Part | Calls | Backend that has it |
 | --- | --- | --- |
 | What is there | `BT_Caps`, `BT_Backend`, `BT_GetAddress` | all |
-| Serial link | `BT_IsAvailable`, `BT_Init`, `BT_IsConnected`, `BT_Send` | SDK edition (SPP, `bt_spp.c`) |
-| BLE scanning | `BT_LeScanStart`, `BT_LeScanStop`, `BT_LePoll` (`BT_LeReport_t`: address, RSSI, 31 bytes of data) | none yet |
-| BLE advertising (the radio's own beacon) | `BT_LeAdvStart`, `BT_LeAdvStop` | none yet |
+| Serial link | `BT_IsAvailable`, `BT_Init`, `BT_IsConnected`, `BT_Send` | BLE backend (Nordic UART Service, `bt_le.c` + `src/bt/gatt.c`); SDK edition (SPP, `bt_spp.c`) |
+| BLE scanning | `BT_LeScanStart`, `BT_LeScanStop`, `BT_LePoll` (`BT_LeReport_t`: address, RSSI, 31 bytes of data) | BLE backend |
+| BLE advertising (the radio's own beacon) | `BT_LeAdvStart`, `BT_LeAdvStop` | BLE backend |
 
 `src/bt/le_adv.c` reads advertising data (name, flags, TX power, service UUID, company ID, a guess at the kind of
 device: iBeacon, Eddystone, Apple, Microsoft, Google, Samsung, Tile, HID, heart rate) and keeps the list of devices
@@ -157,9 +167,10 @@ heard (16, strongest first, aged out after 30 s). Pure C, tested on the PC: `pyt
 | Feature | Possible? | Why / what it needs | State |
 | --- | --- | --- | --- |
 | BT info: backend, links, address, the stock BTIF bytes | yes | nothing more | **app `BT INFO`** (`ENABLE_APP_BTINFO`) |
-| BLE scanner: devices nearby, name, RSSI, kind, raw data | yes | LE scanning on the controller (the BLE backend below) | **app `BLE SCAN`** (`ENABLE_APP_BTSCAN`) on the BLE backend; emulator-tested, not on a radio. Debug builds also take made-up reports on the cable (`!app adv`) |
-| The radio's own beacon (its name, an iBeacon or an Eddystone URL) | yes | LE advertising (the BLE backend) | **app `BT BEACON`** (`ENABLE_APP_BTBEACON`); emulator-tested, not on a radio |
-| Serial link to a PC or phone | yes | classic SPP: the SDK edition (`bt_spp.c`, Wireless CPS). BLE data: a GATT server (JieLi's `btstack.a`, or NimBLE) | **app `BT SERIAL`** (`ENABLE_APP_BTSERIAL`) for any backend with a link: the SDK edition today (not run); the BLE backend has none yet |
+| BLE scanner: devices nearby, name, RSSI, kind, raw data | yes | LE scanning on the controller (the BLE backend below) | **app `BLE SCAN`** (`ENABLE_APP_BTSCAN`); **works on Sean's radio** (2026-11-27). Debug builds also take made-up reports on the cable (`!app adv`) |
+| The radio's own beacon (its name, an iBeacon or an Eddystone URL) | yes | LE advertising (the BLE backend) | **app `BT BEACON`** (`ENABLE_APP_BTBEACON`); **works on Sean's radio** (2026-11-27) |
+| Serial link to a PC or phone | yes | BLE: our own small GATT server with the Nordic UART Service (`src/bt/gatt.c`). Classic SPP: the SDK edition | **app `BT SERIAL`** (`ENABLE_APP_BTSERIAL`): a terminal, MENU types a line; emulator-tested, not on a radio |
+| CHIRP programming over Bluetooth (stock's Wireless CPS, done our way) | yes | the serial link, and a PC bridge (`tools/ble_serial.py`) | **app `BT CHIRP`** (`ENABLE_APP_BTCHIRP`); CHIRP side PC-tested, link not on a radio |
 | BLE remote / keyboard for your own phone (media keys, camera shutter) | yes, later | HID over GATT: a host stack (`btstack.a` has it; the SDK's `hid` app) | todo |
 | Classic device discovery (inquiry) | probably | the controller has inquiry; needs the classic HCI commands | todo |
 | Connection sniffer (following other devices' links) | no | the controller reports only advertisements and our own links: no promiscuous mode, no raw packets | — |
@@ -212,10 +223,10 @@ showed, and what we did:
   `ll_hci_scan_enable`, `ll_hci_adv_set_params`, `ll_hci_adv_set_data`, `ll_hci_adv_enable`. Events come back as
   standard HCI event packets to `hci_packet_handler` (the in-chip transport `hci_transport_h4_controller_instance`),
   where LE Advertising Reports (0x3E/0x02) become `BT_LePoll` reports.
-- **Settings are ours** (`config_*` in `bt_glue.c`): BLE only, scanning and advertising, no connections, normal mode.
-  `bt_glue.c` is compiled as LLVM bitcode (`-flto`), so link-time optimisation sees these values with the library and
-  drops classic Bluetooth, TWS and the test modes: **Bluetooth adds about 25 KB of code** (image 142 KB of 479 KB)
-  instead of about 285 KB, and 3.8 KB of RAM.
+- **Settings are ours** (`config_*` in `bt_glue.c`): BLE only; scanning, advertising and one connection as a
+  peripheral (for the serial link); normal mode. `bt_glue.c` is compiled as LLVM bitcode (`-flto`), so link-time
+  optimisation sees these values with the library and drops classic Bluetooth, TWS and the test modes: **Bluetooth
+  adds about 40 KB of code** (the image is 160 KB of 479 KB) instead of about 285 KB, and 3.8 KB of RAM.
 - **RAM:** the controller's variables are in low RAM 0x3000..0xC000 (`btram`, firmware.ld; stock's RAM code ran
   there, ours does not), cleared and filled at every Bluetooth start; the rest of that region is the Bluetooth heap
   (`malloc` takes from it while Bluetooth runs, `free` goes by address, so the key beeps' DAC keeps the FM heap).
@@ -230,15 +241,59 @@ showed, and what we did:
   is a random static one made at start, not the stock one.
 - **Clocks and power** as stock's Bluetooth start-up: CLK_CON1 radio clocks, VDC13 1.40 V, `bt_pll_para(24 MHz,
   48 MHz)`, `bt_max_pwr_set(…, BLE 7)` (+2.1 dBm).
-- **Starts only on demand:** the first `BT_LeScanStart` / `BT_LeAdvStart` (BLE SCAN, BT BEACON) starts it, and
-  leaving the app stops it. BT INFO shows CONTROL: OFF, STEP n (where a start stopped) or ON with the events seen.
+- **Starts only on demand:** the first `BT_LeScanStart`, `BT_LeAdvStart` or `BT_Init` (BLE SCAN, BT BEACON,
+  BT SERIAL, BT CHIRP) starts it, and leaving the app stops it. BT INFO shows CONTROL: OFF, STEP n (where a start stopped) or ON with the events seen.
   Debug builds: `!app bt` in BLE SCAN prints the same.
-- **Tested in the emulator** (`python emu/bt_ours.py --isa ../pi32v2-isa --quiet --adv`): the start runs to the
+- **Tested in the emulator** (`python emu/bt_ours.py --isa ../pi32v2-isa --quiet --adv --serial`): the start runs to the
   end (about 190 000 instructions, with JieLi's calibration delays skipped and the SAR ADC's done bit faked), the
   scan and advertising commands reach the controller (1 and 5 messages), stopping works. The analog block
   (WLA_CON 0x1E1900..) gets the same 16 registers as stock's Bluetooth start-up (build/bt_init.txt); 9 end on
   the same value, the others on calibration results, which come from the real chip. The emulator has no radio,
   so no packets. **Not run on a radio.**
 
-Still not possible without more: a serial link over BLE (needs a GATT server: JieLi's `btstack.a` or NimBLE), the
-BLE remote (HID over GATT, same) and classic device discovery (classic is switched off to save 260 KB).
+### BT SERIAL and BT CHIRP: the BLE serial link (2026-11-27)
+
+The serial link needs a GATT server, and JieLi's is in `btstack.a` (a whole host stack). We wrote a small one
+instead: **`src/bt/gatt.c`**, pure C, about 300 lines, from the Bluetooth Core Specification. It serves two services:
+
+| Service | Characteristics |
+| --- | --- |
+| GAP (0x1800) | device name `UV5R-MINI`, appearance |
+| Nordic UART Service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | RX `6E400002-…` (the phone writes), TX `6E400003-…` (the radio notifies; switched on by its CCCD) |
+
+The Nordic UART Service is what most "BLE serial" phone apps (Serial Bluetooth Terminal, nRF Connect, Bluefruit
+Connect) and Web Bluetooth pages speak. ATT MTU stays 23, so a notification carries 20 bytes and every packet fits
+one 27-byte link-layer packet. No pairing (requests get "pairing not supported"), no bonding, nothing written to
+flash. `python tests/btle_host.py` walks a phone's discovery, writes and notifications through it (73 checks with
+the advertising parser).
+
+How it runs (`bt_le.c`): `BT_Init(handler)` starts Bluetooth and advertises connectable (`ADV_IND`, every 100 ms)
+with the name, and the service UUID in the scan response. A phone or PC connects (LE Connection Complete); its ACL
+packets arrive at `hci_packet_handler`, are put together into L2CAP frames, queued, and answered by the GATT server
+from the main loop (`BTLE_Tick`). Answers and notifications go back with the library's `le_hci_send_acl_packet`,
+at most 6 in flight (credits come back with Number Of Completed Packets). `BT_Send` splits data into 20-byte
+notifications. When the link drops, advertising starts again. `BT_Init(0)` disconnects and stops.
+
+**BT SERIAL** (MENU → BLUETOOTH): shows what comes in (9 lines), RX/TX byte counts, LINKED or WAITING. MENU types a
+line with the keypad (the [typing service](RADIO.md#typing-text)) and MENU again sends it with CR LF; 1 sends
+`PING`, 2 the frequency, 0 clears.
+
+**BT CHIRP** (MENU → BLUETOOTH): the cable's CHIRP protocol (`src/app/program.c`) on the BLE link
+(`PROGRAM_BT`, `PROGRAM_PollBt`). It stays open for several downloads and uploads; after an upload the radio loads
+the new channels and settings at once. CHIRP can't open a BLE device itself, so a small bridge on the PC turns the
+link into a TCP port:
+
+1. On the PC, once: `pip install bleak`.
+2. On the radio: MENU → BLUETOOTH → BT CHIRP. It shows WAITING.
+3. On the PC: `python tools/ble_serial.py`. It finds `UV5R-MINI`, connects, and says `listening on 127.0.0.1:5005`.
+   The radio shows LINKED.
+4. In CHIRP: Radio → Download from radio. Port: **Custom…**, type `socket://localhost:5005`. Vendor Baofeng, model
+   UV-5R Mini.
+5. Upload the same way. Leave BT CHIRP with EXIT when done.
+
+`python tools/ble_serial.py --scan` lists radios in range; `-v` prints the bytes both ways. The same bridge works for
+BT SERIAL with any TCP terminal (`ncat localhost 5005`).
+
+**Not yet:** none of this has run on a radio. The CHIRP protocol is tested on the PC (`tests/chirp_host.py`) and the
+link's start in the emulator, but no phone or PC has connected yet. The BLE remote (HID over GATT) is the next one the
+same GATT server could carry; classic device discovery stays off (classic is switched off to save 260 KB).

@@ -73,7 +73,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.3 | RX LED blink option | todo | |
 | 4.4 | Squelch, step, CTCSS/DCS shown on the VFO screen | have | squelch on the status bar, tones as tags |
 | 4.5 | Channel name + frequency display | have | name large, number and frequency small (2026-11-24) |
-| 4.6 | Channel name editing in the menu | have | MENU → CHANNEL → CH NAME; PC-tested only |
+| 4.6 | Channel name editing in the menu | have | MENU → CHANNEL → CH NAME, typed with keypad letters (F numbers; one typing service for every text field, docs/RADIO.md "Typing text"); PC-tested only |
 | 4.7 | Better frequency and channel entry | partial | 6 digits, 3-digit channel |
 | 4.8 | Battery percentage or voltage on the status bar | have | MENU → BATTERY: ICON, PERCENT, VOLTS; percent from the radio's calibrated battery thresholds, so it agrees with the bars (a two-cell pack: 6.1 V empty, 8.0 V full) |
 | 4.9 | Mic level bar while transmitting; audio level display | todo | the mic ADC is read for VOX already |
@@ -82,7 +82,7 @@ this radio (reason given). ROADMAP rows in brackets.
 | 4.12 | Power-on message and start-up logo (`PonMsg`) | todo | [4.6]; stock may keep a picture in external flash [4.2] |
 | 4.13 | System info pages: version, battery, flash and RAM use, QR codes | partial | ABOUT page has version and build |
 | 4.14 | Menu index shown while editing | have | NN/MM in the corner |
-| 4.15 | Reordered, renamed menu entries | have | sections CHANNEL, SCAN, TRANSMIT, SYSTEM, numbered on across them; a typed number jumps to its item |
+| 4.15 | Reordered, renamed menu entries | have | sections CHANNEL, SCAN, TRANSMIT, APPS, BLUETOOTH, SYSTEM, numbered on across them; a typed number jumps to its item |
 | 4.16 | Navigation layout per radio model (`SetNav`) | n/a | one keypad here |
 | 4.17 | Key lock: keys only, or keys and PTT (`SetLck`) | have | # held locks keys; MENU → SYSTEM → LOCK PTT makes the lock hold PTT too; PC-checked only |
 | 4.18 | F-key layer and long-press actions, assignable short/long actions per key | partial | `#` is F (tap; indicator on every top bar), held 1 s locks; digits and `*` held, or F then the key, as the K5 layout (docs/RADIO.md, Keys); `=` has a press, double-press and hold action from the menu (monitor, scan, A/B, VFO/MR, W/N, power, lamp, dual watch, key lock); not assignable per key yet; PC-checked only [4.3] |
@@ -110,13 +110,13 @@ this radio (reason given). ROADMAP rows in brackets.
 | # | Feature | Status | Notes |
 | --- | --- | --- | --- |
 | 6.1 | CHIRP | have | stock-compatible protocol, CHIRP's UV-5R Mini driver [5.3] |
-| 6.2 | Live screen mirror, screenshots and remote keys over the cable (K5Viewer / UV Studio) | todo | our own protocol; the colour screen needs more bandwidth (RGB565, 32 KB a frame) |
+| 6.2 | Live screen mirror, screenshots and remote keys over the cable (K5Viewer / UV Studio) | partial | debug builds: the screen's text, state and key presses over the cable (`tools/radiomon.py`, ROADMAP 6.9); a picture mirror needs more bandwidth (RGB565, 32 KB a frame) |
 | 6.3 | Calibration dump and restore over the cable | todo | we can read it; writing it back needs care (rule 6) |
 | 6.4 | Firmware flashing from a browser | todo | our update mode speaks the stock protocol; a Web Serial page could drive it |
 | 6.5 | AirCopy: radio-to-radio over the air, and cable copy | todo | BK4819 FSK; both radios run ours |
 | 6.6 | BEAM: send a channel to another radio | todo | as AirCopy |
 | 6.7 | KISS TNC over the cable (APRSdroid) | todo | needs the AFSK modem (7.x) |
-| 6.8 | Bluetooth | n/a for them | ours has it: [BLUETOOTH.md](BLUETOOTH.md) |
+| 6.8 | Bluetooth | n/a for them | ours has it: MENU → BLUETOOTH: BLE scanner, beacon, serial link, CHIRP over Bluetooth ([BLUETOOTH.md](BLUETOOTH.md)) |
 
 ## Apps (overlay apps in Fusion)
 
@@ -129,7 +129,7 @@ Each needs a demodulator or a game loop; most are a few kilobytes of logic plus 
 | 7.3 | Beacon (Morse ID, timed TX, safe READY screen) | todo | CW keying through the BK4819; TX lock applies |
 | 7.4 | Signal Finder, Spectrum3D | todo | spectrum sweep (3.1) |
 | 7.5 | ToneCall | todo | tone generator (have) |
-| 7.6 | APRS RX, TX, Edit, DIGI (Bell 202 AFSK 1200, AX.25) | todo | AFSK modem; also a time source for the clock (ROADMAP 4.7) |
+| 7.6 | APRS RX, TX, Edit, DIGI (Bell 202 AFSK 1200, AX.25) | partial | MENU → APPS → APRS: position beacon (AFSK from the BK4819's tone generator), receive through its FSK modem, heard list, settings with the call sign typed (ROADMAP 3.14); no digipeating; PC-tested only |
 | 7.7 | POCSAG RX | todo | FSK demodulation |
 | 7.8 | ACARS RX (2400 bit/s AM-MSK) | todo | AM audio sampled fast enough |
 | 7.9 | AIS RX (discriminator at 38.4 kHz) | todo | raw discriminator samples from the BK4819 |
