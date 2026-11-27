@@ -61,8 +61,8 @@ Every key was checked on a radio (KEY TEST ROWS readout, then each key pressed, 
 
 Held (half a second), or F then the key, on the main screen (after the UV-K5 open firmware's layout; ours where the
 radio has no such thing): 1 step, 2 A/B, 3 VFO/MR, 4 signal meter, 5 spectrum, 6 power, 7 VOX, 8 dual watch,
-9 monitor, 0 FM radio, F then UP/DOWN squelch. Keys with a held job act when let go. In an app, F stays on until `#`
-is tapped again and UP/DOWN then stand for the app's `#` and `*` (FM volume up/down, spectrum step).
+9 monitor, 0 FM radio, F then UP/DOWN squelch. Keys with a held job act when let go. In an app, F then UP/DOWN stand for
+the app's `#` and `*` (FM volume up/down, spectrum step). F goes off after the next key on every screen.
 
 Hold A/B, V/M or the flashlight key at power-on (PTT not held) to open KEY TEST.
 

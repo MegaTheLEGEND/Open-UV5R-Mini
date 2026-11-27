@@ -17,6 +17,7 @@ void SCAN_Start(int dir, ScanResume_t mode, uint16_t tick_ms)
 	s_ms = s_quiet_ms = 0;
 }
 
+void SCAN_SetTick(uint16_t tick_ms) { s_tick = tick_ms ? tick_ms : 1u; }
 void SCAN_Stop(void) { s_on = s_hold = false; }
 bool SCAN_Active(void) { return s_on; }
 bool SCAN_Holding(void) { return s_on && s_hold; }

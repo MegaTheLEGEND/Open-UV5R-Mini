@@ -18,6 +18,7 @@
 #define KEY_LOCK_MS      1000u
 /* a key held this long does its second job (app.c key_event): KEY_LONG(key); a shorter press acts when let go */
 #define KEY_LONG_MS      500u
+#define KEY_DEBOUNCE_MS  20u
 #define KEY_LONG(k)      ((KEY_Code_t)((unsigned)(k) | 0x40u))
 #define KEY_IS_LONG(k)   (((unsigned)(k) & 0xC0u) == 0x40u)
 #define KEY_BASE(k)      (KEY_IS_LONG(k) ? (KEY_Code_t)((unsigned)(k) & 0x3Fu) : (k))

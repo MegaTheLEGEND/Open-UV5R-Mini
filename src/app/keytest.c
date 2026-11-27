@@ -195,7 +195,7 @@ static void keytest_tick(void)
 	/* Power switch: PB11 high means turned off (stock sub_01E4C978 checks the same, with a short debounce).
 	 * Off after it reads high for 0.2 s. */
 	if (GPIO_CheckBit(PIN_POWER_SENSE)) {
-		if (++off_count >= 200 / APP_TICK_MS)
+		if (++off_count >= 20u)            /* 0.2 s at 10 ms */
 			BOARD_PowerOff();
 	} else
 		off_count = 0;
@@ -235,6 +235,6 @@ void KEYTEST_Run(void)
 	keytest_init();
 	for (;;) {
 		keytest_tick();
-		SYSTEM_DelayMs(APP_TICK_MS);
+		SYSTEM_DelayMs(10);
 	}
 }

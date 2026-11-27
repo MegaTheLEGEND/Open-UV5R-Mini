@@ -53,13 +53,14 @@ static bool     s_redraw = true;         /* whole screen */
 static uint8_t  s_lamp_mode;             /* 0 off, 1 on, 2 strobe (stock flashlight key) */
 static uint16_t s_lamp_ms;
 /* The function key (#, as the UV-K5's F; Sean, 2026-11-27): a tap switches F on and off, shown at the left of every
- * top bar. On the main screen F then a key does what holding that key does, and F goes off; in an app F stays on and
- * UP / DOWN stand for # and * (the apps' second pair). */
+ * top bar. On the main screen F then a key does what holding that key does, and F goes off; in an app F then UP / DOWN
+ * stand for # and * (the apps' second pair). F is for one key, then off, on every screen (Sean, 2026-11-27). */
 static bool     s_fkey;
 static char     s_entry[7];              /* digits typed, MHz then kHz */
 static uint8_t  s_entry_len;
 static uint8_t  s_menu_sel, s_menu_edit;
-static uint16_t s_off_ticks, s_batt_ticks;
+uint16_t gAppTickMs = 10;               /* app/app.h APP_TICK_MS */
+static uint16_t s_off_ticks, s_batt_ticks;   /* in ms */
 static uint32_t s_light_ms, s_tx_ms;     /* backlight on for, transmitting for */
 static uint32_t s_idle_ms;                /* main screen with no key, for auto lock */
 static uint32_t s_menu_ms;                /* menu with no key, for the menu time-out */
@@ -313,7 +314,7 @@ static void status_fill(void)
 	v->fkey = s_fkey;
 	v->battery = (int8_t)(lvl == 0xFF || !BATTERY_Raw() ? -1 : (lvl * 4 + 5) / 6);
 	v->battery_low = BATTERY_Low();
-	v->battery_hide = v->battery_low && (s_batt_ticks * APP_TICK_MS) % 1000u < 500u;
+	v->battery_hide = v->battery_low && s_batt_ticks % 1000u < 500u;
 	v->battery_text[0] = 0;
 	if (s_batt_show && BATTERY_Raw()) {            /* "84%" or "4.1V" (K5 feature 4.8) */
 		char *p = v->battery_text;
@@ -1843,10 +1844,18 @@ static bool key_holds(KEY_Code_t k)
 
 static KEY_Code_t key_event(void)
 {
-	static KEY_Code_t last = KEY_INVALID, queued = KEY_INVALID;
-	static uint16_t held;
+	static KEY_Code_t last = KEY_INVALID, queued = KEY_INVALID, cand = KEY_INVALID;
+	static uint16_t held, rep, cand_ms;  /* ms */
 	static bool pend, fired;             /* last waits for its let-go; its held job was done (or not wanted) */
-	KEY_Code_t k = KEYBOARD_Poll(), out = KEY_INVALID;
+	KEY_Code_t raw = KEYBOARD_Poll(), k, out = KEY_INVALID;
+
+	/* a new reading counts once it has stayed KEY_DEBOUNCE_MS (the loop polls every few ms now) */
+	if (raw != cand) {
+		cand = raw;
+		cand_ms = 0;
+	} else if (cand_ms < KEY_DEBOUNCE_MS)
+		cand_ms = (uint16_t)(cand_ms + APP_TICK_MS);
+	k = cand_ms >= KEY_DEBOUNCE_MS ? cand : last;
 
 	s_key_held = k;
 	if (s_wait_release) {                    /* a key held since power-on: nothing until it is let go */
@@ -1865,7 +1874,7 @@ static KEY_Code_t key_event(void)
 		if (pend && !fired)
 			out = last;                      /* let go soon enough: the tap */
 		last = k;
-		held = 0;
+		held = rep = 0;
 		pend = fired = false;
 		if (k != KEY_INVALID) {
 			if (key_holds(k))
@@ -1879,19 +1888,20 @@ static KEY_Code_t key_event(void)
 	}
 	if (k == KEY_INVALID)
 		return KEY_INVALID;
-	if (held < 0xFFFFu)
-		held++;
+	held = (uint16_t)(held + APP_TICK_MS < 60000u ? held + APP_TICK_MS : 60000u);
 	if (RADIO_State() == RADIO_TX)
 		fired = true;                        /* a key held for its DTMF tone does nothing when let go */
-	if (k == KEY_ACT_UP || k == KEY_ACT_DOWN) {
-		if (held >= 50 && held % 10 == 0)
+	if ((k == KEY_ACT_UP || k == KEY_ACT_DOWN) && held >= 500u) {   /* repeat after 0.5 s, 10 a second */
+		if ((rep = (uint16_t)(rep + APP_TICK_MS)) >= 100u) {
+			rep = (uint16_t)(rep - 100u);
 			return k;
+		}
 	}
-	if (pend && !fired && k == KEY_HASH && held == KEY_LOCK_MS / APP_TICK_MS) {
+	if (pend && !fired && k == KEY_HASH && held >= KEY_LOCK_MS) {
 		fired = true;
 		return KEY_ACT_LOCK;                 /* # held: lock or unlock the keys */
 	}
-	if (pend && !fired && k != KEY_HASH && held == KEY_LONG_MS / APP_TICK_MS) {
+	if (pend && !fired && k != KEY_HASH && held >= KEY_LONG_MS) {
 		fired = true;
 		return KEY_LONG(k);
 	}
@@ -2663,7 +2673,7 @@ void APP_Tick(void)
 
 	/* power switch: PB11 high = off (stock sub_01E4C978); act after 0.2 s */
 	if (GPIO_CheckBit(PIN_POWER_SENSE)) {
-		if (++s_off_ticks >= 200 / APP_TICK_MS) {
+		if ((s_off_ticks = (uint16_t)(s_off_ticks + APP_TICK_MS)) >= 200u) {
 			RADIO_EndTx();
 #if SETTINGS_ENABLE_SAVE
 			if (s_save_due) {            /* a change not saved yet (key still held): save it now */
@@ -2810,11 +2820,11 @@ void APP_Tick(void)
 		light_tick();
 	if (ptt)
 		SCAN_Stop();
-	else if (SCAN_Tick(RADIO_State() == RADIO_RX_OPEN) == SCAN_HOP)
+	else if ((SCAN_SetTick(APP_TICK_MS), SCAN_Tick(RADIO_State() == RADIO_RX_OPEN)) == SCAN_HOP)
 		scan_hop();
 
 	/* battery about once a second, never while transmitting (the voltage sags) */
-	if (++s_batt_ticks >= 1000 / APP_TICK_MS && RADIO_State() != RADIO_TX) {
+	if ((s_batt_ticks = (uint16_t)(s_batt_ticks + APP_TICK_MS)) >= 1000u && RADIO_State() != RADIO_TX) {
 		s_batt_ticks = 0;
 		BATTERY_Set(ADC_Read(ADC_CH_BATTERY, 8));
 	}
@@ -2928,10 +2938,12 @@ void APP_Tick(void)
 				a = KEY_HASH;
 			else if (s_fkey && a == KEY_ACT_DOWN)
 				a = KEY_STAR;
+			s_fkey = false;                      /* F is for one key, then off */
 			r = s_app ? s_app->key(a) : APPS_EXIT;
 			if (r != APPS_STAY)
 				app_close(r);
 		} else if (s_screen == SCREEN_ABOUT) {
+			s_fkey = false;
 #if DEBUGGING
 			if (k == KEY_STAR && s_rescue_armed)   /* rescue mode: * twice */
 				reboot_to_rescue();
@@ -2948,8 +2960,10 @@ void APP_Tick(void)
 				go(SCREEN_MENU);
 			}
 		}
-		else
+		else {
+			s_fkey = false;
 			key_menu(KEY_BASE(k));
+		}
 	}
 
 	eq_tick(ptt);

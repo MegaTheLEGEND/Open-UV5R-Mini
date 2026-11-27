@@ -22,6 +22,7 @@ typedef enum { SCAN_IDLE = 0, SCAN_NONE, SCAN_HOP } ScanAction_t;
 #define SCAN_CARRIER_MS   2000u
 
 void         SCAN_Start(int dir, ScanResume_t mode, uint16_t tick_ms);
+void         SCAN_SetTick(uint16_t tick_ms);   /* the time since the last SCAN_Tick, when ticks vary */
 void         SCAN_Stop(void);
 bool         SCAN_Active(void);
 bool         SCAN_Holding(void);          /* stopped on a signal */

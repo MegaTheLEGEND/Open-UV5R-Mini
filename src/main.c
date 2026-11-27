@@ -4,16 +4,16 @@
 
 int main(void)
 {
-	uint32_t next;
+	uint32_t last, now;
 
 	SYSTEM_TimeInit();
 	APP_Init();
-	next = SYSTEM_Ms();
+	last = SYSTEM_Ms();
 	for (;;) {
 		APP_Tick();
-		next += APP_TICK_MS;             /* one tick each 10 ms of real time */
-		if ((int32_t)(SYSTEM_Ms() - next) > 100)
-			next = SYSTEM_Ms();          /* a long tick: don't race to catch up */
-		SYSTEM_WaitUntil(next);
+		SYSTEM_WaitUntil(last + APP_TICK_MIN_MS);
+		now = SYSTEM_Ms();               /* the next tick is told how long this one really was */
+		gAppTickMs = (uint16_t)(now - last > 250u ? 250u : now - last);
+		last = now;
 	}
 }
