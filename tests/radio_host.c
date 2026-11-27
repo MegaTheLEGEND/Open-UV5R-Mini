@@ -75,6 +75,10 @@ void BK4819_TxTonePair(uint16_t a, uint16_t b)
 void BK4819_TxTonesOff(void) { tx_tones_on = 0; tx_w1 = tx_w2 = 0; }
 void BK4819_TxMonitor(bool on) { tx_mon = on; reg30 = on ? 0xC3FA : 0xC1FE; }
 void SYSTEM_DelayMs(uint32_t ms) { delay_ms += ms; }
+static uint32_t raw_clock;
+uint32_t SYSTEM_Raw(void) { return raw_clock += 50u; }     /* RADIO_SendAfsk waits on it */
+uint32_t SYSTEM_TicksPerSec(void) { return 375000u; }
+void SYSTEM_WatchdogClear(void) {}
 static int tail_mode = -1;     /* -1 none, 0 55 Hz, 1 DCS */
 void BK4819_TailTone(bool dcs, uint8_t level) { (void)level; tail_mode = dcs; }
 void BK4819_Beep(uint16_t hz) { if (hz) reg30 = 0x0302; }

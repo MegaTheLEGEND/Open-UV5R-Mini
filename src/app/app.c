@@ -573,7 +573,7 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 
 /* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
 #define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
-                    + APP_FM_ENABLE)
+                    + APP_FM_ENABLE + APP_APRS_ENABLE)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
@@ -588,6 +588,9 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #endif
 #if APP_CHANNELS_ENABLE
 	&APP_CHANNELS,
+#endif
+#if APP_APRS_ENABLE
+	&APP_APRS,
 #endif
 #if APP_SYSINFO_ENABLE
 	&APP_SYSINFO,
@@ -612,6 +615,12 @@ static const uint8_t SEC_APPS[APPS_COUNT] = {
 #endif
 #if APPS_COUNT > 5
 	M_APP0 + 5,
+#endif
+#if APPS_COUNT > 6
+	M_APP0 + 6,
+#endif
+#if APPS_COUNT > 7
+#error "more apps: add rows to SEC_APPS"
 #endif
 };
 #endif
@@ -2032,6 +2041,7 @@ enum {
 	EXT_FM = 16,                     /* the FM radio's station, 10 kHz, little-endian (16, 17); 0 = not set */
 	EXT_FM_VOL = 18,                 /* the FM radio's volume + 1; 0 = not set */
 	EXT_DEBUG = 19,                  /* MENU -> ABOUT's debug switch + 1 (DEBUGGING builds); 0 = not set (on) */
+	EXT_APRS = 20,                   /* the APRS settings, 10 bytes (20-29, radio/aprs.h APRS_Pack); 0s = not set */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -2051,6 +2061,34 @@ static uint16_t s_fm_wait;               /* ms until saved; 0 = nothing to save 
 
 uint32_t APP_FmKhz(void) { return (uint32_t)s_fm_10k * 10u; }
 uint8_t  APP_FmVolume(void) { return s_fm_vol; }
+
+/* The APRS settings (call sign, position, icon, beacon), kept with the settings as 10 packed bytes */
+static uint8_t s_aprs[10];
+static bool    s_hold_saves;             /* an app has the VFO on its own frequency: no saving until it leaves */
+
+void APP_AprsConf(uint8_t out[10])
+{
+	for (int i = 0; i < 10; i++)
+		out[i] = s_aprs[i];
+}
+
+void APP_SetAprsConf(const uint8_t in[10])
+{
+	bool same = true;
+	for (int i = 0; i < 10; i++) {
+		same = same && s_aprs[i] == in[i];
+		s_aprs[i] = in[i];
+	}
+#if SETTINGS_ENABLE_SAVE
+	if (!same)
+		save_soon();
+#endif
+}
+
+void APP_HoldSaves(bool on)
+{
+	s_hold_saves = on;
+}
 
 void APP_SetFm(uint32_t khz, uint8_t vol)
 {
@@ -2132,6 +2170,8 @@ static void start_from_stock(void)
 			s_fm_vol = (uint8_t)(gStock.ext[EXT_FM_VOL] - 1u);
 		if (DEBUGGING && gStock.ext[EXT_DEBUG] && gStock.ext[EXT_DEBUG] <= 2u)
 			gDebug = gStock.ext[EXT_DEBUG] == 2u;   /* as it was left (Sean, 2026-11-27) */
+		for (int i = 0; i < 10; i++)
+			s_aprs[i] = gStock.ext[EXT_APRS + i];
 	}
 	if (ext_ok() && gStock.ext[EXT_BSAVE] && gStock.ext[EXT_BSAVE] <= 4)
 		s_bsave = (uint8_t)(gStock.ext[EXT_BSAVE] - 1u);
@@ -2290,6 +2330,8 @@ static void save_now(void)
 	gStock.ext[EXT_FM_VOL] = s_fm_vol <= 15u ? (uint8_t)(s_fm_vol + 1u) : 0u;
 	if (DEBUGGING)
 		gStock.ext[EXT_DEBUG] = (uint8_t)(gDebug + 1u);
+	for (int i = 0; i < 10; i++)
+		gStock.ext[EXT_APRS + i] = s_aprs[i];
 	s_fm_wait = 0;
 	gStock.raw[SET_POWER_SAVE] = s_bsave != 0;    /* stock's Save Mode as on/off, as CHIRP shows it */
 	for (int i = 0; i < 3; i++)
@@ -2345,7 +2387,7 @@ static void save_now(void)
 
 static void save_tick(bool busy)
 {
-	if (!s_save_due || busy || s_key_held != KEY_INVALID)
+	if (!s_save_due || busy || s_hold_saves || s_key_held != KEY_INVALID)
 		return;
 	save_now();
 }
@@ -2799,6 +2841,11 @@ void APP_Tick(void)
 	if (GPIO_CheckBit(PIN_POWER_SENSE)) {
 		if ((s_off_ticks = (uint16_t)(s_off_ticks + APP_TICK_MS)) >= 200u) {
 			RADIO_EndTx();
+			if (s_app) {                 /* its leave puts back what it changed (the APRS app's VFO) */
+				const AppDef_t *a = s_app;
+				s_app = 0;
+				a->leave();
+			}
 #if SETTINGS_ENABLE_SAVE
 			if (s_save_due || s_fm_wait) {   /* a change not saved yet (key still held): save it now */
 				dw_end();

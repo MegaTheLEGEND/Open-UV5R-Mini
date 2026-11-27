@@ -48,6 +48,9 @@ ENABLE_APP_METER    ?= 1
 ENABLE_APP_CHANNELS ?= 1
 # System info: battery, calibration, flash, channels, TX lock, uptime, build (src/app/sysinfo.c).
 ENABLE_APP_SYSINFO  ?= 1
+# APRS: position beacon (AFSK from the BK4819's tone generator) and receive through the BK4819's FSK modem
+# (experimental), a list of heard stations (src/app/aprs.c, src/radio/ax25.c, aprs.c, fskrx.c).
+ENABLE_APP_APRS     ?= 1
 # A snake game (src/app/snake.c).
 ENABLE_APP_SNAKE    ?= 1
 # FM broadcast radio, 64-108 MHz through the speaker (src/app/fmradio.c, src/platform/jl_sdk/fmrx.c). Needs JieLi's
@@ -72,4 +75,5 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DAPP_SPECTRUM_ENABLE=$(ENABLE_APP_SPECTRUM) -DAPP_METER_ENABLE=$(ENABLE_APP_METER) \
                  -DAPP_CHANNELS_ENABLE=$(ENABLE_APP_CHANNELS) -DAPP_SYSINFO_ENABLE=$(ENABLE_APP_SYSINFO) \
                  -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE) -DAPP_FM_ENABLE=$(ENABLE_APP_FM) \
+                 -DAPP_APRS_ENABLE=$(ENABLE_APP_APRS) \
                  -DDEBUGGING=$(ENABLE_DEBUGGING)

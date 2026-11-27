@@ -1,4 +1,5 @@
 /* Open-UV5R-Mini: the radio core. See radio/radio.h. */
+#include "radio/ax25.h"
 #include "radio/radio.h"
 #include "store/calib.h"
 #include "radio/tones.h"
@@ -503,6 +504,33 @@ bool RADIO_TxTone(uint8_t code, bool monitor)
 	s_txtone = true;
 	s_txdual = code < 16;
 	s_txmon = monitor;
+	return true;
+}
+
+/* An AX.25 frame as Bell 202 AFSK (APRS), while transmitting: the one-tone generator in the stock DTMF-sidetone
+ * mode (mic off, heard locally), its frequency word changed at each bit, 1200 Hz or 2200 Hz, 1200 bits a second
+ * timed on Timer 2. The generator keeps its phase when the word changes (to be checked on a radio). Blocks for
+ * the whole frame: about 1 s for a position report with 300 ms of flags first. */
+bool RADIO_SendAfsk(const uint8_t *frame, unsigned len, unsigned pre_flags)
+{
+	Ax25Tx_t t;
+	int lv;
+	uint32_t t0, tps = SYSTEM_TicksPerSec(), k = 0;
+	const uint16_t mark = BK4819_ToneWord(1200), space = BK4819_ToneWord(2200);
+
+	if (!RADIO_TxTone(17, true))
+		return false;
+	AX25_TxStart(&t, frame, len, pre_flags, 3);
+	t0 = SYSTEM_Raw();
+	while ((lv = AX25_TxNext(&t)) >= 0) {
+		BK4819_TxTonePair(lv ? mark : space, 0);
+		k++;
+		while (SYSTEM_Raw() - t0 < k * (tps / 8u) / 150u)      /* k / 1200 s, no 64-bit division */
+			;
+		if (!(k & 63u))
+			SYSTEM_WatchdogClear();
+	}
+	RADIO_TxToneOff();
 	return true;
 }
 

@@ -11,6 +11,7 @@ uint32_t SYSTEM_Ms(void);
 void     SYSTEM_WaitUntil(uint32_t ms);  /* until SYSTEM_Ms() reaches ms, keeping the watchdog fed */
 uint32_t SYSTEM_Raw(void);               /* the timer's own counts so far (24 MHz / 64 outside the FM radio) */
 void     SYSTEM_SetTicksPerSec(uint32_t tps);   /* the timer's real rate; 0 = the crystal's */
+uint32_t SYSTEM_TicksPerSec(void);       /* SYSTEM_Raw counts a second */
 /* Called over and over while the main loop waits for its next tick (SYSTEM_WaitUntil), when set: work that wants
  * to run more often than every 10 ms (the FM radio's RDS decoding). Not called from SYSTEM_DelayMs. */
 extern void (*gSystemIdle)(void);

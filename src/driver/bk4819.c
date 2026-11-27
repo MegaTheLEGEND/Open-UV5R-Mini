@@ -210,6 +210,10 @@ void BK4819_SetInterrupts(uint16_t mask)
 	BK4819_WriteRegister(BK4819_REG_3F, mask);
 }
 
+/* Flags taken from the chip but not yet asked for: the DTMF decoder and the FSK receiver both clear REG_02, so
+ * each takes only its own bits (BK4819_TakeFlags) and leaves the others here. */
+static uint16_t s_flags;
+
 /* Returns the flags of a pending interrupt (REG_0C bit 0), and clears it; 0 if none. */
 uint16_t BK4819_TakeInterrupts(void)
 {
@@ -219,7 +223,74 @@ uint16_t BK4819_TakeInterrupts(void)
 		return 0;
 	BK4819_WriteRegister(BK4819_REG_02, 0);
 	f = BK4819_ReadRegister(BK4819_REG_02);
+	s_flags |= f;
 	return f ? f : 0x8000u;
+}
+
+uint16_t BK4819_TakeFlags(uint16_t mask)
+{
+	uint16_t f;
+
+	BK4819_TakeInterrupts();
+	f = s_flags & mask;
+	s_flags &= (uint16_t)~mask;
+	return f;
+}
+
+/* FSK receiver (APRS, experimental, Sean 2026-11-27). The stock app never uses the chip's FSK modem, so nothing
+ * here is from stock: the register meanings are the ones the UV-K5 community found for the same chip (the open
+ * UV-K5 firmwares' FSK and MDC1200 code) and are not checked on this radio yet:
+ *   REG_70 0x00E0   tone 2 on, gain 96 (the FSK path uses tone 2's settings)
+ *   REG_72          the bit rate, as a tone word: 1200 bits/s = 0x3065
+ *   REG_58          bits 15-13 TX mode, 12-10 RX mode (4 = FFSK 1200/2400, 7 = FFSK 1200/1800), 9-8 RX gain,
+ *                   4 preamble type, 3-1 RX bandwidth (1 = FFSK 1200/1800, 3 = FFSK 1200/2400), 0 FSK on
+ *   REG_59          15 clear TX FIFO, 14 clear RX FIFO, 13 scramble, 12 RX on, 11 TX on, 10 invert RX data,
+ *                   7-4 preamble length, 3 sync word 32 bits (else 16)
+ *   REG_5A, REG_5B  the sync word (high, low)
+ *   REG_5C 0x5625   no CRC (0x5665 with)
+ *   REG_5D          the packet length in bytes, high byte
+ *   REG_5E          the RX FIFO "almost full" level (words) in the low bits
+ *   REG_5F          the FIFO, 16 bits a read
+ *   REG_02 / 3F     15 FSK TX done, 14 FIFO almost empty, 13 FSK RX done, 12 FIFO almost full, 1 FSK sync found */
+void BK4819_FskRxOn(uint8_t mode, uint16_t sync_hi, uint16_t sync_lo, uint8_t len, uint8_t full_words)
+{
+	uint16_t r58 = mode ? (uint16_t)(4u << 10 | 3u << 1 | 1u)       /* FFSK 1200/2400 */
+	                    : (uint16_t)(7u << 10 | 1u << 1 | 1u);      /* FFSK 1200/1800 */
+	uint16_t r59 = 1u << 3;                                         /* 32-bit sync word, shortest preamble */
+
+	BK4819_WriteRegister(BK4819_REG_70, 0x00E0);
+	BK4819_WriteRegister(BK4819_REG_72, 0x3065);
+	BK4819_WriteRegister(BK4819_REG_58, (uint16_t)(1u << 13 | r58));
+	BK4819_WriteRegister(BK4819_REG_5A, sync_hi);
+	BK4819_WriteRegister(BK4819_REG_5B, sync_lo);
+	BK4819_WriteRegister(BK4819_REG_5C, 0x5625);
+	BK4819_WriteRegister(BK4819_REG_5D, (uint16_t)(len << 8));
+	BK4819_WriteRegister(BK4819_REG_5E, (uint16_t)(64u << 3 | (full_words & 7u)));
+	BK4819_WriteRegister(BK4819_REG_59, (uint16_t)(0x4000u | r59));
+	BK4819_WriteRegister(BK4819_REG_59, (uint16_t)(0x1000u | r59));
+	BK4819_WriteRegister(BK4819_REG_3F, (uint16_t)(BK4819_ReadRegister(BK4819_REG_3F) | BK4819_INT_FSK_RX));
+	s_flags &= (uint16_t)~BK4819_INT_FSK_RX;
+}
+
+void BK4819_FskRxOff(void)
+{
+	BK4819_WriteRegister(BK4819_REG_59, 0x4000);
+	BK4819_WriteRegister(BK4819_REG_58, 0);
+	BK4819_WriteRegister(BK4819_REG_70, 0);
+	BK4819_WriteRegister(BK4819_REG_3F, (uint16_t)(BK4819_ReadRegister(BK4819_REG_3F) & ~BK4819_INT_FSK_RX));
+	s_flags &= (uint16_t)~BK4819_INT_FSK_RX;
+}
+
+/* the FSK interrupts are still enabled (RADIO_Apply and the DTMF decoder write REG_3F) */
+bool BK4819_FskRxArmed(void)
+{
+	return (BK4819_ReadRegister(BK4819_REG_3F) & BK4819_INT_FSK_RX) == BK4819_INT_FSK_RX &&
+	       (BK4819_ReadRegister(BK4819_REG_58) & 1u);
+}
+
+uint16_t BK4819_FskRead(void)
+{
+	return BK4819_ReadRegister(BK4819_REG_5F);
 }
 
 /* Receive on: REG_37 0x1D0F (stock sub_01E40D34), REG_30 off then 0xBFF1 (stock mode 1). */
@@ -369,7 +440,7 @@ void BK4819_TxMonitor(bool on)
  * in REG_0B bits 8-11 (0x01E53CC0). */
 int BK4819_DtmfTake(void)
 {
-	uint16_t f = BK4819_TakeInterrupts();
+	uint16_t f = BK4819_TakeFlags(0x0800u);
 
 	if (!(f & 0x0800u))
 		return -1;

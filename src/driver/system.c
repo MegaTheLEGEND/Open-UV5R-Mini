@@ -73,6 +73,11 @@ uint32_t SYSTEM_Raw(void)
 	return s_raw;
 }
 
+uint32_t SYSTEM_TicksPerSec(void)
+{
+	return s_tps;
+}
+
 void SYSTEM_SetTicksPerSec(uint32_t tps)
 {
 	SYSTEM_Ms();

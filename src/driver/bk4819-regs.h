@@ -45,8 +45,14 @@ enum BK4819_REGISTER_t {
 	BK4819_REG_52 = 0x52,
 	BK4819_REG_54 = 0x54,
 	BK4819_REG_55 = 0x55,
+	BK4819_REG_58 = 0x58, /* FSK modes, bandwidth, on */
+	BK4819_REG_59 = 0x59, /* FSK FIFOs, RX/TX on, sync length */
+	BK4819_REG_5A = 0x5A, /* FSK sync word, high */
+	BK4819_REG_5B = 0x5B, /* FSK sync word, low */
 	BK4819_REG_5C = 0x5C,
-	BK4819_REG_5D = 0x5D,
+	BK4819_REG_5D = 0x5D, /* FSK packet length */
+	BK4819_REG_5E = 0x5E, /* FSK FIFO levels */
+	BK4819_REG_5F = 0x5F, /* FSK FIFO data */
 	BK4819_REG_65 = 0x65, /* noise indicator */
 	BK4819_REG_67 = 0x67, /* RSSI */
 	BK4819_REG_68 = 0x68, /* CTCSS scan result */

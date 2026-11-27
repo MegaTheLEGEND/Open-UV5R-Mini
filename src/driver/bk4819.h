@@ -58,6 +58,17 @@ void     BK4819_SetupSquelch(uint8_t open_rssi, uint8_t close_rssi, uint8_t open
                              uint8_t open_glitch, uint8_t close_glitch);
 void     BK4819_SetInterrupts(uint16_t mask);
 uint16_t BK4819_TakeInterrupts(void);
+uint16_t BK4819_TakeFlags(uint16_t mask);            /* only these flags, taken now or by an earlier call */
+#define BK4819_INT_FSK_RX_DONE   (1u << 13)
+#define BK4819_INT_FSK_FULL      (1u << 12)
+#define BK4819_INT_FSK_SYNC      (1u << 1)
+#define BK4819_INT_FSK_RX        (BK4819_INT_FSK_RX_DONE | BK4819_INT_FSK_FULL | BK4819_INT_FSK_SYNC)
+/* FSK receiver, experimental (see bk4819.c): mode 0 FFSK 1200/1800, 1 FFSK 1200/2400; len bytes after the sync
+ * word; the "almost full" interrupt at full_words 16-bit words */
+void     BK4819_FskRxOn(uint8_t mode, uint16_t sync_hi, uint16_t sync_lo, uint8_t len, uint8_t full_words);
+void     BK4819_FskRxOff(void);
+bool     BK4819_FskRxArmed(void);
+uint16_t BK4819_FskRead(void);
 void     BK4819_RxOn(void);
 void     BK4819_Sleep(void);
 void     BK4819_SetCtcss(uint16_t tenths, uint8_t level);

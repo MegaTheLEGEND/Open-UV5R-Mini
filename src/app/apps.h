@@ -5,6 +5,7 @@
  *   ENABLE_APP_METER     app/meter.c     signal meter for fox hunting: level, S-units, peak, history, tick sound
  *   ENABLE_APP_CHANNELS  app/chbook.c    the channel list with names; MENU picks one
  *   ENABLE_APP_SYSINFO   app/sysinfo.c   battery, calibration, flash, channels, TX lock, uptime, build
+ *   ENABLE_APP_APRS      app/aprs.c      APRS: heard stations, our position beacon
  *   ENABLE_APP_SNAKE     app/snake.c     a snake game
  *   ENABLE_APP_FM        app/fmradio.c   FM broadcast radio (needs JieLi's libraries, features.mk)
  *
@@ -31,6 +32,9 @@
 #endif
 #ifndef APP_SNAKE_ENABLE
 #define APP_SNAKE_ENABLE 1
+#endif
+#ifndef APP_APRS_ENABLE
+#define APP_APRS_ENABLE 1
 #endif
 #ifndef APP_FM_ENABLE
 #define APP_FM_ENABLE 0
@@ -62,6 +66,9 @@ const char *APP_ChannelName(void);          /* "" if none */
 uint32_t    APP_FmKhz(void);                /* the FM radio's saved station, kHz; 0 = none */
 uint8_t     APP_FmVolume(void);             /* its saved volume 0-15; above 15 = none */
 void        APP_SetFm(uint32_t khz, uint8_t vol);   /* saved once it stays the same a few seconds */
+void        APP_AprsConf(uint8_t out[10]);   /* the APRS settings, packed (radio/aprs.h) */
+void        APP_SetAprsConf(const uint8_t in[10]);
+void        APP_HoldSaves(bool on);         /* the app has the VFO on its own frequency: don't save it meanwhile */
 void        APP_SetChannelMode(bool mr);
 void        APP_Step(int dir);              /* next / previous channel, or one frequency step */
 bool        APP_TuneChannel(int n);         /* false: an empty slot */
@@ -101,6 +108,9 @@ extern const AppDef_t APP_FM;
 #ifndef FM_DEV_AUTOSTART
 #define FM_DEV_AUTOSTART 0
 #endif
+#endif
+#if APP_APRS_ENABLE
+extern const AppDef_t APP_APRS;
 #endif
 #if APP_SNAKE_ENABLE
 extern const AppDef_t APP_SNAKE;

@@ -77,6 +77,7 @@ bool         RADIO_MonitorOn(void);
  * 0x09 bit 0). Does nothing unless transmitting. */
 bool         RADIO_TxTone(uint8_t code, bool monitor);
 void         RADIO_TxToneOff(void);
+bool         RADIO_SendAfsk(const uint8_t *frame, unsigned len, unsigned pre_flags);   /* APRS, while transmitting */
 void         RADIO_TxToneSilence(void);        /* between the codes of a sequence (generator left on) */
 bool         RADIO_TxToneOn(void);
 /* Roger beep at the end of transmit (stock sub_01E4DCC2): 1000 Hz then 850 Hz, 40 ms each, mic out. Blocks 80 ms. */

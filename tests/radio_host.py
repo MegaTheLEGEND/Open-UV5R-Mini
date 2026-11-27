@@ -21,7 +21,7 @@ def main():
         subprocess.run(['gcc', '-std=c11', '-O1', '-Wall', '-Wextra', '-Werror', '-DRADIO_ENABLE_TX=%d' % tx,
                         '-I', os.path.join(ROOT, 'tests', 'stubs'), '-I', os.path.join(ROOT, 'src'),
                         os.path.join(ROOT, 'tests', 'radio_host.c'), os.path.join(ROOT, 'src', 'radio', 'radio.c'), os.path.join(ROOT, 'src', 'radio', 'txlock.c'),
-                        os.path.join(ROOT, 'src', 'store', 'calib.c'), os.path.join(ROOT, 'src', 'store', 'channels.c'), os.path.join(ROOT, 'src', 'radio', 'tones.c'), os.path.join(ROOT, 'src', 'app', 'battery.c'), os.path.join(ROOT, 'src', 'radio', 'scan.c'), os.path.join(ROOT, 'src', 'radio', 'dualwatch.c'), os.path.join(ROOT, 'src', 'radio', 'vox.c'), os.path.join(ROOT, 'src', 'radio', 'dtmfseq.c'), '-DCHANNELS_HOST_TEST',
+                        os.path.join(ROOT, 'src', 'store', 'calib.c'), os.path.join(ROOT, 'src', 'store', 'channels.c'), os.path.join(ROOT, 'src', 'radio', 'tones.c'), os.path.join(ROOT, 'src', 'app', 'battery.c'), os.path.join(ROOT, 'src', 'radio', 'scan.c'), os.path.join(ROOT, 'src', 'radio', 'dualwatch.c'), os.path.join(ROOT, 'src', 'radio', 'vox.c'), os.path.join(ROOT, 'src', 'radio', 'dtmfseq.c'), os.path.join(ROOT, 'src', 'radio', 'ax25.c'), '-DCHANNELS_HOST_TEST',
                         '-o', exe], check=True)
         rc |= subprocess.run([exe]).returncode
     return rc
