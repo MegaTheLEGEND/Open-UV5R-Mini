@@ -52,6 +52,15 @@ typedef enum { SCREEN_MAIN, SCREEN_MENU, SCREEN_ABOUT, SCREEN_APP, SCREEN_HELP }
 
 static Screen_t s_screen;
 static bool     s_redraw = true;         /* whole screen */
+
+/* Something shown changed. The main screen draws only what differs from what it shows (UI_MainDraw), so it needs no
+ * full redraw, which wiped the whole screen for a lamp icon or each dual-watch hop (Sean, 2026-11-27); the menus
+ * draw everything again. */
+static void changed(void)
+{
+	if (s_screen != SCREEN_MAIN)
+		s_redraw = true;
+}
 #define LAMP_STROBE_MS 500u          /* strobe half-period: a guess, the stock rate is not read yet */
 static uint8_t  s_lamp_mode;             /* 0 off, 1 on, 2 strobe (stock flashlight key) */
 static uint16_t s_lamp_ms;
@@ -1136,7 +1145,7 @@ static void entry_finish(void)
 		for (int i = 0; i < s_entry_len; i++)
 			n = n * 10 + (uint32_t)(s_entry[i] - '0');
 		s_entry_len = 0;
-		s_redraw = true;
+		changed();
 		channel_show(n >= 1 && n <= CHANNEL_COUNT ? (int)n - 1 : -1);
 		return;
 	}
@@ -1147,12 +1156,12 @@ static void entry_finish(void)
 	s_entry_len = 0;
 	if (khz * 100u < FREQ_MIN || khz * 100u > FREQ_MAX) {
 		RADIO_Beep(400, 120);
-		s_redraw = true;
+		changed();
 		return;
 	}
 	vfo_retune(khz * 100u);
 	RADIO_Apply();
-	s_redraw = true;
+	changed();
 }
 
 /* ------------------------------------------------------------------------------------------- tone scan
@@ -1279,7 +1288,6 @@ static void lamp_step(void)
 	s_lamp_mode = (uint8_t)((s_lamp_mode + 1u) % 3u);
 	s_lamp_ms = 0;
 	IO_Lamp(s_lamp_mode != 0);
-	s_redraw = s_redraw || s_screen == SCREEN_MAIN;
 }
 
 /* Held, or F then the key, on the main screen: the UV-K5's (egzumer's) layout where this radio has the same thing,
@@ -1294,7 +1302,7 @@ static bool key_fn(KEY_Code_t k, bool held)
 		menu_change(M_STEP, +1);
 		copy_text(t + 5, fmt_step(b, RADIO_Steps[gVfo.step]), sizeof t - 5u);
 		note(t, COLOR_INFO);
-		s_redraw = true;
+		changed();
 #if SETTINGS_ENABLE_SAVE
 		save_soon();
 #endif
@@ -1392,7 +1400,7 @@ static void key_main(KEY_Code_t k)
 	if (s_entry_len) {
 		if (k == KEY_ACT_EXIT) {
 			s_entry_len = 0;
-			s_redraw = true;
+			changed();
 		} else if (k == KEY_ACT_MENU)
 			entry_finish();
 		return;
@@ -1414,7 +1422,7 @@ static void key_main(KEY_Code_t k)
 		lamp_step();
 	else if (k == KEY_ACT_AB || k == KEY_ACT_VM) {
 		menu_change(k == KEY_ACT_AB ? M_AB : M_MEM, 0);
-		s_redraw = true;
+		changed();
 	}
 }
 
@@ -2021,6 +2029,8 @@ enum {
 	EXT_EQ = 11,                     /* = key actions + 1 (press 11, double 12, hold 13); 0 = the default */
 	EXT_SLEEP = 14,                  /* sleep time index + 1 (L_SLEEP); 0 = the default */
 	EXT_BSAVE = 15,                  /* battery save ratio + 1 (L_BSAVE); 0 = from stock's on/off byte */
+	EXT_FM = 16,                     /* the FM radio's station, 10 kHz, little-endian (16, 17); 0 = not set */
+	EXT_FM_VOL = 18,                 /* the FM radio's volume + 1; 0 = not set */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -2030,6 +2040,27 @@ static bool ext_ok(void)
 }
 
 static void start_side(uint8_t side);
+
+/* The FM radio's station and volume, kept with the settings (Sean, 2026-11-27): saved once they have stayed the
+ * same FM_SAVE_WAIT_MS (a seek or held UP changes them every tick), or at power-off. */
+#define FM_SAVE_WAIT_MS 5000u
+static uint16_t s_fm_10k;                /* 10 kHz units; 0 = none yet */
+static uint8_t  s_fm_vol = 0xFFu;        /* 0-15; 0xFF = none yet */
+static uint16_t s_fm_wait;               /* ms until saved; 0 = nothing to save */
+
+uint32_t APP_FmKhz(void) { return (uint32_t)s_fm_10k * 10u; }
+uint8_t  APP_FmVolume(void) { return s_fm_vol; }
+
+void APP_SetFm(uint32_t khz, uint8_t vol)
+{
+	uint16_t f = (uint16_t)(khz / 10u);
+
+	if (f != s_fm_10k || vol != s_fm_vol) {
+		s_fm_10k = f;
+		s_fm_vol = vol;
+		s_fm_wait = FM_SAVE_WAIT_MS;
+	}
+}
 
 /* The power-on picture: external flash 0x0C0000, 128 x 128 RGB565, low byte first (stock reads these 32 KB at
  * power-on, EMULATOR.md; drawn from Sean's flash dump on the PC, 2026-11-27, it is his own picture). Only read; a
@@ -2092,6 +2123,13 @@ static void start_from_stock(void)
 	s_lock_ptt = ext_ok() && (gStock.ext[EXT_BATT] & 0x10u);
 	if (ext_ok() && gStock.ext[EXT_SLEEP] && gStock.ext[EXT_SLEEP] <= SLEEP_N)
 		s_sleep_set = (uint8_t)(gStock.ext[EXT_SLEEP] - 1u);
+	if (ext_ok()) {                      /* the FM radio's last station and volume */
+		uint16_t f = (uint16_t)(gStock.ext[EXT_FM] | gStock.ext[EXT_FM + 1] << 8);
+		if (f >= 6400u && f <= 10800u)
+			s_fm_10k = f;
+		if (gStock.ext[EXT_FM_VOL] && gStock.ext[EXT_FM_VOL] <= 16u)
+			s_fm_vol = (uint8_t)(gStock.ext[EXT_FM_VOL] - 1u);
+	}
 	if (ext_ok() && gStock.ext[EXT_BSAVE] && gStock.ext[EXT_BSAVE] <= 4)
 		s_bsave = (uint8_t)(gStock.ext[EXT_BSAVE] - 1u);
 	else
@@ -2173,7 +2211,7 @@ static void side_load(uint8_t side)
 	for (int i = 0; i < 13; i++)
 		s_ch_name[i] = s->name[i];
 	RADIO_Apply();
-	s_redraw = true;
+	changed();
 }
 
 static void side_switch(void)
@@ -2244,6 +2282,10 @@ static void save_now(void)
 	gStock.ext[EXT_BATT] = (uint8_t)(s_batt_show | (s_lock_ptt ? 0x10u : 0));
 	gStock.ext[EXT_SLEEP] = (uint8_t)(s_sleep_set + 1u);
 	gStock.ext[EXT_BSAVE] = (uint8_t)(s_bsave + 1u);
+	gStock.ext[EXT_FM] = (uint8_t)s_fm_10k;
+	gStock.ext[EXT_FM + 1] = (uint8_t)(s_fm_10k >> 8);
+	gStock.ext[EXT_FM_VOL] = s_fm_vol <= 15u ? (uint8_t)(s_fm_vol + 1u) : 0u;
+	s_fm_wait = 0;
 	gStock.raw[SET_POWER_SAVE] = s_bsave != 0;    /* stock's Save Mode as on/off, as CHIRP shows it */
 	for (int i = 0; i < 3; i++)
 		gStock.ext[EXT_EQ + i] = (uint8_t)(s_eq_act[i] + 1u);
@@ -2504,7 +2546,7 @@ static void key_action(uint8_t a)
 	if (gStock.raw[SET_BEEP])
 		RADIO_Beep(1000, 40);
 	light_wake();
-	s_redraw = true;
+	changed();
 #if SETTINGS_ENABLE_SAVE
 	save_soon();
 #endif
@@ -2753,7 +2795,7 @@ void APP_Tick(void)
 		if ((s_off_ticks = (uint16_t)(s_off_ticks + APP_TICK_MS)) >= 200u) {
 			RADIO_EndTx();
 #if SETTINGS_ENABLE_SAVE
-			if (s_save_due) {            /* a change not saved yet (key still held): save it now */
+			if (s_save_due || s_fm_wait) {   /* a change not saved yet (key still held): save it now */
 				dw_end();
 				save_now();
 			}
@@ -3002,6 +3044,8 @@ void APP_Tick(void)
 #if SETTINGS_ENABLE_SAVE
 	if (k != KEY_INVALID)
 		save_soon();
+	if (s_fm_wait && (s_fm_wait = s_fm_wait > APP_TICK_MS ? (uint16_t)(s_fm_wait - APP_TICK_MS) : 0) == 0)
+		save_soon();                     /* the FM station has settled */
 	save_tick(ptt || s_tx_swapped || s_peek || s_tscan || SCAN_Active() || s_entry_len);
 #endif
 	if (s_note_ms)

@@ -518,6 +518,10 @@ static void level(void)
 
 static void enter(void)
 {
+	if (APP_FmKhz() >= FMRX_MIN_KHZ && APP_FmKhz() <= FMRX_MAX_KHZ)
+		s_khz = APP_FmKhz();             /* where it was last (saved with the settings) */
+	if (APP_FmVolume() <= 15u)
+		s_vol = APP_FmVolume();
 	s_typed = 0;
 	s_seek = false;
 	s_ms = 0;
@@ -537,6 +541,7 @@ static void enter(void)
 
 static void leave(void)
 {
+	APP_SetFm(s_khz, s_vol);
 	gSystemIdle = 0;
 	SYSTEM_SetTicksPerSec(0);
 	FMRX_Close();
@@ -659,6 +664,8 @@ static AppsResult_t tick(bool full)
 	}
 	if (s_msg_ms && (s_msg_ms = s_msg_ms > APP_TICK_MS ? (uint16_t)(s_msg_ms - APP_TICK_MS) : 0) == 0)
 		hint();
+	if (s_ok)
+		APP_SetFm(s_khz, s_vol);         /* saved once it stays put (app.c) */
 	if (s_ok && (s_mode & FMRX_RX)) {    /* RDS: decode what the FM interrupt gathered; the text scrolls */
 		bool redraw = false;
 		gSystemIdle = idle_rds;

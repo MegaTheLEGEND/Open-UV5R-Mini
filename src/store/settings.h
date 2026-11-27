@@ -41,7 +41,7 @@
 #define SETTINGS_SET_SLOT    0x60u
 #define SETTINGS_SET_MAX     40u
 #define SETTINGS_EXT_OFF     0x40u     /* our bytes in the settings slot (StockSettings_t.ext) */
-#define SETTINGS_EXT_LEN     16u
+#define SETTINGS_EXT_LEN     30u       /* up to the CRC at 0x5E; 0x50-0x5D were written 0 before 2026-11-27 */
 
 /* Stock setting bytes we use (offsets in the 64-byte block). */
 enum {

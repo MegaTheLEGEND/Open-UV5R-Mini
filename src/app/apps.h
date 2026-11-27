@@ -59,6 +59,9 @@ typedef struct {
 bool        APP_ChannelMode(void);
 int         APP_Channel(void);              /* 0-based, -1 in VFO mode */
 const char *APP_ChannelName(void);          /* "" if none */
+uint32_t    APP_FmKhz(void);                /* the FM radio's saved station, kHz; 0 = none */
+uint8_t     APP_FmVolume(void);             /* its saved volume 0-15; above 15 = none */
+void        APP_SetFm(uint32_t khz, uint8_t vol);   /* saved once it stays the same a few seconds */
 void        APP_SetChannelMode(bool mr);
 void        APP_Step(int dir);              /* next / previous channel, or one frequency step */
 bool        APP_TuneChannel(int n);         /* false: an empty slot */
