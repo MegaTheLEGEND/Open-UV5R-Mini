@@ -15,6 +15,7 @@
  * Each stand-in is written from what the library does with it (its code, read with llvm-objdump) and JieLi's
  * public headers, not copied from JieLi's sources. */
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "bsp/ac695n.h"
@@ -35,16 +36,26 @@ static void glue_show(uint32_t id)
 /* ------------------------------------------------------------------------------------------- memory */
 #define HEAP_SIZE 0x6000u                /* 24 KB: the FM receiver takes about 10.2 KB, the DAC driver a little */
 
+/* Two heaps with one malloc: the FM heap (FM receiver, DAC driver: also the key beeps, open all the time) and,
+ * while Bluetooth runs, the Bluetooth heap in btram (FMGLUE_BtHeap, bt_le.c). malloc takes from the Bluetooth heap
+ * while it is on; free gives a block back to the heap it came from, found by its address. */
 typedef struct Blk { uint32_t size; uint32_t used; } Blk_t;   /* size: bytes after the header */
+typedef struct { uint8_t *base; uint32_t size; } Heap_t;
 static uint8_t s_heap[HEAP_SIZE] __attribute__((section(".ram2.heap"), aligned(8)));
 static uint8_t s_heap_ready;
-uint32_t gFmHeapUsed, gFmHeapPeak, gFmAllocFails;
+static Heap_t  s_fm = { s_heap, HEAP_SIZE }, s_bt;
+uint32_t gFmHeapUsed, gFmHeapPeak, gFmAllocFails, gBtHeapUsed, gBtHeapPeak, gBtAllocFails;
+
+static void heap_init_at(const Heap_t *h)
+{
+	Blk_t *b = (Blk_t *)h->base;
+	b->size = h->size - sizeof(Blk_t);
+	b->used = 0;
+}
 
 static void heap_init(void)
 {
-	Blk_t *b = (Blk_t *)s_heap;
-	b->size = HEAP_SIZE - sizeof(Blk_t);
-	b->used = 0;
+	heap_init_at(&s_fm);
 	s_heap_ready = 1;
 	gFmHeapUsed = 0;
 }
@@ -58,17 +69,25 @@ void FMGLUE_HeapReset(void)              /* at every FM start */
 	gFmAdcCalls = gFmAdcTimeouts = gFmDelays = 0;
 }
 
-void *malloc(size_t n)
+void FMGLUE_BtHeap(bool on, void *base, uint32_t size)
 {
-	uint8_t *p = s_heap;
+	if (on) {
+		s_bt.base = (uint8_t *)(((uintptr_t)base + 7u) & ~(uintptr_t)7u);
+		s_bt.size = (size - (uint32_t)(s_bt.base - (uint8_t *)base)) & ~7u;
+		heap_init_at(&s_bt);
+		gBtHeapUsed = gBtAllocFails = 0;
+	} else
+		s_bt.base = 0;
+}
 
-	GLUE(1);
-	if (!s_heap_ready)
-		heap_init();
+static void *heap_alloc(const Heap_t *h, size_t n, uint32_t *used, uint32_t *peak, uint32_t *fails)
+{
+	uint8_t *p = h->base;
+
 	n = (n + 7u) & ~(size_t)7u;
 	if (!n)
 		n = 8;
-	while (p < s_heap + HEAP_SIZE) {
+	while (p < h->base + h->size) {
 		Blk_t *b = (Blk_t *)p;
 		if (!b->used && b->size >= n) {
 			if (b->size >= n + sizeof(Blk_t) + 16u) {      /* split */
@@ -78,31 +97,48 @@ void *malloc(size_t n)
 				b->size = (uint32_t)n;
 			}
 			b->used = 1;
-			gFmHeapUsed += b->size + sizeof(Blk_t);
-			if (gFmHeapUsed > gFmHeapPeak)
-				gFmHeapPeak = gFmHeapUsed;
+			*used += b->size + sizeof(Blk_t);
+			if (*used > *peak)
+				*peak = *used;
 			return p + sizeof(Blk_t);
 		}
 		p += sizeof(Blk_t) + b->size;
 	}
-	gFmAllocFails++;
+	(*fails)++;
 	return 0;
+}
+
+void *malloc(size_t n)
+{
+	GLUE(1);
+	if (s_bt.base)
+		return heap_alloc(&s_bt, n, &gBtHeapUsed, &gBtHeapPeak, &gBtAllocFails);
+	if (!s_heap_ready)
+		heap_init();
+	return heap_alloc(&s_fm, n, &gFmHeapUsed, &gFmHeapPeak, &gFmAllocFails);
+}
+
+static bool heap_free(const Heap_t *h, void *q, uint32_t *used)
+{
+	Blk_t *b, *n;
+
+	if (!h->base || (uint8_t *)q < h->base + sizeof(Blk_t) || (uint8_t *)q >= h->base + h->size)
+		return false;
+	b = (Blk_t *)((uint8_t *)q - sizeof(Blk_t));
+	if (!b->used)
+		return true;
+	b->used = 0;
+	*used -= b->size + sizeof(Blk_t);
+	n = (Blk_t *)((uint8_t *)b + sizeof(Blk_t) + b->size);         /* join with a free block after it */
+	if ((uint8_t *)n < h->base + h->size && !n->used)
+		b->size += sizeof(Blk_t) + n->size;
+	return true;
 }
 
 void free(void *q)
 {
-	Blk_t *b, *n;
-
-	if (!q || (uint8_t *)q < s_heap + sizeof(Blk_t) || (uint8_t *)q >= s_heap + HEAP_SIZE)
-		return;
-	b = (Blk_t *)((uint8_t *)q - sizeof(Blk_t));
-	if (!b->used)
-		return;
-	b->used = 0;
-	gFmHeapUsed -= b->size + sizeof(Blk_t);
-	n = (Blk_t *)((uint8_t *)b + sizeof(Blk_t) + b->size);         /* join with a free block after it */
-	if ((uint8_t *)n < s_heap + HEAP_SIZE && !n->used)
-		b->size += sizeof(Blk_t) + n->size;
+	if (q && !heap_free(&s_bt, q, &gBtHeapUsed))
+		heap_free(&s_fm, q, &gFmHeapUsed);
 }
 
 void *zalloc(size_t n)
@@ -294,7 +330,9 @@ void mdelay(uint32_t ms) { SYSTEM_DelayMs(ms); }
 void os_time_dly(uint32_t ticks) { GLUE(6); SYSTEM_DelayMs(10u * ticks); }
 
 /* ------------------------------------------------------------------------------------------- logs, asserts */
-int config_asser = 0;                    /* JieLi's asserts off */
+/* JieLi's failed checks: 0 = their own chip reset in some libraries (btctrler.a), 1 = printf and cpu_assert_debug,
+ * which only count here. The FM libraries call our cpu_reset (a counter) either way. */
+int config_asser = 1;
 const unsigned char log_tag_const_i_FM = 0, log_tag_const_e_FM = 0, log_tag_const_d_FM = 0, log_tag_const_w_FM = 0;
 const unsigned char log_tag_const_i_CLOCK = 0, log_tag_const_e_CLOCK = 0, log_tag_const_d_CLOCK = 0, log_tag_const_w_CLOCK = 0;
 const unsigned char log_tag_const_i_DAC = 0, log_tag_const_e_DAC = 0, log_tag_const_d_DAC = 0, log_tag_const_w_DAC = 0;
@@ -322,8 +360,8 @@ int os_sem_set(void *s, int n) { (void)s; (void)n; return 0; }
 int os_mutex_create(void *m) { (void)m; return 0; }
 int os_mutex_pend(void *m, int t) { (void)m; (void)t; return 0; }
 int os_mutex_post(void *m) { (void)m; return 0; }
-uint16_t usr_timeout_add(void *p, void (*f)(void *), uint32_t ms, uint8_t pri) { (void)p; (void)f; (void)ms; (void)pri; return 0; }
-void usr_timeout_del(uint16_t id) { (void)id; }
+__attribute__((weak)) uint16_t usr_timeout_add(void *p, void (*f)(void *), uint32_t ms, uint8_t pri) { (void)p; (void)f; (void)ms; (void)pri; return 0; }
+__attribute__((weak)) void usr_timeout_del(uint16_t id) { (void)id; }
 int audio_stream_resume(void *e) { (void)e; return 0; }
 int audio_stream_run(void *e, void *d) { (void)e; (void)d; return 0; }
 int audio_sample_sync_output_begin(void *s, int n) { (void)s; (void)n; return 0; }

@@ -37,6 +37,12 @@ extern int  audio_dac_ch_analog_gain_set(struct audio_dac_hdl *dac, uint8_t ch, 
 extern int  audio_dac_ch_digital_gain_set(struct audio_dac_hdl *dac, uint8_t ch, uint32_t gain);
 
 extern void FMGLUE_HeapReset(void);
+#if BT_LE_ENABLE
+#include "platform/jl_sdk/bt_le.h"
+static bool bt_on(void) { return BTLE_IsOn(); }
+#else
+static bool bt_on(void) { return false; }
+#endif
 extern uint8_t fm_adc_dat[4096];        /* JieLi's FM sample buffer (section .fm_mem, in our .ram2: not cleared) */
 extern uint32_t gFmHeapPeak, gFmAsserts, gFmResets, gFmAdcCalls, gFmAdcTimeouts;
 
@@ -1082,7 +1088,8 @@ bool FMRX_Open(uint32_t khz, uint32_t mode)
 	FMGLUE_HeapReset();
 	for (unsigned i = 0; i < sizeof fm_adc_dat; i++)
 		fm_adc_dat[i] = 0;
-	IRQ_Init();
+	if (!bt_on())                        /* Bluetooth (bt_le.c) keeps its interrupts while key beeps open and close */
+		IRQ_Init();
 	IRQ_SetVector(0, exc0);              /* the core's exceptions go through the same table (JieLi's hwi.h) */
 	IRQ_SetVector(1, exc1);
 	IRQ_SetVector(2, exc2);
@@ -1182,7 +1189,8 @@ void FMRX_Close(void)
 	if (s_mode & FMRX_RX)
 		fm_inside_off();
 	IRQ_GlobalOff();
-	IRQ_Init();
+	if (!bt_on())                        /* Bluetooth (bt_le.c) keeps its interrupts while key beeps open and close */
+		IRQ_Init();
 	crumb(101);
 	if (s_mode & FMRX_DAC) {
 		audio_dac_stop(DAC);
