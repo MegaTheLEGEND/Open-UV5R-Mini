@@ -9,8 +9,8 @@
 
 /* ------------------------------------------------------------------------------- the interrupt half */
 
-/* sin(2 pi i / 256) * 16384; not const, so it sits in RAM beside the RAM code that reads it */
-__attribute__((section(".data.rds_sin"))) static int16_t s_sin[256] = {
+/* sin(2 pi i / 256) * 16384, the source of the RAM tables below */
+static const int16_t SIN14[256] = {
 	0, 402, 804, 1205, 1606, 2006, 2404, 2801, 3196, 3590, 3981, 4370, 4756, 5139, 5520, 5897,
 	6270, 6639, 7005, 7366, 7723, 8076, 8423, 8765, 9102, 9434, 9760, 10080, 10394, 10702, 11003, 11297,
 	11585, 11866, 12140, 12406, 12665, 12916, 13160, 13395, 13623, 13842, 14053, 14256, 14449, 14635, 14811, 14978,
@@ -28,10 +28,11 @@ __attribute__((section(".data.rds_sin"))) static int16_t s_sin[256] = {
 	-11585, -11297, -11003, -10702, -10394, -10080, -9760, -9434, -9102, -8765, -8423, -8076, -7723, -7366, -7005, -6639,
 	-6270, -5897, -5520, -5139, -4756, -4370, -3981, -3590, -3196, -2801, -2404, -2006, -1606, -1205, -804, -402,
 };
+/* cos and sin * 256, made at reset: in RAM beside the RAM code that reads them, and small enough that the products
+ * need no shift in the loop */
+__attribute__((section(".data.rds_tab"))) static int16_t s_cos8[256] = { 1 };
+__attribute__((section(".data.rds_tab"))) static int16_t s_sin8[256] = { 1 };
 
-#define CLICK      40000                 /* a jump bigger than this between samples is a click: hold the last value
-                                          * (on Sean's radio, 2026-11-26; 15000 cut 12% of samples and the RDS band) */
-#define LIMIT      65535
 #define RING       512u                  /* 8 values a bit: 54 ms; the main loop reads every 10 ms */
 
 static volatile uint32_t s_wr, s_rd;
@@ -39,65 +40,68 @@ static int32_t s_ri[RING], s_rq[RING];
 
 static uint32_t s_ph, s_inc, s_inc0;     /* pilot phase and step, 2^32 a cycle */
 static uint32_t s_cyc, s_dumped;         /* pilot cycles, and the count at the last value handed on */
-static int32_t  s_last, s_aI, s_aQ;      /* last sample, 57 kHz sums */
+static int32_t  s_aI, s_aQ;              /* 57 kHz sums */
 static int32_t  s_lockq;                 /* the pilot loop's phase error, smoothed (4096 = 1 radian) */
 static volatile bool s_lock, s_fe_reset;
 static uint32_t s_fs = 599552u;          /* 1171 FM interrupts a second x 512 (Sean's radio, 2026-11-26) */
 
+/* The cost matters: this runs on 600 000 samples a second inside the FM interrupt. The first version (a sample at a
+ * time, the pilot on every sample, a click filter) took about 0.65 ms of every 0.85 ms block on Sean's radio
+ * (2026-11-26) and starved the main loop until the watchdog restarted the radio. Now: samples in pairs (their sum,
+ * at the pair's middle; it loses about 0.4 dB at 57 kHz and lets in a little noise from near 243 kHz), the 57 kHz
+ * carrier on every pair, the pilot on every 3rd pair (it is strong), no click filter (JieLi's demodulator, which
+ * now runs, cut the clicks about 8 times). */
 RDS_RAMFUNC void RDS_FeBlock(const volatile int32_t *x, uint32_t n)
 {
-	uint32_t ph, inc, cyc, dumped, nph;
-	int32_t corr;
-	int32_t last, aI, aQ, pI = 0, pQ = 0, e, ai;
+	uint32_t ph, inc2, ph3, inc6, cyc, dumped, nph, half, k = 0;
+	int32_t corr, aI, aQ, pI = 0, pQ = 0, e, ai;
 
 	if (s_fe_reset) {
 		s_fe_reset = false;
 		s_ph = 0;
 		s_inc = s_inc0;
 		s_cyc = s_dumped = 0;
-		s_last = s_aI = s_aQ = 0;
+		s_aI = s_aQ = 0;
 		s_lockq = 4096;
 		s_lock = false;
 	}
 	ph = s_ph;
-	inc = s_inc;
+	half = s_inc >> 1;                   /* a pair's middle is half a sample on */
+	inc2 = s_inc * 2u;
+	ph3 = (ph + half) * 3u;              /* the 57 kHz carrier: 3 times the pilot's phase */
+	inc6 = inc2 * 3u;
 	cyc = s_cyc;
 	dumped = s_dumped;
-	last = s_last;
 	aI = s_aI;
 	aQ = s_aQ;
-	for (uint32_t i = 0; i < n; i++) {
-		int32_t v = x[i], d = v - last;
-		uint32_t p, p3;
+	for (uint32_t i = 0; i + 1u < n; i += 2u) {
+		int32_t v = x[i] + x[i + 1u];
+		uint32_t p3 = ph3 >> 24;
 
-		if (d > CLICK || d < -CLICK)
-			v = last;
-		if (v > LIMIT)
-			v = LIMIT;
-		else if (v < -LIMIT)
-			v = -LIMIT;
-		last = v;
-		p = ph >> 24;
-		pI += (v * s_sin[(p + 64u) & 255u]) >> 10;
-		pQ += (v * s_sin[p]) >> 10;
-		p3 = (ph * 3u) >> 24;            /* the 57 kHz carrier: 3 times the pilot's phase */
-		aI += (v * s_sin[(p3 + 64u) & 255u]) >> 10;
-		aQ += (v * s_sin[p3]) >> 10;
-		nph = ph + inc;
+		aI += v * s_cos8[p3];
+		aQ += v * s_sin8[p3];
+		if (k-- == 0u) {                 /* the pilot, every 3rd pair: 100 000 a second, where nothing folds onto
+		                                  * 19 kHz (every 4th, 75 000, folded the RDS at 57 kHz onto it) */
+			k = 2u;
+			uint32_t p = (ph + half) >> 24;
+			pI += (v * s_cos8[p]) >> 4;
+			pQ += (v * s_sin8[p]) >> 4;
+		}
+		ph3 += inc6;
+		ph += inc2;
 		/* every 2 pilot cycles: 8 values a bit (the bit is 16 cycles). A count already handed on is not handed on
 		 * again: the loop's phase step can carry the phase back over a cycle boundary (below), and the same
 		 * boundary is then crossed twice. */
-		if (nph < ph && (++cyc & 1u) == 0u && cyc != dumped) {
+		if (ph < inc2 && (++cyc & 1u) == 0u && cyc != dumped) {
 			uint32_t w = s_wr;
 			dumped = cyc;
 			if (w - s_rd < RING) {
-				s_ri[w % RING] = aI >> 8;
-				s_rq[w % RING] = aQ >> 8;
+				s_ri[w % RING] = aI >> 12;
+				s_rq[w % RING] = aQ >> 12;
 				s_wr = w + 1u;
 			}
 			aI = aQ = 0;
 		}
-		ph = nph;
 	}
 	/* the pilot loop, once a block (about 1170 a second): locked when pI > 0 and pQ = 0. The error is pQ / |pI| in
 	 * 1/4096 radian (small angles); wide while it pulls in, narrow once locked. */
@@ -115,10 +119,10 @@ RDS_RAMFUNC void RDS_FeBlock(const volatile int32_t *x, uint32_t n)
 	}
 	if (s_lock) {
 		corr = e * 6342;                 /* natural frequency about 5 Hz */
-		inc -= (uint32_t)(e / 4);
+		s_inc -= (uint32_t)(e / 4);
 	} else {
 		corr = e * 37500;                /* about 30 Hz */
-		inc -= (uint32_t)(e * 8);
+		s_inc -= (uint32_t)(e * 8);
 	}
 	nph = ph - (uint32_t)corr;           /* keep the cycle count right when the step crosses a cycle boundary */
 	if (corr > 0 && nph > ph)
@@ -126,18 +130,17 @@ RDS_RAMFUNC void RDS_FeBlock(const volatile int32_t *x, uint32_t n)
 	else if (corr < 0 && nph < ph)
 		cyc++;
 	ph = nph;
-	if (inc - s_inc0 + (s_inc0 >> 7) > (s_inc0 >> 6))   /* more than 0.8% off: start again */
-		inc = s_inc0;
+	if (s_inc - s_inc0 + (s_inc0 >> 7) > (s_inc0 >> 6))   /* more than 0.8% off: start again */
+		s_inc = s_inc0;
 	s_lockq += ((ai < 4096 ? 4096 : (e < 0 ? -e : e)) - s_lockq) >> 5;
-	if (!s_lock && pI > 0 && s_lockq < 300)
+	if (!s_lock && pI > 0 && s_lockq < 800)
 		s_lock = true;
-	else if (s_lock && s_lockq > 800)
+	else if (s_lock && s_lockq > 2000)   /* wide again only when really lost: a noisy pilot (it is measured on a
+	                                      * third of the pairs) would flip it back and forth */
 		s_lock = false;
 	s_ph = ph;
-	s_inc = inc;
 	s_cyc = cyc;
 	s_dumped = dumped;
-	s_last = last;
 	s_aI = aI;
 	s_aQ = aQ;
 }
@@ -377,6 +380,10 @@ void RDS_Reset(uint32_t fs_mpx)
 		}
 	}
 	s_inc0 = inc;
+	for (int i = 0; i < 256; i++) {
+		s_cos8[i] = (int16_t)(SIN14[(i + 64) & 255] / 64);
+		s_sin8[i] = (int16_t)(SIN14[i] / 64);
+	}
 	s_fe_reset = true;
 	s_rd = s_wr;
 	for (int i = 0; i < 26; i++)
