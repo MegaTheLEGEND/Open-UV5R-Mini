@@ -52,6 +52,54 @@ def record(a):
     return analyse(new[-1])
 
 
+SCAN_MHZ = [300.0, 303.875, 310.0, 315.0, 318.0, 345.0, 390.0, 418.0, 433.42, 433.92, 434.42, 868.3, 868.95,
+            915.0, 927.0]
+
+
+def scan(a):
+    """Hop the SDR over the usual remote-control frequencies; at each, record a moment and print how far the loudest
+    burst is above the noise. Hold the remote's button down (or keep pressing) during the whole scan."""
+    dev = api('/deviceset/0/device/settings')
+    hw = dev['deviceHwType']
+    key = hw[0].lower() + hw[1:] + 'Settings' if hw != 'RTLSDR' else 'rtlSdrSettings'
+    was = dev[key]['centerFrequency']
+    act = {'channelType': 'FileSink', 'direction': 0, 'FileSinkActions': {'record': 1}}
+    print('hold the button down now: %d frequencies, %.1f s each' % (len(SCAN_MHZ), a.dwell), flush=True)
+    res = []
+    try:
+        for mhz in SCAN_MHZ:
+            api('/deviceset/0/device/settings', {'deviceHwType': hw, 'direction': 0,
+                                                 key: {'centerFrequency': int(mhz * 1e6)}}, 'PATCH')
+            time.sleep(0.3)
+            before = set(glob.glob(os.path.join(ROOT, 'build', 'sdr', '*.sdriq')))
+            act['FileSinkActions']['record'] = 1
+            api('/deviceset/0/channel/%d/actions' % a.chan, act)
+            time.sleep(a.dwell)
+            act['FileSinkActions']['record'] = 0
+            api('/deviceset/0/channel/%d/actions' % a.chan, act)
+            time.sleep(0.3)
+            new = sorted(set(glob.glob(os.path.join(ROOT, 'build', 'sdr', '*.sdriq'))) - before)
+            if not new:
+                continue
+            rate, centre, iq = read_sdriq(new[-1])
+            os.remove(new[-1])
+            if len(iq) < 1000:
+                continue
+            w = max(1, int(rate * 50e-6))
+            env = np.convolve(np.abs(iq) ** 2, np.ones(w) / w, mode='same')
+            db = 10 * np.log10(env + 1e-9)
+            above = np.percentile(db, 99.9) - np.percentile(db, 30)
+            res.append((mhz, above))
+            print('%9.3f MHz  %5.1f dB above the noise %s' % (mhz, above, '#' * int(max(0, above))), flush=True)
+    finally:
+        api('/deviceset/0/device/settings', {'deviceHwType': hw, 'direction': 0, key: {'centerFrequency': was}},
+            'PATCH')
+    if res:
+        best = max(res, key=lambda r: r[1])
+        print('loudest: %.3f MHz (%.1f dB)%s' % (best[0], best[1], '' if best[1] >= 10 else ': nothing clear'))
+    return 0
+
+
 def read_sdriq(path):
     with open(path, 'rb') as f:
         hdr = f.read(32)
@@ -123,9 +171,14 @@ def main():
     r = sub.add_parser('record')
     r.add_argument('--seconds', type=float, default=4)
     r.add_argument('--chan', type=int, default=1)
+    sc = sub.add_parser('scan')
+    sc.add_argument('--dwell', type=float, default=0.8)
+    sc.add_argument('--chan', type=int, default=1)
     an = sub.add_parser('analyse')
     an.add_argument('file')
     a = ap.parse_args()
+    if a.what == 'scan':
+        return scan(a)
     return record(a) if a.what == 'record' else analyse(a.file)
 
 
