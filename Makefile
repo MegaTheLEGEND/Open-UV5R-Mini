@@ -67,10 +67,14 @@ endif
 ifeq ($(ENABLE_APP_SNAKE),0)
 SRC := $(filter-out src/app/snake.c,$(SRC))
 endif
+# Bluetooth: the BLE backend on JieLi's controller instead of the stubs
+ifeq ($(ENABLE_BT_LE),1)
+SRC := $(filter-out src/bt/bt_none.c,$(SRC)) src/platform/jl_sdk/bt_le.c src/platform/jl_sdk/bt_glue.c
+endif
 # FM: our files, then JieLi's libraries at link time (link-time optimised: they are LLVM bitcode) and the
 # compiler's helper library for their 64-bit and float arithmetic
 ifeq ($(ENABLE_APP_FM),1)
-LIBS := --start-group build/sdk/cpu.a build/sdk/media.a --end-group \
+LIBS := --start-group build/sdk/cpu.a build/sdk/media.a $(if $(filter 1,$(ENABLE_BT_LE)),build/sdk/btctrler.a,) --end-group \
         $(wildcard $(if $(TOOLCHAIN),$(TOOLCHAIN)/../lib/clang/*/lib/pi32v2/libclang_rt.builtins.a,))
 else
 SRC := $(filter-out src/app/fmradio.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c,$(SRC))
@@ -97,6 +101,9 @@ FORCE:
 FLAGS_FILE := $(BUILD)/flags.txt
 $(shell mkdir -p $(BUILD); echo '$(FEATURE_FLAGS)' | cmp -s - $(FLAGS_FILE) || echo '$(FEATURE_FLAGS)' > $(FLAGS_FILE))
 
+# The Bluetooth controller's settings as LLVM bitcode, so link-time optimisation sees their values with JieLi's
+# (bitcode) library and drops the parts they switch off (classic Bluetooth, TWS, test modes)
+$(BUILD)/src/platform/jl_sdk/bt_glue.o: CFLAGS += -flto
 $(BUILD)/%.o: %.c $(FLAGS_FILE)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c $< -o $@

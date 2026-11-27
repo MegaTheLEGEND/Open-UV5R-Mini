@@ -77,6 +77,21 @@ override ENABLE_APP_FM := 0
 endif
 endif
 
+# The BLE backend: Bluetooth Low Energy scanning and advertising on JieLi's own controller library, run from our
+# main loop (src/platform/jl_sdk/bt_le.c, bt_glue.c), only while a Bluetooth app uses it. Needs build/sdk/btctrler.a
+# (sh tools/sdk/fm_libs.sh <sdk clone>) and the FM radio's glue (ENABLE_APP_FM); without them the build has no
+# Bluetooth (src/bt/bt_none.c) and the Bluetooth apps say so. Closed (Apache-2.0) library code: docs/THIRD-PARTY.md.
+ENABLE_BT_LE        ?= 1
+ifeq ($(ENABLE_BT_LE),1)
+ifneq ($(ENABLE_APP_FM),1)
+$(warning ENABLE_BT_LE needs ENABLE_APP_FM (its glue and libraries); Bluetooth is left out)
+override ENABLE_BT_LE := 0
+else ifeq ($(wildcard build/sdk/btctrler.a),)
+$(warning ENABLE_BT_LE: build/sdk/btctrler.a not found (tools/sdk/fm_libs.sh); Bluetooth is left out)
+override ENABLE_BT_LE := 0
+endif
+endif
+
 # Debugging aids for bring-up: the FM app's debug lines (step trace, heartbeat, live counters), the FM cable monitor
 # and the FM log on the cable UART. Crash readouts (screen and cable) stay in either way. Off for normal use.
 ENABLE_DEBUGGING    ?= 0
@@ -91,4 +106,5 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DAPP_APRS_ENABLE=$(ENABLE_APP_APRS) -DAPP_SUBGHZ_ENABLE=$(ENABLE_APP_SUBGHZ) \
                  -DAPP_BTSCAN_ENABLE=$(ENABLE_APP_BTSCAN) -DAPP_BTINFO_ENABLE=$(ENABLE_APP_BTINFO) \
                  -DAPP_BTBEACON_ENABLE=$(ENABLE_APP_BTBEACON) -DAPP_BTSERIAL_ENABLE=$(ENABLE_APP_BTSERIAL) \
+                 -DBT_LE_ENABLE=$(ENABLE_BT_LE) \
                  -DDEBUGGING=$(ENABLE_DEBUGGING)

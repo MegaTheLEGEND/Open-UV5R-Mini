@@ -30,6 +30,9 @@
 #include "update/update.h"
 #include "board.h"
 #include "bt/bt.h"
+#if BT_LE_ENABLE
+#include "platform/jl_sdk/bt_le.h"
+#endif
 #include "driver/adc.h"
 #include "driver/bk4819.h"
 #include "driver/extflash.h"
@@ -2888,6 +2891,9 @@ void APP_Tick(void)
 	bool ptt;
 
 	SYSTEM_WatchdogClear();
+#if BT_LE_ENABLE
+	BTLE_Tick();                         /* the Bluetooth controller, while an app has it on */
+#endif
 
 	if (PROGRAM_ENABLE && s_xf_ok && RADIO_State() != RADIO_TX) {
 #if DEBUGGING
