@@ -318,9 +318,6 @@ __attribute__((section(".ramfunc.fm"))) void fm_sample_output_handler(int16_t *b
 
 	s_st.irqs++;
 	gFmCrumb.irqs++;
-	/* RDS: the raw FM samples of the block just demodulated (the half the DMA is not filling; HF_CON1 bit 5 says
-	 * which, as for the RDS captures on Sean's radio, 2026-11-26) */
-	RDS_FeBlock((const volatile int32_t *)(fm_adc_dat + ((~REG32(0x001F1714u) << 6) & 0x800u)), 512u);
 	if (s_isr_log < 3u) {                /* the first calls after the FM block restart, on the cable */
 		uint32_t pc = 0;
 #ifdef __PI32V2__
@@ -493,7 +490,7 @@ uint32_t FMRX_SysMHz(void)
 #define SFC_BAUD    REG32(0x001F0204u)
 #define DSP_CON     REG32(0x00101000u)
 #define SFC_FAST_BAUD 5u
-#define SFC_FAST_RDLY 3u
+#define SFC_FAST_RDLY 5u                 /* stock's rule, MHz * 30 / 1000, at 160 MHz */
 uint32_t gFmClkCon1Was;
 #define PLL_CON1_   REG32(0x001E0044u)
 static uint32_t s_old_sfc_con, s_old_sfc_baud;
@@ -540,7 +537,11 @@ static void clock_fast(void)
 		for (volatile uint32_t i = 0; i < 20000u; i++)
 			;
 	}
-	clock_set((s_old_div & ~(7u << 8 | 7u << 12)) | 2u << 8, (s_old_con2 & ~0x3Fu) | 3u | 8u << 2,
+	/* 160 MHz: the 480 MHz PLL output / 3 (CLK_CON2 bits 2-5 = 1); LSB / 4 = 40 MHz as before. 120 MHz (/ 4) left
+	 * too little: on Sean's radio (cable monitor, 2026-11-26) fm_dem took 0.645 ms and RDS 0.143 ms of each 0.85 ms
+	 * FM block, and the main loop starved until the watchdog restarted the radio; at 160 MHz, 0.497 and 0.106 ms,
+	 * and FM ran with about 35% left for the main loop. Stock runs FM at 120 MHz, with no RDS. */
+	clock_set((s_old_div & ~(7u << 8 | 7u << 12)) | 3u << 8, (s_old_con2 & ~0x3Fu) | 3u | 1u << 2,
 	          (s_old_sfc_con & ~(0xFu << 20)) | SFC_FAST_RDLY << 20, SFC_FAST_BAUD);
 	s_fast = true;
 }
@@ -692,6 +693,30 @@ __attribute__((unused)) static IRQ_HANDLER void fm_isr_ours(void)
 		canary_log("isr");
 	}
 	s_fi_n++;
+}
+
+/* The FM interrupt we run: fmhw_isr's steps (as fm_isr_ours above, without the logging), with RDS first. RDS needs
+ * the raw FM samples before fm_dem: read after it (from fm_sample_output_handler) the pilot loop never locked on
+ * Sean's radio (2026-11-26, cable log: "pilot 0" on every station; fm_dem appears to work in its input buffer). */
+__attribute__((section(".ramfunc.fm"))) static IRQ_HANDLER void fm_isr_rds(void)
+{
+	uint32_t hf, st, in;
+
+	REG32(0x001F1714u) |= 0x40u;
+	hf = REG32(0x001F1714u);
+	st = *(volatile uint32_t *)(uintptr_t)(s_fi_base + 20u);
+	if (!st)
+		return;
+	if (*(volatile uint8_t *)(uintptr_t)s_fi_dem == 0) {
+		in = *(volatile uint32_t *)(uintptr_t)(s_fi_base + 24u) + ((~hf << 6) & 0x800u);
+		RDS_FeBlock((const volatile int32_t *)(uintptr_t)in, 512u);
+		fm_dem((void *)(uintptr_t)in, (void *)(uintptr_t)st, (void *)(uintptr_t)s_fi_out);
+	}
+	if (*(volatile uint8_t *)(uintptr_t)(s_fi_base + 28u) == 0) {
+		for (uint32_t i = 0; i < 128u; i++)
+			((volatile uint8_t *)(uintptr_t)s_fi_out)[i] = 0;
+	}
+	fm_sample_output_handler((int16_t *)(uintptr_t)s_fi_out, 128);
 }
 
 /* Restart the FM block after JieLi's fm_inside_on, the stock way. Found by a bit scan on Sean's radio
@@ -1023,8 +1048,12 @@ static void rate_fix(void)
 #endif
 	s_too_fast = false;
 	s_chk_n = s_chk_sum = 0;
-	if (gFmIsr)
-		IRQ_Request(43, 0, gFmIsr);
+	if (gFmIsr) {                        /* ours (RDS before fm_dem) if fmhw_isr's code reads as expected */
+		bool ours = fm_isr_parse((uint32_t)(uintptr_t)gFmIsr);
+		IRQ_Request(43, 0, ours ? fm_isr_rds : gFmIsr);
+		ls(ours ? "FMLOG isr ours (rds)" : "FMLOG isr jieli (no rds)");
+		lend();
+	}
 	IRQ_Restore(was);
 	ls("FMLOG irq on, hf ");
 	lh(REG32(0x001F1714u));
