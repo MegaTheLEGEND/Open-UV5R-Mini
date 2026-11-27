@@ -2335,9 +2335,6 @@ void APP_Init(void)
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	gAppsFlashOk = s_xf_ok;
-	/* the radio's own power-on picture while the rest starts, the beeps' audio last (Sean, 2026-11-27; ROADMAP 4.8) */
-	bool splash_on = s_xf_ok && splash();
-	uint32_t splash_t0 = SYSTEM_Ms();    /* held from when it shows */
 	if (s_xf_ok) {
 		static uint8_t cal[CALIB_LEN];
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
@@ -2360,6 +2357,10 @@ void APP_Init(void)
 		PROGRAM_Init();         /* CHIRP over the cable (app/program.c) */
 #endif
 	BT_Init(0);
+	/* The radio's own power-on picture while the beeps' audio starts (Sean, 2026-11-27; ROADMAP 4.8). After
+	 * PROGRAM_Init, which starts the LCD again (its pin check) and so cleared a picture drawn before it. */
+	bool splash_on = s_xf_ok && splash();
+	uint32_t splash_t0 = SYSTEM_Ms();    /* held from when it shows */
 #if APP_FM_ENABLE
 	FMRX_BeepPrepare();                  /* the beeps' DAC, with everything else ready (behind the picture) */
 #endif
