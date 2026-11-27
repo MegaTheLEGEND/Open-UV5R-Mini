@@ -42,6 +42,18 @@ static unsigned  s_max, s_n;
 static uint32_t  s_samples, s_us;        /* RSSI reads in the last capture, and its length */
 static uint16_t  s_floor, s_thr_hi, s_thr_lo, s_peak;
 static uint8_t   s_margin = 20;          /* threshold above the noise floor, raw units (0.5 dB) */
+/* what the capture reads (debug: "!app src"): REG_67 (RSSI) is smoothed over ~10 ms on the BK4819 (Sean's radio,
+ * 2026-11-27), too slow for 265 us pulses, so other registers can be tried; inverted = the value falls with the
+ * carrier (noise) */
+static uint8_t   s_reg = 0x67;
+static uint16_t  s_mask = 0x01FF;
+static bool      s_inv;
+
+static uint16_t level(void)
+{
+	uint16_t v = BK4819_ReadRegister(s_reg) & s_mask;
+	return s_inv ? (uint16_t)(s_mask - v) : v;
+}
 static OokCode_t s_code;
 static bool      s_redraw;
 static uint16_t  s_ms;
@@ -90,7 +102,7 @@ static void noise_floor(void)
 {
 	uint32_t sum = 0;
 	for (unsigned i = 0; i < 64u; i++)
-		sum += BK4819_GetRSSI();
+		sum += level();
 	s_floor = (uint16_t)(sum / 64u);
 	s_thr_hi = (uint16_t)(s_floor + s_margin);
 	s_thr_lo = (uint16_t)(s_floor + s_margin * 3u / 5u);
@@ -109,7 +121,7 @@ static void capture(uint32_t ms)
 	end = ms * (SYSTEM_TicksPerSec() / 1000u);
 	t0 = last = SYSTEM_Raw();
 	do {
-		uint16_t r = BK4819_GetRSSI();
+		uint16_t r = level();
 		bool nl = r >= s_thr_hi ? true : r <= s_thr_lo ? false : level;
 		t = SYSTEM_Raw();
 		if (r > s_peak)
@@ -243,6 +255,23 @@ static bool mword(const char **s, const char *w)
 	return true;
 }
 
+static uint32_t mhex(const char **s)
+{
+	uint32_t v = 0;
+	const char *p = *s;
+	for (;; p++) {
+		char c = *p;
+		if (c >= '0' && c <= '9') v = v << 4 | (uint32_t)(c - '0');
+		else if (c >= 'a' && c <= 'f') v = v << 4 | (uint32_t)(c - 'a' + 10);
+		else if (c >= 'A' && c <= 'F') v = v << 4 | (uint32_t)(c - 'A' + 10);
+		else break;
+	}
+	while (*p == ' ')
+		p++;
+	*s = p;
+	return v;
+}
+
 static uint32_t mdec(const char **s)
 {
 	uint32_t v = 0;
@@ -341,8 +370,17 @@ static bool mon(const char *a)
 		}
 		return true;
 	}
-	if (mword(&a, "trace")) {            /* trace [ms]: every RSSI read with its time (us), for how fast it follows */
-		uint32_t ms = mdec(&a), t0, t, end;
+	if (mword(&a, "src")) {              /* src REG MASK INV (hex, hex, 0/1): what the capture reads */
+		uint32_t r = mhex(&a), m = mhex(&a), inv = mhex(&a);
+		if (r > 0x7Fu || !m)
+			return false;
+		s_reg = (uint8_t)r;
+		s_mask = (uint16_t)m;
+		s_inv = inv != 0;
+		return true;
+	}
+	if (mword(&a, "trace")) {            /* trace [ms] [REG hex]: every read with its time (us); default REG_67 */
+		uint32_t ms = mdec(&a), t0, t, end, reg = *a ? mhex(&a) : 0x67u;
 		unsigned n = 0, max = s_max / 2u;     /* pairs of 16-bit: time / 4 us, RSSI */
 		uint16_t *p = (uint16_t *)s_d;
 		if (!ms || ms > 200u)
@@ -350,7 +388,7 @@ static bool mon(const char *a)
 		end = ms * (SYSTEM_TicksPerSec() / 1000u);
 		t0 = SYSTEM_Raw();
 		do {
-			uint16_t r = BK4819_GetRSSI();
+			uint16_t r = BK4819_ReadRegister((uint8_t)reg);
 			t = SYSTEM_Raw();
 			p[2u * n] = (uint16_t)(ticks_to_us(t - t0) / 4u);
 			p[2u * n + 1u] = r;
@@ -390,7 +428,7 @@ static bool mon(const char *a)
 		find();
 		return true;
 	}
-	MON_Line("@app: stat cap [ms] raw sub [raw] trace [ms] tune F10HZ margin N find");
+	MON_Line("@app: stat cap [ms] raw sub [raw] trace [ms] [reg] src REG MASK INV tune F10HZ margin N find");
 	return mword(&a, "help");
 }
 #endif
