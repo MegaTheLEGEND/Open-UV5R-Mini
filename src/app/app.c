@@ -2031,6 +2031,12 @@ static void start_from_stock(void)
 	s_side[1] = s_side[0];
 	if (!s_xf_ok || !SETTINGS_Load())
 		return;
+	/* A setting byte outside its menu range shows as the menu's first value (set_value), so it acts as that too:
+	 * Sean's VOX byte read OFF in the menu while the VOX code took any non-zero byte as on, and blowing on the mic
+	 * keyed the radio (2026-11-27). */
+	for (int i = 0; i < SET_COUNT; i++)
+		if (gStock.raw[SET_ITEMS[i].off] >= SET_ITEMS[i].count)
+			gStock.raw[SET_ITEMS[i].off] = 0;
 	if (gStock.raw[SET_SQUELCH] <= 9)
 		gVfo.squelch = gStock.raw[SET_SQUELCH];
 	if (ext_ok() && gStock.ext[EXT_VOLUME] <= 15)
@@ -2819,7 +2825,7 @@ void APP_Tick(void)
 	dtmf_tick();
 #if RADIO_ENABLE_TX
 	/* VOX (stock setting 0x3A), not while PTT is held, scanning or in a menu, nor before PTT is armed at start-up */
-	if (gStock.raw[0x3A] && s_ptt_armed && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
+	if (gStock.raw[0x3A] == 1u && s_ptt_armed && !ptt && !SCAN_Active() && !s_tscan && s_screen == SCREEN_MAIN) {
 		uint16_t a = ADC_Read(ADC_CH_PA1, 1);
 		VoxAction_t v = VOX_Tick(a == 0xFFFFu ? 0 : (uint8_t)(a >> 2), gStock.raw[0x02], gStock.raw[0x20],
 		                         RADIO_State() == RADIO_TX, APP_TICK_MS);
