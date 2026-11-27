@@ -295,7 +295,7 @@ static void diag(void)
 	char *p;
 	uint32_t irqs, outs;
 
-	if (!DEBUGGING)                      /* the live counters are for bring-up */
+	if (!DEBUG_ON)                       /* the live counters are for bring-up */
 		return;
 
 	FMRX_Stats(&st);
@@ -352,11 +352,11 @@ static void last_try(void)
 	char *p;
 
 	if (gFmCrumb.magic != FMRX_CRUMB_MAGIC) {
-		if (DEBUGGING)
+		if (DEBUG_ON)
 			copy(s_f.diag[0], "NO EARLIER TRY", sizeof s_f.diag[0]);
 		return;
 	}
-	if (!DEBUGGING && !gFmCrumb.exc)     /* normal use: shown only after a crash */
+	if (!DEBUG_ON && !gFmCrumb.exc)      /* normal use: shown only after a crash */
 		return;
 	p = s_f.diag[0];
 	copy(p, gFmCrumb.step ? "LAST " : "LAST OK ", 9);
@@ -486,8 +486,8 @@ static void start(uint32_t mode)
 {
 	s_mode = mode;
 	s_started = true;
-	gFmTrace = DEBUGGING ? trace : 0;     /* the slow-motion step trace and heartbeat: debugging only */
-	gFmBeat = DEBUGGING ? beat : 0;
+	gFmTrace = DEBUG_ON ? trace : 0;     /* the slow-motion step trace and heartbeat: debugging only */
+	gFmBeat = DEBUG_ON ? beat : 0;
 	gFmExc = exc_show;
 	gFmStall = stall_show;
 	trace(1, 0);

@@ -1303,7 +1303,10 @@ static void key_main(KEY_Code_t k)
 	}
 }
 
-/* MENU -> ABOUT: name, version and build; any key goes back to the menu. */
+bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
+
+/* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
+ * debugging aids on and off (Sean, 2026-11-27); not saved, on again at power-on. */
 static void draw_about(void)
 {
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
@@ -1317,7 +1320,13 @@ static void draw_about(void)
 	UI_PrintString("RADIO", 4, 66, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString(FW_TARGET, 4, 78, COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
+#if DEBUGGING
+	UI_PrintString("DEBUG", 4, 106, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString(gDebug ? "ON " : "OFF", 58, 106, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
+#else
 	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
+#endif
 }
 
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
@@ -2648,8 +2657,13 @@ void APP_Tick(void)
 			AppsResult_t r = s_app ? s_app->key(k) : APPS_EXIT;
 			if (r != APPS_STAY)
 				app_close(r);
-		} else if (s_screen == SCREEN_ABOUT)
-			go(SCREEN_MENU);
+		} else if (s_screen == SCREEN_ABOUT) {
+			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
+				gDebug = !gDebug;
+				s_redraw = true;
+			} else
+				go(SCREEN_MENU);
+		}
 		else
 			key_menu(k);
 	}

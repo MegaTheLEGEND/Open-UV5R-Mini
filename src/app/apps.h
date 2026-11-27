@@ -87,6 +87,9 @@ extern const AppDef_t APP_SYSINFO;
 #ifndef DEBUGGING
 #define DEBUGGING 0
 #endif
+/* with DEBUGGING built in, MENU -> ABOUT switches it on and off while the radio runs (on at power-on) */
+extern bool gDebug;
+#define DEBUG_ON (DEBUGGING && gDebug)
 #if APP_FM_ENABLE
 extern const AppDef_t APP_FM;
 /* Development: power on straight into the FM radio (receiver started), with the cable monitor waiting for the PC

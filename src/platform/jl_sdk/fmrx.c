@@ -134,7 +134,7 @@ static void lend(void)
 {
 	lc('\r');
 	lc('\n');
-	if (DEBUGGING || s_log_always)
+	if (DEBUG_ON || s_log_always)
 		UART_Send((const uint8_t *)s_lb, s_ln);
 	s_ln = 0;
 }
@@ -1044,7 +1044,8 @@ static void rate_fix(void)
 	s_sv_base = (uint32_t)(uintptr_t)fm_adc_dat;
 #if FM_MONITOR
 	timer_start();
-	mon_loop();
+	if (gDebug)                          /* MENU -> ABOUT can switch debugging off */
+		mon_loop();
 #endif
 	s_too_fast = false;
 	s_chk_n = s_chk_sum = 0;
