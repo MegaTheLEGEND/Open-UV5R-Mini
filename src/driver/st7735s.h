@@ -12,6 +12,9 @@
 
 void ST7735S_Init(void);
 void ST7735S_SetBacklight(bool on);
+/* While on, ST7735S_Init leaves the backlight off (power-on starts the LCD up to three times: one light, with the
+ * picture, instead of 2-3 flashes; Sean, 2026-11-27). */
+void ST7735S_KeepDark(bool on);
 void ST7735S_Sleep(bool on);       /* panel off and asleep / awake again (blocks 120 ms) */
 void ST7735S_FillRect(uint8_t x, uint8_t y, uint8_t w, uint8_t h, uint16_t color);
 void ST7735S_SetWindow(uint8_t x, uint8_t y, uint8_t w, uint8_t h);

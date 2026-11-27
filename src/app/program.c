@@ -157,6 +157,7 @@ void PROGRAM_Init(void)
 	find_clash();
 	if (s_off || s_diag == s_diag_buf || PROGRAM_SCREEN_TEST) {
 		ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
+		ST7735S_SetBacklight(true);      /* power-on keeps the LCD dark until the picture (app.c) */
 		UI_PrintString("CHIRP CABLE", 31, 52, COLOR_TEXT, COLOR_BG, 1);
 		UI_PrintString(s_diag, 34, 68, s_off ? COLOR_WARN : COLOR_ACCENT, COLOR_BG, 1);
 		for (int i = 0; i < 30; i++) {

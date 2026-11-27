@@ -2312,10 +2312,13 @@ static void save_soon(void)
 void APP_Init(void)
 {
 	BOARD_Init();
+	ST7735S_KeepDark(true);             /* lit once, with the picture or the main screen (below) */
 	ST7735S_Init();
 	KEYBOARD_Init();
-	if (UPDATE_Requested())
+	if (UPDATE_Requested()) {
+		ST7735S_SetBacklight(true);
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
+	}
 #if APP_FM_ENABLE
 	gRadioBeepHook = FMRX_Beep;  /* key beeps on the MCU's DAC, as stock; not the BK4819 (it blipped on the air) */
 #endif
@@ -2328,8 +2331,10 @@ void APP_Init(void)
 	/* a top-row key (wired to GND) held at power-on, PTT not held: the key test */
 	if (!hidden_menu && !KEYBOARD_IsPttPressed()) {
 		KEY_Code_t k0 = KEYBOARD_Poll();
-		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP)
+		if (k0 == KEY_DIRECT0 || k0 == KEY_VM || k0 == KEY_AB || k0 == KEY_LAMP) {
+			ST7735S_SetBacklight(true);
 			KEYTEST_Run();
+		}
 	}
 #endif
 	EXTFLASH_Init();
@@ -2366,6 +2371,8 @@ void APP_Init(void)
 #endif
 	while (splash_on && SYSTEM_Ms() - splash_t0 < SPLASH_MIN_MS)
 		SYSTEM_DelayMs(10);
+	ST7735S_KeepDark(false);
+	ST7735S_SetBacklight(true);          /* no picture: the light comes on with the main screen */
 	go(SCREEN_MAIN);
 	if (hidden_menu) {
 		s_menu_hidden = true;

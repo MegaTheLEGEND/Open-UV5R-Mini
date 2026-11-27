@@ -99,9 +99,16 @@ static void LCD_Data(const uint8_t *data, uint8_t len)
 
 #define CMD(c, ...) do { static const uint8_t d_[] = { __VA_ARGS__ }; LCD_Command(c); LCD_Data(d_, sizeof(d_)); } while (0)
 
+static bool s_keep_dark;
+
 void ST7735S_SetBacklight(bool on)
 {
 	GPIO_Write(PIN_LCD_BACKLIGHT, on);
+}
+
+void ST7735S_KeepDark(bool on)
+{
+	s_keep_dark = on;
 }
 
 /* Panel sleep for the radio's sleep mode: DISPOFF + SLPIN (the panel keeps its picture memory); waking is SLPOUT,
@@ -161,7 +168,8 @@ void ST7735S_Init(void)
 
 	ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, 0x0000);
 	LCD_Command(0x29);                                  /* DISPON */
-	ST7735S_SetBacklight(true);
+	if (!s_keep_dark)
+		ST7735S_SetBacklight(true);
 }
 
 bool ST7735S_HardwareSpi(void)
