@@ -91,7 +91,7 @@ extern const AppDef_t APP_SYSINFO;
 #ifndef DEBUGGING
 #define DEBUGGING 0
 #endif
-/* with DEBUGGING built in, MENU -> ABOUT switches it on and off while the radio runs (on at power-on) */
+/* with DEBUGGING built in, MENU -> ABOUT switches it on and off while the radio runs (kept with the settings; on until first set) */
 extern bool gDebug;
 #define DEBUG_ON (DEBUGGING && gDebug)
 #if APP_FM_ENABLE

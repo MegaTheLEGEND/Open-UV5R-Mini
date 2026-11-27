@@ -1429,7 +1429,7 @@ static void key_main(KEY_Code_t k)
 bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
 
 /* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
- * debugging aids on and off (Sean, 2026-11-27); not saved, on again at power-on. */
+ * debugging aids on and off (Sean, 2026-11-27); kept with the settings (our byte 19). */
 static void draw_about(void)
 {
 	ST7735S_FillRect(0, 0, 128, 128, COLOR_BG);
@@ -2031,6 +2031,7 @@ enum {
 	EXT_BSAVE = 15,                  /* battery save ratio + 1 (L_BSAVE); 0 = from stock's on/off byte */
 	EXT_FM = 16,                     /* the FM radio's station, 10 kHz, little-endian (16, 17); 0 = not set */
 	EXT_FM_VOL = 18,                 /* the FM radio's volume + 1; 0 = not set */
+	EXT_DEBUG = 19,                  /* MENU -> ABOUT's debug switch + 1 (DEBUGGING builds); 0 = not set (on) */
 	EXT_MAGIC_VALUE = 0xA5,
 };
 
@@ -2129,6 +2130,8 @@ static void start_from_stock(void)
 			s_fm_10k = f;
 		if (gStock.ext[EXT_FM_VOL] && gStock.ext[EXT_FM_VOL] <= 16u)
 			s_fm_vol = (uint8_t)(gStock.ext[EXT_FM_VOL] - 1u);
+		if (DEBUGGING && gStock.ext[EXT_DEBUG] && gStock.ext[EXT_DEBUG] <= 2u)
+			gDebug = gStock.ext[EXT_DEBUG] == 2u;   /* as it was left (Sean, 2026-11-27) */
 	}
 	if (ext_ok() && gStock.ext[EXT_BSAVE] && gStock.ext[EXT_BSAVE] <= 4)
 		s_bsave = (uint8_t)(gStock.ext[EXT_BSAVE] - 1u);
@@ -2285,6 +2288,8 @@ static void save_now(void)
 	gStock.ext[EXT_FM] = (uint8_t)s_fm_10k;
 	gStock.ext[EXT_FM + 1] = (uint8_t)(s_fm_10k >> 8);
 	gStock.ext[EXT_FM_VOL] = s_fm_vol <= 15u ? (uint8_t)(s_fm_vol + 1u) : 0u;
+	if (DEBUGGING)
+		gStock.ext[EXT_DEBUG] = (uint8_t)(gDebug + 1u);
 	s_fm_wait = 0;
 	gStock.raw[SET_POWER_SAVE] = s_bsave != 0;    /* stock's Save Mode as on/off, as CHIRP shows it */
 	for (int i = 0; i < 3; i++)
@@ -3088,9 +3093,12 @@ void APP_Tick(void)
 				reboot_to_rescue();
 			}
 #endif
-			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
+			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch, kept with the settings */
 				gDebug = !gDebug;
 				s_redraw = true;
+#if SETTINGS_ENABLE_SAVE
+				save_soon();
+#endif
 			} else
 				go(SCREEN_MENU);
 		}
