@@ -1419,8 +1419,6 @@ static void key_main(KEY_Code_t k)
 }
 
 bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
-static bool s_rescue_armed;              /* ABOUT: * pressed once: rescue mode in 5 s, or at once on a second * */
-static uint16_t s_rescue_ms;
 
 /* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
  * debugging aids on and off (Sean, 2026-11-27); not saved, on again at power-on. */
@@ -1439,12 +1437,7 @@ static void draw_about(void)
 	UI_PrintString("DEBUG", 4, 94, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString(gDebug ? "ON " : "OFF", 58, 94, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("RESCUE", 4, 105, COLOR_DIM, COLOR_BG, 1);
-	if (s_rescue_armed) {                /* "IN 5S" counting down; * again now, any other key cancels */
-		char t[8] = "IN  S *";
-		t[3] = (char)('0' + (5000u - s_rescue_ms + 999u) / 1000u);
-		UI_PrintString(t, 58, 105, COLOR_WARN, COLOR_BG, 1);
-	} else
-		UI_PrintString("*      ", 58, 105, COLOR_TEXT, COLOR_BG, 1);
+	UI_PrintString("*", 58, 105, COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #else
 	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
@@ -1466,7 +1459,9 @@ static void reboot_to_rescue(void)
 	 * and the USB controller off, and the soft reset may leave those as they are: give them back, and hold off a
 	 * moment so the PC sees the line let go before the ROM starts its USB device. */
 	UART_Release();
-	for (unsigned i = 0; i < 300u; i++) {
+	/* one * does it all (Sean, 2026-11-27: no second press, no fixed wait): the lines let go for 1 s, then the
+	 * restart */
+	for (unsigned i = 0; i < 1000u; i++) {
 		SYSTEM_WatchdogClear();
 		SYSTEM_DelayUs(1000);
 	}
@@ -3032,21 +3027,16 @@ void APP_Tick(void)
 		} else if (s_screen == SCREEN_ABOUT) {
 			s_fkey = false;
 #if DEBUGGING
-			if (k == KEY_STAR && s_rescue_armed)   /* rescue mode: * twice */
+			if (k == KEY_STAR) {             /* rescue mode: the serial (USB) lines let go, then the restart */
+				UI_PrintPadded("RESCUE...", 58, 105, COLOR_WARN, COLOR_BG, 11);
 				reboot_to_rescue();
-#endif
-			if (DEBUGGING && k == KEY_STAR) {
-				s_rescue_armed = true;
-				s_rescue_ms = 0;
-				s_redraw = true;
-			} else if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
-				gDebug = !gDebug;
-				s_rescue_armed = false;
-				s_redraw = true;
-			} else {
-				s_rescue_armed = false;
-				go(SCREEN_MENU);
 			}
+#endif
+			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch */
+				gDebug = !gDebug;
+				s_redraw = true;
+			} else
+				go(SCREEN_MENU);
 		}
 		else {
 			s_fkey = false;
@@ -3076,15 +3066,6 @@ void APP_Tick(void)
 		;                                  /* the panel is off: nothing drawn */
 	else if (s_screen == SCREEN_MAIN) {
 		draw_main();
-	} else if (DEBUGGING && s_screen == SCREEN_ABOUT && s_rescue_armed) {
-		uint16_t was = s_rescue_ms;      /* the countdown on screen each second, then the restart */
-		s_rescue_ms = (uint16_t)(s_rescue_ms + APP_TICK_MS);
-#if DEBUGGING
-		if (s_rescue_ms >= 5000u)
-			reboot_to_rescue();
-#endif
-		if (s_redraw || was / 1000u != s_rescue_ms / 1000u)
-			draw_about();
 	} else if (s_redraw && s_screen == SCREEN_ABOUT)
 		draw_about();
 	else if (s_redraw && s_screen == SCREEN_HELP)
