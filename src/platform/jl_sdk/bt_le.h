@@ -15,6 +15,7 @@ typedef struct {
 	uint8_t  step;                       /* 0 off, 1-6 start steps (6 = running), 20 stopping */
 	uint8_t  last_event, last_sub;       /* the last HCI event code and LE subevent */
 	uint32_t starts, events, msgs, msgs_other;
+	uint32_t conns, acl_in, acl_out, acl_dropped;   /* the serial link */
 } BtLeStats_t;
 extern BtLeStats_t gBtLe;
 

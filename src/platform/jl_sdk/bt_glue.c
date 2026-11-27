@@ -23,6 +23,7 @@
  * host uses, the normal mode (not a test mode). Values for the rest: off. */
 #define BT_MODULE_LE  2
 #define BT_NORMAL     1
+#define LE_SLAVE      (1 << 1)
 #define LE_ADV        (1 << 2)
 #define LE_SCAN       (1 << 3)
 
@@ -30,7 +31,7 @@ const int config_btctler_modules = BT_MODULE_LE;
 const int config_btctler_mode = BT_NORMAL;
 const int config_btctler_hci_standard = 0;
 const uint64_t config_btctler_le_features = 0;
-const int config_btctler_le_roles = LE_SCAN | LE_ADV;
+const int config_btctler_le_roles = LE_SCAN | LE_ADV | LE_SLAVE;   /* slave: the serial link */
 const int config_btctler_le_hw_nums = 2;
 const int config_btctler_le_rx_nums = 8;
 const int config_btctler_le_acl_packet_length = 27;
@@ -267,6 +268,7 @@ const uint8_t log_tag_const_e_Analog = 0;
 const uint8_t log_tag_const_e_BL = 0;
 const uint8_t log_tag_const_e_HCI_LL5 = 0;
 const uint8_t log_tag_const_e_HCI_STD = 0;
+const uint8_t log_tag_const_d_HCI_STD = 0;
 const uint8_t log_tag_const_e_LE5_BB = 0;
 const uint8_t log_tag_const_e_LE_BB = 0;
 const uint8_t log_tag_const_e_LL = 0;
