@@ -59,6 +59,11 @@ ENABLE_APP_SUBGHZ   ?= 1
 ENABLE_APP_BTSCAN   ?= 1
 # BT INFO: what the Bluetooth backend can do, the radio's address, the stock BTIF bytes, read only (src/app/btinfo.c).
 ENABLE_APP_BTINFO   ?= 1
+# BT BEACON: the radio's own BLE beacon (its name, an iBeacon, or an Eddystone URL), non-connectable, only while
+# the app is open (src/app/btbeacon.c). Needs a backend that advertises; the open build has none yet.
+ENABLE_APP_BTBEACON ?= 1
+# BT SERIAL: a small terminal on the Bluetooth serial link (src/app/btserial.c). Needs a serial link (SDK edition).
+ENABLE_APP_BTSERIAL ?= 1
 # A snake game (src/app/snake.c).
 ENABLE_APP_SNAKE    ?= 1
 # FM broadcast radio, 64-108 MHz through the speaker (src/app/fmradio.c, src/platform/jl_sdk/fmrx.c). Needs JieLi's
@@ -85,4 +90,5 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DAPP_SNAKE_ENABLE=$(ENABLE_APP_SNAKE) -DAPP_FM_ENABLE=$(ENABLE_APP_FM) \
                  -DAPP_APRS_ENABLE=$(ENABLE_APP_APRS) -DAPP_SUBGHZ_ENABLE=$(ENABLE_APP_SUBGHZ) \
                  -DAPP_BTSCAN_ENABLE=$(ENABLE_APP_BTSCAN) -DAPP_BTINFO_ENABLE=$(ENABLE_APP_BTINFO) \
+                 -DAPP_BTBEACON_ENABLE=$(ENABLE_APP_BTBEACON) -DAPP_BTSERIAL_ENABLE=$(ENABLE_APP_BTSERIAL) \
                  -DDEBUGGING=$(ENABLE_DEBUGGING)

@@ -27,7 +27,7 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/ui/screen_apps.c src/ui/status.c \
        src/app/monitor.c src/app/aprs.c src/radio/ax25.c src/radio/aprs.c src/radio/fskrx.c \
        src/app/subghz.c src/radio/ook.c \
-       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c
+       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c src/app/btbeacon.c src/app/btserial.c
 ASM := src/start.S src/update/handover.S
 
 include features.mk
@@ -53,10 +53,16 @@ ifeq ($(ENABLE_APP_SUBGHZ),0)
 SRC := $(filter-out src/app/subghz.c src/radio/ook.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_BTSCAN),0)
-SRC := $(filter-out src/app/btscan.c src/bt/le_adv.c,$(SRC))
+SRC := $(filter-out src/app/btscan.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_BTINFO),0)
 SRC := $(filter-out src/app/btinfo.c,$(SRC))
+endif
+ifeq ($(ENABLE_APP_BTBEACON),0)
+SRC := $(filter-out src/app/btbeacon.c,$(SRC))
+endif
+ifeq ($(ENABLE_APP_BTSERIAL),0)
+SRC := $(filter-out src/app/btserial.c,$(SRC))
 endif
 ifeq ($(ENABLE_APP_SNAKE),0)
 SRC := $(filter-out src/app/snake.c,$(SRC))

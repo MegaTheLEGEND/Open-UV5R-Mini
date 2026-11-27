@@ -575,7 +575,8 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 
 /* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
 #define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
-                    + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE + APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE)
+                    + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE + APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE \
+                    + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
@@ -599,6 +600,12 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #endif
 #if APP_BTSCAN_ENABLE
 	&APP_BTSCAN,
+#endif
+#if APP_BTBEACON_ENABLE
+	&APP_BTBEACON,
+#endif
+#if APP_BTSERIAL_ENABLE
+	&APP_BTSERIAL,
 #endif
 #if APP_BTINFO_ENABLE
 	&APP_BTINFO,
@@ -646,6 +653,18 @@ static const uint8_t SEC_APPS[APPS_COUNT] = {
 	M_APP0 + 11,
 #endif
 #if APPS_COUNT > 12
+	M_APP0 + 12,
+#endif
+#if APPS_COUNT > 13
+	M_APP0 + 13,
+#endif
+#if APPS_COUNT > 14
+	M_APP0 + 14,
+#endif
+#if APPS_COUNT > 15
+	M_APP0 + 15,
+#endif
+#if APPS_COUNT > 16
 #error "more apps: add rows to SEC_APPS"
 #endif
 };
