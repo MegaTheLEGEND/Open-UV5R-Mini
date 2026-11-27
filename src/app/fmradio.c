@@ -540,6 +540,7 @@ static void leave(void)
 	gSystemIdle = 0;
 	SYSTEM_SetTicksPerSec(0);
 	FMRX_Close();
+	FMRX_BeepPrepare();                  /* the DAC back to the key beeps */
 	RADIO_ProbeEnd();
 }
 

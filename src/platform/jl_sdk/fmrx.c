@@ -1205,16 +1205,17 @@ bool FMRX_TooFast(void) { return s_too_fast; }
 /* Key beeps on the MCU's DAC, as stock makes them (ROADMAP 2.7). Until 2026-11-27 they were made with the BK4819's
  * tone generator on its transmit audio path (the UV-K5 way), and Sean heard a blip on the air at every key press while
  * the receiver was awake. The DAC opens as the FM code's DAC-only mode (FMRX_Open(0, FMRX_DAC), as the 1 kHz test
- * tone that played on the radio), with the speaker amp on only while a beep plays; it closes after BEEP_IDLE_MS
- * without one. The first beep after power-on waits for JieLi's DAC trim. */
-#define BEEP_IDLE_MS 3000u
+ * tone that played on the radio), with the speaker amp on only while a beep plays. Opening it (JieLi's trim, then
+ * its start) took long enough that the first beep came late (Sean), so app.c opens it at power-on behind the
+ * picture (FMRX_BeepPrepare) and it stays open, except while the radio sleeps (FMRX_BeepOff) or the FM radio has
+ * it. */
 #define BEEP_TAIL_MS 25u                 /* the amp stays on while the DAC's ring (21 ms) plays out */
 static const int16_t BEEP_SIN[32] = {
 	0, 2341, 4592, 6667, 8485, 9978, 11087, 11769, 12000, 11769, 11087, 9978, 8485, 6667, 4592, 2341,
 	0, -2341, -4592, -6667, -8485, -9978, -11087, -11769, -12000, -11769, -11087, -9978, -8485, -6667, -4592, -2341
 };
 static uint32_t s_bph, s_bstep, s_bleft;    /* phase, phase step a sample (2^32 = one cycle), samples of tone left */
-static uint16_t s_bms, s_bidle;             /* ms the amp stays on; ms since the last beep */
+static uint16_t s_bms;                      /* ms the amp stays on */
 
 static void beep_fill(void)
 {
@@ -1233,21 +1234,36 @@ static void beep_fill(void)
 	}
 }
 
+bool FMRX_BeepPrepare(void)
+{
+	if (s_open)
+		return s_beep;                   /* open already, for beeps or for the FM radio */
+	if (!FMRX_Open(0, FMRX_DAC))
+		return false;
+	s_beep = true;
+	s_bleft = 0;
+	s_bms = 0;
+	IO_Amp(AUDIO_FM, false);             /* the amp only while a beep plays */
+	beep_fill();
+	return true;
+}
+
+void FMRX_BeepOff(void)
+{
+	if (s_open && s_beep)
+		FMRX_Close();
+}
+
 bool FMRX_Beep(uint16_t hz, uint16_t ms)
 {
 	if (s_open && !s_beep)
 		return false;                    /* the FM radio has the DAC */
-	if (!s_open) {
-		if (!FMRX_Open(0, FMRX_DAC))
-			return false;
-		s_beep = true;
-		IO_Amp(AUDIO_FM, false);         /* the amp only while a beep plays */
-	}
+	if (!FMRX_BeepPrepare())
+		return false;
 	s_bph = 0;
 	s_bstep = (uint32_t)hz * 89478u + (uint32_t)hz * 485u / 1000u;   /* hz * 2^32 / 48000 */
 	s_bleft = (uint32_t)ms * (DAC_RATE / 1000u);
 	s_bms = (uint16_t)(ms + BEEP_TAIL_MS);
-	s_bidle = 0;
 	IO_Amp(AUDIO_BEEP, true);
 	beep_fill();
 	return true;
@@ -1262,8 +1278,7 @@ void FMRX_BeepTick(uint16_t dt_ms)
 		s_bms = dt_ms >= s_bms ? 0 : (uint16_t)(s_bms - dt_ms);
 		if (!s_bms)
 			IO_Amp(AUDIO_BEEP, false);
-	} else if ((s_bidle = (uint16_t)(s_bidle + dt_ms)) >= BEEP_IDLE_MS)
-		FMRX_Close();                    /* nothing for a while: the DAC off */
+	}
 }
 
 bool FMRX_Beeping(void) { return s_beep && s_bms; }

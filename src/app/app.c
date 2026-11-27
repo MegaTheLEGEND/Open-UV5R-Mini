@@ -2036,6 +2036,35 @@ static bool ext_ok(void)
 
 static void start_side(uint8_t side);
 
+/* The power-on picture: external flash 0x0C0000, 128 x 128 RGB565, low byte first (stock reads these 32 KB at
+ * power-on, EMULATOR.md; drawn from Sean's flash dump on the PC, 2026-11-27, it is his own picture). Only read; a
+ * blank area (all 0xFF) draws nothing. */
+#define SPLASH_ADDR   0x0C0000u
+#define SPLASH_MIN_MS 1500u
+
+static bool splash(void)
+{
+	static uint8_t b[512];
+	bool blank = true;
+
+	EXTFLASH_Read(SPLASH_ADDR, b, sizeof b);
+	for (unsigned i = 0; i < sizeof b && blank; i++)
+		blank = b[i] == 0xFFu;
+	if (blank)
+		return false;
+	ST7735S_SetWindow(0, 0, 128, 128);
+	for (uint32_t a = 0; a < 128u * 128u * 2u; a += sizeof b) {
+		if (a)
+			EXTFLASH_Read(SPLASH_ADDR + a, b, sizeof b);
+		for (unsigned i = 0; i < sizeof b; i += 2u)
+			ST7735S_PushPixel((uint16_t)(b[i] | b[i + 1u] << 8));
+		SYSTEM_WatchdogClear();
+	}
+	ST7735S_End();
+	ST7735S_SetBacklight(true);
+	return true;
+}
+
 static void start_from_stock(void)
 {
 	SETTINGS_Defaults();
@@ -2305,6 +2334,16 @@ void APP_Init(void)
 	EXTFLASH_Init();
 	s_xf_ok = EXTFLASH_ReadId() == EXTFLASH_ID;
 	gAppsFlashOk = s_xf_ok;
+	{
+		/* the radio's own power-on picture while the beep's audio starts (Sean, 2026-11-27; ROADMAP 4.8) */
+		uint32_t t0 = SYSTEM_Ms();
+		bool shown = s_xf_ok && splash();
+#if APP_FM_ENABLE
+		FMRX_BeepPrepare();
+#endif
+		while (shown && SYSTEM_Ms() - t0 < SPLASH_MIN_MS)
+			SYSTEM_DelayMs(10);
+	}
 	if (s_xf_ok) {
 		static uint8_t cal[CALIB_LEN];
 		EXTFLASH_Read(CALIB_ADDR, cal, sizeof cal);
@@ -2597,6 +2636,9 @@ static void sleep_enter(void)
 	ST7735S_SetBacklight(false);
 	s_light_on = false;
 	ST7735S_Sleep(true);
+#if APP_FM_ENABLE
+	FMRX_BeepOff();                      /* no DAC current while asleep (an open FM radio keeps it) */
+#endif
 	if (s_screen != SCREEN_APP)          /* an app has the receiver (or the FM radio) to itself */
 		duty_start();
 }
@@ -2611,6 +2653,9 @@ static void sleep_wake(void)
 	if (RADIO_State() != RADIO_RX_OPEN)
 		IO_LedRx(false);
 	ST7735S_Sleep(false);
+#if APP_FM_ENABLE
+	FMRX_BeepPrepare();                  /* the beeps' DAC again */
+#endif
 	s_redraw = true;                     /* the panel kept its picture, but draw it all again anyway */
 	s_light_on = false;
 	light_wake();
