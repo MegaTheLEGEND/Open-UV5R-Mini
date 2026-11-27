@@ -13,7 +13,13 @@ static uint32_t g_baud = UPDATE_BAUD_DEFAULT;
 static uint8_t  g_rx[FRAME_MAX];
 static uint8_t  g_frame[FRAME_MAX];      /* data of the last good frame */
 static uint32_t g_rx_len;
-static uint8_t  g_loader[UPDATE_MAX_LOADER];
+static uint8_t  g_loader[UPDATE_MAX_LOADER] __attribute__((aligned(4)));   /* also scratch: UPDATE_Scratch */
+
+uint8_t *UPDATE_Scratch(uint32_t *len)
+{
+	*len = sizeof g_loader;
+	return g_loader;
+}
 
 /* ---------------------------------------------------------------------------------------------- helpers */
 uint16_t UPDATE_Crc16(const uint8_t *p, uint32_t n, uint16_t crc)

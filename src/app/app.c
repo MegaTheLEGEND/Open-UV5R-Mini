@@ -575,7 +575,7 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 
 /* APPS: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n */
 #define APPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
-                    + APP_FM_ENABLE + APP_APRS_ENABLE)
+                    + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE)
 #define M_APP0     M_COUNT
 #if APPS_COUNT
 static const AppDef_t *const APPS[APPS_COUNT] = {
@@ -593,6 +593,9 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #endif
 #if APP_APRS_ENABLE
 	&APP_APRS,
+#endif
+#if APP_SUBGHZ_ENABLE
+	&APP_SUBGHZ,
 #endif
 #if APP_SYSINFO_ENABLE
 	&APP_SYSINFO,
@@ -622,6 +625,9 @@ static const uint8_t SEC_APPS[APPS_COUNT] = {
 	M_APP0 + 6,
 #endif
 #if APPS_COUNT > 7
+	M_APP0 + 7,
+#endif
+#if APPS_COUNT > 8
 #error "more apps: add rows to SEC_APPS"
 #endif
 };

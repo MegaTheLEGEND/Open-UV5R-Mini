@@ -82,6 +82,9 @@ extern volatile uint32_t gUpdateStep, gUpdateOff, gUpdateRetries, gUpdatePercent
 
 /* Helpers, exported for tests. */
 uint16_t UPDATE_Crc16(const uint8_t *p, uint32_t n, uint16_t crc);
+/* The loader buffer (UPDATE_MAX_LOADER bytes) for other code to use as scratch RAM: the update mode only runs from
+ * power-on and never returns, so outside it the buffer is free (the sub-GHz capture, app/subghz.c) */
+uint8_t *UPDATE_Scratch(uint32_t *len);
 void     UPDATE_Decrypt(uint8_t *p, uint32_t n, uint16_t key);
 uint32_t UPDATE_StoreLoader(const uint8_t *loader, uint32_t len);
 void     UPDATE_BuildRecord(uint8_t rec[UPDATE_RECORD_SIZE], uint32_t loader_addr, uint32_t baud);

@@ -6,6 +6,7 @@
  *   ENABLE_APP_CHANNELS  app/chbook.c    the channel list with names; MENU picks one
  *   ENABLE_APP_SYSINFO   app/sysinfo.c   battery, calibration, flash, channels, TX lock, uptime, build
  *   ENABLE_APP_APRS      app/aprs.c      APRS: heard stations, our position beacon
+ *   ENABLE_APP_SUBGHZ    app/subghz.c    315/433 MHz remote controls, receive only
  *   ENABLE_APP_SNAKE     app/snake.c     a snake game
  *   ENABLE_APP_FM        app/fmradio.c   FM broadcast radio (needs JieLi's libraries, features.mk)
  *
@@ -35,6 +36,9 @@
 #endif
 #ifndef APP_APRS_ENABLE
 #define APP_APRS_ENABLE 1
+#endif
+#ifndef APP_SUBGHZ_ENABLE
+#define APP_SUBGHZ_ENABLE 1
 #endif
 #ifndef APP_FM_ENABLE
 #define APP_FM_ENABLE 0
@@ -111,6 +115,9 @@ extern const AppDef_t APP_FM;
 #endif
 #if APP_APRS_ENABLE
 extern const AppDef_t APP_APRS;
+#endif
+#if APP_SUBGHZ_ENABLE
+extern const AppDef_t APP_SUBGHZ;
 #endif
 #if APP_SNAKE_ENABLE
 extern const AppDef_t APP_SNAKE;
