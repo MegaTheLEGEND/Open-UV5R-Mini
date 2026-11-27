@@ -3,7 +3,7 @@
 SFR write in order, as emu/fm_ours.py does for FM, to compare with stock's Bluetooth start-up (build/bt_init.txt).
 Then it runs the main loop's part (BTLE_Tick) a few times and BT_LeAdvStart, and prints how far each got.
 
-    python emu/bt_ours.py --isa ../pi32v2-isa [--filter 1e19,1f18,1e00,10f1] [--adv]
+    python emu/bt_ours.py --isa ../pi32v2-isa [--filter 1e19,1f18,1e00,10f1] [--adv] [--serial]
 
 The emulator has no Bluetooth radio: registers read back what was written, and the hooks below force the few done
 or lock bits the start waits on (each named with the register it fakes). So this checks that the start runs to the
@@ -29,6 +29,7 @@ def main():
     ap.add_argument('--limit', type=int, default=40_000_000)
     ap.add_argument('--filter', default='', help='comma list of address prefixes (hex) to print; default all')
     ap.add_argument('--adv', action='store_true', help='also start advertising')
+    ap.add_argument('--serial', action='store_true', help='also open the serial link (connectable advertising)')
     ap.add_argument('--quiet', action='store_true', help='only the summary')
     a = ap.parse_args()
     sym = symbols(os.path.join(a.tools, 'llvm-nm'), a.elf)
@@ -127,6 +128,12 @@ def main():
             for _ in range(3):
                 call('BTLE_Tick', [])
             stats()
+        if a.serial:
+            call('BT_Init', [sym['BTLE_IsOn']])          # any function: no phone connects, so it is never called
+            for _ in range(3):
+                call('BTLE_Tick', [])
+            stats()
+            call('BT_Init', [0])
         call('BT_LeScanStop', [])
         log.append('after stop: step %d' % step_of())
     out = [l for l in log if not a.quiet or not l.startswith('w ')]
