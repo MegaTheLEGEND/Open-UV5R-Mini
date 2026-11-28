@@ -1,2 +1,4 @@
 # Shell scripts run in Linux or WSL: always Unix line endings, also in a Windows checkout
 *.sh text eol=lf
+# Third-party files kept exactly as published (their SHA-256 is pinned)
+web/vendor/** -text
