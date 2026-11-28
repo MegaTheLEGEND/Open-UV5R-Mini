@@ -10,7 +10,9 @@ the page. **No build is known to be safe to flash** (read [TESTING.md](TESTING.m
 2. **Your radio**: hold `8` while switching on. Only `5RMINI NRF` (stock V0.27) is supported; the page refuses NRFB.
 3. Load your two files (see [BUILDING.md](BUILDING.md) section 2): `stock-nrf-v0.27.ufw` (its SHA-256 is checked)
    and MM9PDY's to-stock patch (adds the update loader). They stay on your computer.
-4. **Features**: tick the switches. The page shows the same `make` command for a PC build.
+4. **Version and features**: pick a release, a branch's newest commit or a recent commit, or type any commit hash,
+   branch or tag. The feature list is that version's own `features.mk` (a switch you set keeps its setting in
+   every version that has it). The page shows the same `git checkout` and `make` commands for a PC build.
 5. **Build**. The first time it downloads the compiler (about 21 MB, kept by the browser); a build takes a few
    seconds. Then the page combines it with your files and shows every check (the same as
    `tools/ufwcheck.py` and `tools/uv5r_flasher.py`). You can download `firmware.bin` or the `.ufw`.
@@ -22,7 +24,7 @@ the page. **No build is known to be safe to flash** (read [TESTING.md](TESTING.m
 
 | On the site | Licence |
 | --- | --- |
-| The page (`web/`) and the firmware sources at the commit it was made from | ours |
+| The page (`web/`), and the firmware sources (Makefile, `*.mk`, `src/`) of every tag, every branch's newest commit and the 40 newest commits that changed the build (`versions/`) | ours |
 | `llvm.wasm.gz`: pi32v2-llvm's clang, ld.lld and llvm-objcopy as one WebAssembly program, the compiler's C headers and compiler-rt's builtins | Apache-2.0 with LLVM Exceptions |
 | JieLi's `cpu.a`, `media.a`, `btctrler.a` with their `LICENSE` | Apache-2.0 ([THIRD-PARTY.md](THIRD-PARTY.md)) |
 
@@ -38,14 +40,16 @@ image that it asked for. Transmit is limited by the firmware itself (TX LOCK = H
 
 | Part | File |
 | --- | --- |
-| Switches → the compile and link commands `make` would run | `web/lib/plan.js` (port of the Makefile and `features.mk`) |
+| Versions: the site's list, or any other commit fetched from GitHub (API for the file list, raw.githubusercontent.com for the files) | `web/lib/versions.js` |
+| `features.mk` → the switches and their help | `web/lib/features.js` (as `parse_features` in `mksite.py`) |
+| The version's own Makefile → the commands `make -n` would print; the page runs the clang, ld.lld and llvm-objcopy ones | `web/lib/make.js` (a GNU make reader: variables, conditionals, includes, pattern rules, functions), `web/lib/plan.js` |
 | WASI runtime with an in-memory file system | `web/lib/wasi.js` |
 | One compile or the link; a pool of Web Workers | `web/lib/buildcore.js`, `build-worker.js`, `build.js` |
 | `.ufw` tools: patch, mkufw with its guard, ufwcheck, image checks | `web/lib/ufw.js` (port of `tools/ufwpatch.py`, `mkufw.py`, `ufwcheck.py`, `uv5r_flasher.py`) |
 | The cable update session over Web Serial | `web/lib/flasher.js` (port of `flash_radio` in `tools/uv5r_flasher.py`) |
 | The toolchain as WebAssembly | `web/toolchain/build-wasm.sh`: pi32v2-llvm cross-built with wasi-sdk, with YoWASP's WASI patch and our small fix-ups (`*-fixups.pl`); about an hour on 24 cores |
 | The site | `python web/tools/mksite.py` → `build/site/` |
-| Publishing | `.github/workflows/pages.yml`: on every push to `main` or by hand; needs Settings → Pages → Source = GitHub Actions once. The first run builds `llvm.wasm` (about two hours), later runs take it from the cache |
+| Publishing | `.github/workflows/pages.yml`: on every push to `main`, every tag, or by hand; needs Settings → Pages → Source = GitHub Actions once. The first run builds `llvm.wasm` (about two hours), later runs take it from the cache |
 | Releases | `.github/workflows/release.yml`: push a tag `v*`; makes a draft release with `firmware.bin` for four switch sets and SHA-256 sums (no `.ufw`) |
 
 ## Make and check it on the PC
@@ -58,19 +62,23 @@ python -m http.server 8770 -d build/site                   # then open http://12
 
 | Test | Checks |
 | --- | --- |
-| `python tests/web_plan_host.py` | the page's commands equal `make -n`'s for 40 switch sets |
-| `python tests/web_build_host.py --toolchain build/llvm-release/bin --wsl` | `firmware.bin` built with `llvm.wasm` (in Node) is byte for byte the native build, 3 switch sets |
+| `python tests/web_make_host.py` | at every commit that changed the Makefile or `features.mk`: make.js's commands equal `make -n -B`'s for 4 switch sets, and features.js reads `features.mk` as `mksite.py` does |
+| `python tests/web_build_host.py --toolchain build/llvm-release/bin --wsl [--commit SHA ...]` | `firmware.bin` built with `llvm.wasm` (in Node) is byte for byte the native build of that commit (a `git archive`), 3 switch sets |
 | `python tests/web_ufw_host.py` | the JS `.ufw` equals `tools/mkufw.py`'s byte for byte, passes `tools/ufwcheck.py`; NRFB stock and an app without update mode are refused |
 | `python tests/web_flasher_host.py` | the JS flasher against the emulated radio of `tools/uv5r_flasher.py`: a whole update, and a power cut at 50 % then resumed |
 
-Tested on the PC (2026-11-27): all four pass; in Edge's engine (the Claude app's browser pane) the page built the
+Tested on the PC (2026-11-27): all four pass (web_make_host: 45 commits, 117 runs, 0 differ; web_build_host at
+32650b6, 513abed and cc30834: identical). In Edge's engine (the Claude app's browser pane) the page built the
 default and a no-FM/no-TX switch set in about 3 s each, byte for byte the native builds, and combined and checked
-the `.ufw`. **Not tested: flashing a radio from the page** (Web Serial to a real K1 cable).
+the `.ufw`; it switched between versions with 25, 18 and no switches, and fetched and built 7da3979 from GitHub. **Not tested: flashing a radio from the page** (Web Serial to a real K1 cable).
 
 ## Limits
 
 - NRF only, like `make ufw`.
 - The toolchain version is the one `llvm.wasm` was built from (`LLVM_TAG` in `build-wasm.sh`, now
   pi32v2-23.1.6-2); the native release you build with may differ.
-- Changing the Makefile's source list or `features.mk`'s flags needs the same change in `web/lib/plan.js`;
-  `tests/web_plan_host.py` catches a difference.
+- Every version is built with the site's toolchain and JieLi libraries, not the ones that commit was made with.
+- The page reads the Makefile itself and runs no shell: `$(shell ...)` is empty (FW_BUILD is set on the command
+  line), and recipes other than clang, ld.lld and llvm-objcopy are skipped. A Makefile that needs more (a generator
+  step, say) makes `tests/web_make_host.py` fail.
+- A commit fetched from GitHub uses two API requests; GitHub allows 60 an hour for each visitor without a login.

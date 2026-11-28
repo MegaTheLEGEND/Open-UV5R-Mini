@@ -1,5 +1,6 @@
-# The web builder and flasher (docs/WEB-FLASHER.md) on GitHub Pages: on every push to main, or by hand (Actions ->
-# Pages -> Run workflow). Needs Settings -> Pages -> Source = "GitHub Actions" once. It publishes our sources at
+# The web builder and flasher (docs/WEB-FLASHER.md) on GitHub Pages: on every push to main and every tag, or by hand
+# (Actions -> Pages -> Run workflow). Each run carries the sources of every tag, every branch's newest commit and the
+# newest commits that changed the build, so the page can build any of them. Needs Settings -> Pages -> Source = "GitHub Actions" once. It publishes our sources at
 # the chosen commit, the WebAssembly toolchain, compiler-rt's builtins and JieLi's Apache-2.0 libraries; never any
 # Baofeng file (the page asks each user for their own stock file and MM9PDY's patch).
 name: Pages
@@ -7,6 +8,7 @@ name: Pages
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -30,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0          # git describe for the build id
+          fetch-depth: 0          # every branch and tag: the versions the page offers
 
       # The toolchain as WebAssembly: about two hours the first time, then from the cache until the script changes.
       - name: Cache llvm.wasm
@@ -63,8 +65,8 @@ jobs:
       - name: Make the site
         run: python3 web/tools/mksite.py --toolchain-wasm ~/wasm/out --llvm-release ~/llvm-release -o build/site
 
-      - name: Check the build plan against make
-        run: python3 tests/web_plan_host.py --sets 20
+      - name: Check the page's make against GNU make
+        run: python3 tests/web_make_host.py --commits 20
 
       - uses: actions/upload-pages-artifact@v3
         with:
