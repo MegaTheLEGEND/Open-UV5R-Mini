@@ -58,9 +58,17 @@
       </div>
       <p id="variant-msg" class="msg"></p>
       <div id="files" hidden>
-        <p>This site carries none of Baofeng's code, so it needs two files from you. Download links are in the
-          <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini#which-radio">README</a> and
-          <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini/blob/main/docs/BUILDING.md">BUILDING.md</a>.</p>
+        <p>The firmware goes into the radio's own stock update file, so the page needs two outside files. This site
+          holds neither: your browser downloads them from where the
+          <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini#which-radio">README</a> links them, and each is
+          checked against its pinned SHA-256.</p>
+        <ul class="small">
+          <li><b>Stock file</b>: Baofeng's V0.27 update file (an unofficial copy on MEGA).</li>
+          <li><b>Loader patch</b>: from MM9PDY's Codeplug Studio project. The stock file lacks the small update
+            loader that writes a new app into flash; the patch adds it back, so the radio can take the update.</li>
+        </ul>
+        <div class="actions"><button id="b-fetch" type="button">Download both again</button></div>
+        <p class="small">Or load your own copies:</p>
         <div class="file-row">
           <label for="f-stock">Stock file<span class="fname">stock-nrf-v0.27.ufw</span></label>
           <input type="file" id="f-stock" accept=".ufw">

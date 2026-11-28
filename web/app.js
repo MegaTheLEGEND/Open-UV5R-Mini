@@ -1,6 +1,7 @@
 // The page: pick the radio and files, the switches, build, check, flash. See docs/WEB-FLASHER.md.
 import { STOCK_SHA, sha256, prepareImage, needsRescueWarning, RESCUE_WARNING, ufwcheck } from './lib/ufw.js';
 import { buildFirmware } from './lib/build.js';
+import { fetchStock, fetchPatch } from './lib/fetchstock.js';
 import { loadIndex, loadVersion, defaultSha, buildName } from './lib/versions.js';
 import { flashRadio, WebSerialLink, APP_BAUD } from './lib/flasher.js';
 
@@ -29,26 +30,52 @@ document.querySelectorAll('input[name=variant]').forEach(r => r.addEventListener
   } else {
     msg($('variant-msg'), 'NRF (V0.27): supported. The stock file you load is checked to be exactly stock-nrf-v0.27.ufw.', 'good');
     $('files').hidden = false;
+    if (!state.stock || !state.patch) fetchBoth();
   }
   refresh();
 }));
 
+// both outside files, fetched by this browser from where the README links them, then checked like loaded ones
+async function fetchBoth() {
+  $('b-fetch').disabled = true;
+  const jobs = [];
+  if (!state.stock) jobs.push((async () => {
+    msg($('m-stock'), 'Downloading from MEGA...');
+    try {
+      await setStock(await fetchStock((g, t) => msg($('m-stock'), `Downloading from MEGA... ${Math.floor(100 * g / (t || g))} %`)));
+    } catch (e) { msg($('m-stock'), 'Could not fetch it: ' + e.message + '. Load the file by hand below.', 'bad'); }
+  })());
+  if (!state.patch) jobs.push((async () => {
+    msg($('m-patch'), 'Downloading from GitHub...');
+    try { setPatch(await fetchPatch()); } catch (e) { msg($('m-patch'), 'Could not fetch it: ' + e.message + '. Load the file by hand below.', 'bad'); }
+  })());
+  await Promise.all(jobs);
+  $('b-fetch').disabled = false;
+  await combine(); refresh();
+}
+$('b-fetch').addEventListener('click', () => { state.stock = null; state.patch = null; state.img = null; fetchBoth(); });
+
 $('f-stock').addEventListener('change', async e => {
   state.stock = null; state.img = null;
   const f = e.target.files[0]; if (!f) return refresh();
-  const b = new Uint8Array(await f.arrayBuffer());
+  await setStock(new Uint8Array(await f.arrayBuffer()));
+  await combine(); refresh();
+});
+async function setStock(b) {
   const s = await sha256(b);
   if (s === STOCK_SHA) { state.stock = b; msg($('m-stock'), 'ok: stock-nrf-v0.27.ufw (SHA-256 matches)', 'good'); }
   else if (b.length === 520192) msg($('m-stock'), 'This looks like the NRFB stock file (V0.04). This page supports NRF only.', 'bad');
   else msg($('m-stock'), 'Not stock-nrf-v0.27.ufw (SHA-256 ' + s.slice(0, 16) + '…). Use the unchanged stock file.', 'bad');
-  await combine(); refresh();
-});
+}
 
 $('f-patch').addEventListener('change', async e => {
   state.patch = null; state.img = null;
   const f = e.target.files[0]; if (!f) return refresh();
+  try { setPatch(JSON.parse(await f.text())); } catch (err) { msg($('m-patch'), err.message, 'bad'); }
+  await combine(); refresh();
+});
+function setPatch(p) {
   try {
-    const p = JSON.parse(await f.text());
     if (p.name !== 'baofeng-uv5rmini-firmware' || p.format !== 1) throw new Error('not a baofeng-uv5rmini-firmware patch');
     if (p.base !== 'nrf-v0.27') throw new Error('this patch is for base ' + p.base + ', not nrf-v0.27');
     if (p.stock?.['.ufw']?.sha256 !== STOCK_SHA) throw new Error('this patch is not made from stock-nrf-v0.27.ufw');
@@ -57,8 +84,7 @@ $('f-patch').addEventListener('change', async e => {
   } catch (err) {
     msg($('m-patch'), err.message, 'bad');
   }
-  await combine(); refresh();
-});
+}
 
 // --- 2. version and features
 function short(c) { return c.sha.slice(0, 7); }
