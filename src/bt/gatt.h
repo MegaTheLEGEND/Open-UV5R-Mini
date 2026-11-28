@@ -29,6 +29,10 @@ void GATT_Reset(const char *name, GATT_RxHandler_t on_rx);
 /* One L2CAP payload received on channel cid. Writes the answer (if any) into out (GATT_MTU + 4 bytes at least) and
  * returns its length with its channel in *out_cid, or 0 for no answer. */
 int  GATT_Input(uint16_t cid, const uint8_t *in, int len, uint8_t *out, uint16_t *out_cid);
+/* The serial service needs an encrypted link (a paired phone): required (build switch BT_PAIRED_ONLY), encrypted
+ * (the link now). While it is required and missing, writes and the CCCD answer "insufficient authentication", which
+ * makes a phone pair (bt/smp.h). */
+void GATT_Secure(bool required, bool encrypted);
 /* The phone switched TX notifications on (it wrote 1 to the CCCD) */
 bool GATT_NotifyOn(void);
 /* One notification of TX with up to GATT_CHUNK bytes of data into out (ATT payload, for channel 4); returns its length. */

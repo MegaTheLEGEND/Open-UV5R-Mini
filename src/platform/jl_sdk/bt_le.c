@@ -10,10 +10,14 @@
  * nothing needs it. Its RAM (the library's variables, our queue and the Bluetooth heap) is low RAM 0x3000..0xC000
  * ("btram", firmware.ld), set up fresh at every start. Scanning, non-connectable advertising (beacons), and one
  * connection as a peripheral for the serial link (BT_Init): connectable advertising as "UV5R-MINI" with the Nordic
- * UART Service, whose GATT server is bt/gatt.c. No pairing. Nothing is written to flash (docs/BLUETOOTH.md). */
+ * UART Service, whose GATT server is bt/gatt.c. Pairing (bt/smp.h): legacy pairing in pairing mode, passkey on
+ * the screen, keys made again from a secret instead of stored. Nothing is written to flash (docs/BLUETOOTH.md). */
 #include <stddef.h>
 #include "bt/bt.h"
 #include "bt/gatt.h"
+#include "bt/smp.h"
+#include "driver/flash.h"
+#include "store/calib.h"
 #include "bsp/ac695n.h"
 #include "driver/system.h"
 #include "platform/jl_sdk/bt_glue.h"
@@ -42,6 +46,13 @@ extern int  ll_hci_adv_enable(uint8_t enable);
 extern void ll_hci_adv_scan_response_set_data(uint8_t len, const uint8_t *data);
 extern int  ll_hci_disconnect(uint16_t handle, uint8_t reason);
 extern int  le_hci_send_acl_packet(const uint8_t *packet, uint16_t size);
+extern int  ll_hci_long_term_key_request_reply(uint16_t handle, const uint8_t *ltk);
+extern int  ll_hci_long_term_key_request_nagative_reply(uint16_t handle);
+
+/* the serial service only for paired phones (features.mk ENABLE_BT_PAIRED_ONLY) */
+#ifndef BT_PAIRED_ONLY
+#define BT_PAIRED_ONLY 0
+#endif
 
 /* the controller task's messages (SDK btctrler_task.h: Q_USER + n) */
 #define MSG_LL_EVENT     0x400005
@@ -69,7 +80,17 @@ static struct {
 	uint8_t  ir, iw, in_n;
 	uint8_t  frag[GATT_MTU + 8];         /* a frame that came in more than one ACL packet */
 	uint8_t  frag_len, frag_want;
+	/* pairing */
+	uint8_t  peer[6], peer_type;         /* the phone's address as on the air (LSB first) */
+	uint8_t  ltk_rand[8];
+	uint16_t ltk_ediv;
+	uint8_t  pool[16];                   /* randomness gathered from the radio's events */
+	uint32_t rnd_n;
 } R BTRAM_BSS;
+
+static uint8_t s_er[16];                 /* the radio's pairing secret (made once, from its own flash) */
+static bool    s_er_ok;
+static volatile uint8_t s_ltk_due, s_enc_due;
 
 static uint8_t s_on;                     /* the controller is running */
 static uint8_t s_scan, s_adv;            /* what the apps asked for */
@@ -167,10 +188,41 @@ static void acl_in(const uint8_t *p, int size)  /* an HCI ACL packet: handle and
 }
 
 /* the host's receive side, called by the controller's transport (h4_controller_interface: type, packet, size) */
+static void stir(const uint8_t *p, int n)     /* event bytes and their timing into the random pool */
+{
+	uint32_t t = SYSTEM_Ms() ^ R.events * 2654435761u;
+	for (int i = 0; i < n; i++)
+		R.pool[i & 15] = (uint8_t)((R.pool[i & 15] << 1 | R.pool[i & 15] >> 7) ^ p[i]);
+	for (int i = 0; i < 4; i++)
+		R.pool[(R.events + i) & 15] ^= (uint8_t)(t >> (8 * i));
+}
+
+/* random bytes for pairing: AES under the radio's secret of a counter, the time and the pool */
+static void random_bytes(uint8_t *out, int n)
+{
+	uint8_t in[16], o[16];
+	while (n > 0) {
+		uint32_t t = SYSTEM_Ms();
+		R.rnd_n++;
+		for (int i = 0; i < 16; i++)
+			in[i] = R.pool[i];
+		for (int i = 0; i < 4; i++) {
+			in[i] ^= (uint8_t)(R.rnd_n >> (8 * i));
+			in[4 + i] ^= (uint8_t)(t >> (8 * i));
+		}
+		SMP_Aes(s_er, in, o);
+		for (int i = 0; i < 16; i++)
+			R.pool[i] ^= o[(i + 5) & 15];
+		for (int i = 0; i < 16 && n > 0; i++, n--)
+			*out++ = o[i];
+	}
+}
+
 int hci_packet_handler(uint8_t type, const uint8_t *packet, uint16_t size)
 {
 	R.events++;
 	gBtLe.events++;
+	stir(packet, size > 16 ? 16 : size);
 	if (type == 2) {                     /* ACL data from the phone */
 		acl_in(packet, size);
 		return 0;
@@ -191,9 +243,35 @@ int hci_packet_handler(uint8_t type, const uint8_t *packet, uint16_t size)
 			R.ir = R.iw = R.in_n = 0;
 			R.frag_want = 0;
 			GATT_Reset("UV5R-MINI", s_rx);
+			GATT_Secure(BT_PAIRED_ONLY, false);
+			if (size >= 14) {
+				R.peer_type = packet[7] & 1u;
+				for (int i = 0; i < 6; i++)
+					R.peer[i] = packet[8 + i];
+			}
+			{
+				uint8_t ra[6];
+				for (int i = 0; i < 6; i++)
+					ra[i] = R.addr[5 - i];
+				SMP_Reset(R.peer, R.peer_type, ra, 1, s_er, random_bytes);
+			}
+			s_ltk_due = s_enc_due = 0;
 			s_conn = 1;
 			gBtLe.conns++;
+		} else if (packet[2] == 0x05 && size >= 15) {   /* LE Long Term Key Request: answered in BTLE_Tick */
+			for (int i = 0; i < 8; i++)
+				R.ltk_rand[i] = packet[5 + i];
+			R.ltk_ediv = (uint16_t)(packet[13] | packet[14] << 8);
+			s_ltk_due = 1;
 		}
+		break;
+	case 0x08:                           /* Encryption Change */
+		if (size >= 6 && packet[2] == 0 && packet[5])
+			s_enc_due = 1;
+		break;
+	case 0x30:                           /* Encryption Key Refresh Complete */
+		if (size >= 5 && packet[2] == 0)
+			s_enc_due = 1;
 		break;
 	case 0x05:                           /* Disconnection Complete */
 		if (size >= 6 && packet[2] == 0 && s_conn) {
@@ -255,7 +333,11 @@ static void serve(void)                  /* the frames received: through the GAT
 
 		if (!s_credits && (uint32_t)(SYSTEM_Ms() - s_credit_ms) < 1000u)
 			return;                      /* keep it until the answer can go */
-		n = GATT_Input((uint16_t)(f[2] | f[3] << 8), f + 4, len, out, &cid);
+		cid = (uint16_t)(f[2] | f[3] << 8);
+		if (cid == L2CAP_CID_SMP)
+			n = SMP_Input(f + 4, len, out);  /* pairing (bt/smp.c) */
+		else
+			n = GATT_Input(cid, f + 4, len, out, &cid);
 		R.ir = (uint8_t)((R.ir + 1u) & 3u);
 		R.in_n--;
 		if (n > 0)
@@ -283,6 +365,30 @@ static void make_address(void)
 	R.addr[0] |= 0xC0u;
 }
 
+/* The pairing secret ER: AES-CBC-MAC of this radio's own BTIF block and calibration bytes under a fixed key. They
+ * differ between radios and can't be read over the air; nothing is written. The same every start, so a paired
+ * phone's key is made again (bt/smp.h). */
+static void make_er(void)
+{
+	static const uint8_t K[16] = { 'O', 'P', 'E', 'N', '-', 'U', 'V', '5', 'R', '-', 'P', 'A', 'I', 'R', 0, 1 };
+	uint8_t blk[16];
+
+	for (int i = 0; i < 16; i++)
+		s_er[i] = 0;
+	for (uint32_t a = 0; a < 512u; a += 16u) {   /* BTIF (0xFE000), 512 bytes */
+		FLASH_Read(0xFE000u + a, blk, 16);
+		for (int i = 0; i < 16; i++)
+			blk[i] ^= s_er[i];
+		SMP_Aes(K, blk, s_er);
+	}
+	for (uint16_t a = 0; a < 256u; a += 16u) {    /* calibration */
+		for (int i = 0; i < 16; i++)
+			blk[i] = (uint8_t)(CALIB_Byte((uint16_t)(a + i)) ^ s_er[i]);
+		SMP_Aes(K, blk, s_er);
+	}
+	s_er_ok = true;
+}
+
 static bool start(void)
 {
 	static const uint8_t ALL[8] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x3F };
@@ -297,6 +403,8 @@ static bool start(void)
 	BTGLUE_QueueReset();
 	BTGLUE_TimersReset(SYSTEM_Ms());
 	make_address();
+	if (!s_er_ok)
+		make_er();
 
 	/* the radio block's clocks and supply, as stock's Bluetooth start-up (sub_01E0173E) and our FM start set them:
 	 * CLK_CON1 bits 14-15 (Bluetooth clock: PLL 48 MHz), 18-19 (radio ADC: PLL 96 MHz), 20-21 clear; VDC13 1.40 V */
@@ -383,6 +491,25 @@ void BTLE_Tick(void)
 		hci_controller_run_loop();
 	}
 	hci_controller_run_loop();
+	if (s_conn && s_ltk_due) {           /* the key for this link: the pairing's, or a paired phone's */
+		uint8_t ltk[16];
+		s_ltk_due = 0;
+		if (SMP_LongTermKey(R.ltk_rand, R.ltk_ediv, ltk))
+			ll_hci_long_term_key_request_reply(s_handle, ltk);
+		else
+			ll_hci_long_term_key_request_nagative_reply(s_handle);
+	}
+	if (s_conn && s_enc_due) {           /* encrypted: hand out our key if a pairing asked for it */
+		uint8_t k1[SMP_MAX], k2[SMP_MAX];
+		int l1 = 0, l2 = 0, n;
+		s_enc_due = 0;
+		n = SMP_Encrypted(k1, &l1, k2, &l2);
+		GATT_Secure(BT_PAIRED_ONLY, true);
+		if (n >= 1)
+			l2cap_send(L2CAP_CID_SMP, k1, l1);
+		if (n >= 2)
+			l2cap_send(L2CAP_CID_SMP, k2, l2);
+	}
 	if (s_conn)
 		serve();
 	if (s_adv_again) {
@@ -391,6 +518,24 @@ void BTLE_Tick(void)
 			adv_serial();
 	}
 }
+
+/* ------------------------------------------------------------------ pairing (bt/bt.h) */
+void BT_SetPairable(bool on) { SMP_SetPairable(on); }
+bool BT_Pairable(void) { return SMP_Pairable(); }
+
+BT_PairState_t BT_PairState(void)
+{
+	if (!s_conn)
+		return BT_PAIR_NONE;
+	switch (SMP_State()) {
+	case SMP_PAIRING: return BT_PAIR_PAIRING;
+	case SMP_PAIRED:  return SMP_IsEncrypted() ? BT_PAIR_PAIRED : BT_PAIR_PAIRING;
+	case SMP_FAILED:  return BT_PAIR_FAILED;
+	default:          return BT_PAIR_NONE;
+	}
+}
+
+int32_t BT_Passkey(void) { return s_conn ? SMP_Passkey() : -1; }
 
 /* ------------------------------------------------------------------ bt/bt.h */
 uint8_t     BT_Caps(void) { return BT_CAP_LE_SCAN | BT_CAP_LE_ADV | BT_CAP_LE_DATA; }

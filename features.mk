@@ -86,6 +86,9 @@ endif
 # (sh tools/sdk/fm_libs.sh <sdk clone>) and the FM radio's glue (ENABLE_APP_FM); without them the build has no
 # Bluetooth (src/bt/bt_none.c) and the Bluetooth apps say so. Closed (Apache-2.0) library code: docs/THIRD-PARTY.md.
 ENABLE_BT_LE        ?= 1
+# Only paired phones and PCs may use the Bluetooth serial link (BT SERIAL, BT CHIRP): others are asked to pair, which
+# works only in pairing mode (5 in those apps). 0 = pairing is offered but not needed.
+ENABLE_BT_PAIRED_ONLY ?= 0
 ifeq ($(ENABLE_BT_LE),1)
 ifneq ($(ENABLE_APP_FM),1)
 $(warning ENABLE_BT_LE needs ENABLE_APP_FM (its glue and libraries); Bluetooth is left out)
@@ -110,7 +113,7 @@ FEATURE_FLAGS := -DPROGRAM_ENABLE=$(ENABLE_CHIRP) -DPROGRAM_SCREEN_TEST=$(ENABLE
                  -DAPP_APRS_ENABLE=$(ENABLE_APP_APRS) -DAPP_SUBGHZ_ENABLE=$(ENABLE_APP_SUBGHZ) \
                  -DAPP_BTSCAN_ENABLE=$(ENABLE_APP_BTSCAN) -DAPP_BTINFO_ENABLE=$(ENABLE_APP_BTINFO) \
                  -DAPP_BTBEACON_ENABLE=$(ENABLE_APP_BTBEACON) -DAPP_BTSERIAL_ENABLE=$(ENABLE_APP_BTSERIAL) \
-                 -DAPP_BTCHIRP_ENABLE=$(ENABLE_APP_BTCHIRP) -DBT_LE_ENABLE=$(ENABLE_BT_LE) \
+                 -DAPP_BTCHIRP_ENABLE=$(ENABLE_APP_BTCHIRP) -DBT_LE_ENABLE=$(ENABLE_BT_LE) -DBT_PAIRED_ONLY=$(ENABLE_BT_PAIRED_ONLY) \
                  -DDEBUGGING=$(ENABLE_DEBUGGING)
 # CHIRP over the BLE serial link: the BT CHIRP app with the BLE backend and CHIRP programming
 ifeq ($(ENABLE_BT_LE)$(ENABLE_APP_BTCHIRP)$(ENABLE_CHIRP),111)

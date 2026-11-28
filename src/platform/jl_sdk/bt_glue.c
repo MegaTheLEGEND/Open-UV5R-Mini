@@ -30,7 +30,7 @@
 const int config_btctler_modules = BT_MODULE_LE;
 const int config_btctler_mode = BT_NORMAL;
 const int config_btctler_hci_standard = 0;
-const uint64_t config_btctler_le_features = 0;
+const uint64_t config_btctler_le_features = 1;   /* LE_ENCRYPTION: a paired link is encrypted (bt/smp.h) */
 const int config_btctler_le_roles = LE_SCAN | LE_ADV | LE_SLAVE;   /* slave: the serial link */
 const int config_btctler_le_hw_nums = 2;
 const int config_btctler_le_rx_nums = 8;

@@ -27,7 +27,7 @@ SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c
        src/ui/screen_apps.c src/ui/status.c \
        src/app/monitor.c src/app/aprs.c src/radio/ax25.c src/radio/aprs.c src/radio/fskrx.c \
        src/app/subghz.c src/radio/ook.c \
-       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c src/app/btbeacon.c src/app/btserial.c src/app/btchirp.c
+       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c src/app/btbeacon.c src/app/btserial.c src/app/btchirp.c src/app/btpair.c
 ASM := src/start.S src/update/handover.S
 
 include features.mk
@@ -72,7 +72,7 @@ SRC := $(filter-out src/app/snake.c,$(SRC))
 endif
 # Bluetooth: the BLE backend on JieLi's controller instead of the stubs
 ifeq ($(ENABLE_BT_LE),1)
-SRC := $(filter-out src/bt/bt_none.c,$(SRC)) src/platform/jl_sdk/bt_le.c src/platform/jl_sdk/bt_glue.c src/bt/gatt.c
+SRC := $(filter-out src/bt/bt_none.c,$(SRC)) src/platform/jl_sdk/bt_le.c src/platform/jl_sdk/bt_glue.c src/bt/gatt.c src/bt/smp.c
 endif
 # FM: our files, then JieLi's libraries at link time (link-time optimised: they are LLVM bitcode) and the
 # compiler's helper library for their 64-bit and float arithmetic

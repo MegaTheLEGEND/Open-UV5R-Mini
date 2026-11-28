@@ -63,3 +63,8 @@ bool        BT_LeAdvStart(const uint8_t *data, uint8_t len, uint16_t interval_ms
 	return false;
 }
 void        BT_LeAdvStop(void) {}
+
+void           BT_SetPairable(bool on) { (void)on; }
+bool           BT_Pairable(void) { return false; }
+BT_PairState_t BT_PairState(void) { return BT_PAIR_NONE; }
+int32_t        BT_Passkey(void) { return -1; }

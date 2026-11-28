@@ -4,9 +4,10 @@
  * BT_IsAvailable); the open build has none yet, so it says so.
  *
  * Keys: MENU type a line (keypad letters, F numbers: ui/textentry.h; MENU sends it), 1 send "PING", 2 send the
- * selected side's frequency, 0 clear the screen, EXIT back.
+ * selected side's frequency, 5 pairing mode (app/btpair.h), 0 clear the screen, EXIT back.
  * Its state is in .ram2 (.bss is full). */
 #include "app/apps.h"
+#include "app/btpair.h"
 #if APP_BTSERIAL_ENABLE
 #include "bt/bt.h"
 #include "driver/st7735s.h"
@@ -27,6 +28,7 @@ static struct {
 	bool     was_connected;
 	bool     redraw, full;
 	char     status[22];
+	char     pair[22];                   /* the pairing line (app/btpair.c) */
 	bool     typing;
 	char     out[COLS + 3];              /* the line being typed, then CR LF */
 	TextEntry_t te;
@@ -108,7 +110,10 @@ static void draw(bool full)
 	o = put(o, "  TX ");
 	APPS_PutInt(o, (int)S.tx);
 	UI_PrintPadded(S.status, 2, 107, COLOR_DIM, COLOR_BG, COLS);
-	UI_PrintPadded("MENU TYPE 1 PING 0 CLR", 2, 118, COLOR_DIM, COLOR_BG, COLS);
+	if (S.pair[0] == '5')                /* nothing to say about pairing: the keys */
+		UI_PrintPadded("MENU TYPE 1 PING 5 PAIR", 2, 118, COLOR_DIM, COLOR_BG, COLS);
+	else
+		UI_PrintPadded(S.pair, 2, 118, S.pair[0] == 'K' ? COLOR_WARN : COLOR_ACCENT, COLOR_BG, COLS);
 }
 
 static void enter(void)
@@ -120,11 +125,15 @@ static void enter(void)
 	S.was_connected = false;
 	S.typing = false;
 	S.redraw = S.full = true;
+	BTPAIR_Enter();
+	S.pair[0] = '5';
+	S.pair[1] = 0;
 	BT_Init(on_receive);
 }
 
 static void leave(void)
 {
+	BTPAIR_Leave();
 	BT_Init(0);                          /* as app.c leaves it */
 }
 
@@ -141,6 +150,10 @@ static AppsResult_t key(KEY_Code_t k)
 				send(S.out);
 			}
 		}
+		S.redraw = true;
+		return APPS_STAY;
+	}
+	if (BTPAIR_Key(k)) {
 		S.redraw = true;
 		return APPS_STAY;
 	}
@@ -176,7 +189,9 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
-	bool c = BT_IsConnected();
+	bool c = BT_IsConnected(), big;
+	if (BTPAIR_Tick(S.pair, &big))
+		S.redraw = true;
 	if (c != S.was_connected) {
 		S.was_connected = c;
 		S.redraw = true;
@@ -190,5 +205,5 @@ static AppsResult_t tick(bool full)
 }
 
 const AppDef_t APP_BTSERIAL = { "BT SERIAL", enter, key, tick, leave, false, false,
-                                "MENU TYPE A LINE\n F 123/ABC * DEL\n MENU SENDS IT\n1 SEND PING\n2 SEND FREQUENCY\n0 CLEAR\nEXIT BACK" };
+                                "MENU TYPE A LINE\n F 123/ABC * DEL\n MENU SENDS IT\n1 SEND PING\n2 SEND FREQUENCY\n5 PAIRING MODE\n0 CLEAR\nEXIT BACK" };
 #endif

@@ -83,7 +83,18 @@ static struct {
 	uint8_t          name_len;
 	uint8_t          cccd[2];
 	GATT_RxHandler_t on_rx;
+	bool             need_enc, enc;
 } G;
+
+void GATT_Secure(bool required, bool encrypted)
+{
+	G.need_enc = required;
+	G.enc = encrypted;
+}
+
+/* the serial service's own handles, while it needs an encrypted link that isn't there */
+static bool locked(uint16_t h) { return G.need_enc && !G.enc && h >= GATT_H_RX && h <= GATT_H_TX_CCCD; }
+#define E_INSUF_AUTH 0x05
 
 static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
 static void     wr16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
@@ -99,6 +110,7 @@ void GATT_Reset(const char *name, GATT_RxHandler_t on_rx)
 	G.name_len = n;
 	G.cccd[0] = G.cccd[1] = 0;
 	G.on_rx = on_rx;
+	G.enc = false;
 }
 
 bool GATT_NotifyOn(void) { return (G.cccd[0] & 1u) != 0; }
@@ -286,6 +298,8 @@ static int att(const uint8_t *in, int len, uint8_t *o)
 			return error(o, op, h, E_INVALID_HANDLE);
 		if (!(DB[h].perm & P_READ))
 			return error(o, op, h, E_READ_NOT_PERM);
+		if (locked(h))
+			return error(o, op, h, E_INSUF_AUTH);
 		v = value(h, &vlen);
 		if (op == ATT_READ_BLOB_REQ) {
 			off = rd16(in + 3);
@@ -308,6 +322,8 @@ static int att(const uint8_t *in, int len, uint8_t *o)
 			return op == ATT_WRITE_CMD ? 0 : error(o, op, h, E_INVALID_HANDLE);
 		if (!(DB[h].perm & P_WRITE))
 			return op == ATT_WRITE_CMD ? 0 : error(o, op, h, E_WRITE_NOT_PERM);
+		if (locked(h))
+			return op == ATT_WRITE_CMD ? 0 : error(o, op, h, E_INSUF_AUTH);
 		if (h == GATT_H_TX_CCCD) {
 			if (len != 5)
 				return op == ATT_WRITE_CMD ? 0 : error(o, op, h, 0x0D);   /* invalid value length */

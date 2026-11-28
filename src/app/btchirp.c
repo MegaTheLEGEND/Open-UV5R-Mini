@@ -6,9 +6,10 @@
  * Baofeng UV-5R Mini. Each download or upload is one session; the app stays open for the next one. After an upload
  * the radio loads the new channels and settings at once, as after a cable upload.
  *
- * Keys: EXIT back (the link closes). State in .ram2 (.bss is full). */
+ * Keys: 5 pairing mode (app/btpair.h; a passkey shows here), EXIT back (the link closes). State in .ram2 (.bss is full). */
 #include "app/apps.h"
 #if APP_BTCHIRP_ENABLE
+#include "app/btpair.h"
 #include "app/program.h"
 #include "bt/bt.h"
 #include "driver/st7735s.h"
@@ -22,6 +23,7 @@ static struct {
 	bool    linked;
 	uint8_t reads, writes;
 	bool    full;
+	char    pair[22];
 } S __attribute__((section(".ram2.btchirp")));
 
 static void draw(bool full)
@@ -54,6 +56,8 @@ static void draw(bool full)
 		*o++ = *s++;
 	APPS_PutInt(o, S.writes);
 	UI_PrintPadded(b, 2, ROW_Y(7), COLOR_TEXT, COLOR_BG, 20);
+	UI_PrintPadded(S.pair, 2, ROW_Y(6), S.pair[0] == 'K' ? COLOR_WARN : S.pair[0] == '5' ? COLOR_DIM : COLOR_ACCENT,
+	               COLOR_BG, 20);
 #else
 	if (full) {
 		UI_TitleRight("NONE", COLOR_WARN);
@@ -69,6 +73,8 @@ static void enter(void)
 	S.reads = S.writes = 0;
 	S.full = true;
 #if PROGRAM_BT
+	BTPAIR_Enter();
+	S.pair[0] = 0;
 	BT_Init(PROGRAM_BtReceive);
 #endif
 }
@@ -76,12 +82,21 @@ static void enter(void)
 static void leave(void)
 {
 #if PROGRAM_BT
+	BTPAIR_Leave();
 	BT_Init(0);
 #endif
 }
 
 static AppsResult_t key(KEY_Code_t k)
 {
+#if PROGRAM_BT
+	if (BTPAIR_Key(k)) {
+		bool big;
+		BTPAIR_Tick(S.pair, &big);
+		draw(false);
+		return APPS_STAY;
+	}
+#endif
 	return k == KEY_EXIT ? APPS_EXIT : APPS_STAY;
 }
 
@@ -98,6 +113,11 @@ static AppsResult_t tick(bool full)
 			S.reads++;
 		S.full = true;
 	}
+	{
+		bool big;
+		if (BTPAIR_Tick(S.pair, &big) && !S.full)
+			draw(false);
+	}
 	if (BT_IsConnected() != S.linked) {
 		S.linked = !S.linked;
 		if (!S.full)
@@ -112,5 +132,5 @@ static AppsResult_t tick(bool full)
 }
 
 const AppDef_t APP_BTCHIRP = { "BT CHIRP", enter, key, tick, leave, false, false,
-                               "CHIRP OVER BLUETOOTH\nPC: BLE_SERIAL.PY\nPORT SOCKET://\nLOCALHOST:5005\nEXIT BACK" };
+                               "CHIRP OVER BLUETOOTH\nPC: BLE_SERIAL.PY\nPORT SOCKET://\nLOCALHOST:5005\n5 PAIRING MODE\nEXIT BACK" };
 #endif
