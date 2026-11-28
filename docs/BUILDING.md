@@ -87,6 +87,7 @@ everything that uses a changed switch is rebuilt.
 | `ENABLE_APP_APRS` | 1 | MENU → APPS → APRS: position beacon out, packets in through the BK4819's FSK modem (`src/app/aprs.c`, ROADMAP 3.14) |
 | `ENABLE_APP_SUBGHZ` | 1 | MENU → APPS → SUB-GHZ: 315/433 MHz remote controls, receive only (`src/app/subghz.c`, ROADMAP 3.15) |
 | `ENABLE_BT_LE` | 1 | the BLE backend: Bluetooth Low Energy on JieLi's controller library, run from our main loop (`src/platform/jl_sdk/bt_le.c`, [BLUETOOTH.md](BLUETOOTH.md)). Needs `build/sdk/btctrler.a` (`sh tools/sdk/fm_libs.sh <clone>` copies it with the FM libraries) and `ENABLE_APP_FM`; without them the build has no Bluetooth (`src/bt/bt_none.c`) and the Bluetooth apps say so. About 40 KB of code; on only while a Bluetooth app is open |
+| `ENABLE_BT_PAIRED_ONLY` | 0 | 1 = only paired phones and PCs may use the Bluetooth serial link (BT SERIAL, BT CHIRP); pairing is in pairing mode (5 in those apps), [BLUETOOTH.md](BLUETOOTH.md#pairing-mode-2026-11-27). 0 = pairing offered, not needed |
 | `ENABLE_APP_BTSCAN` | 1 | MENU → BLUETOOTH → BLE SCAN: BLE devices nearby (`src/app/btscan.c`) |
 | `ENABLE_APP_BTBEACON` | 1 | MENU → BLUETOOTH → BT BEACON: the radio's own beacon, name, iBeacon or Eddystone URL (`src/app/btbeacon.c`) |
 | `ENABLE_APP_BTSERIAL` | 1 | MENU → BLUETOOTH → BT SERIAL: a terminal on the BLE serial link (`src/app/btserial.c`) |

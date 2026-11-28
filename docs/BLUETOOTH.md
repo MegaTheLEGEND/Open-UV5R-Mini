@@ -69,6 +69,7 @@ Steps:
 | `src/bt/bt.h` interface, open stubs | done |
 | BLE backend (`src/platform/jl_sdk/bt_le.c`, `bt_glue.c`, `ENABLE_BT_LE`) | **scanning and advertising work on Sean's radio** (2026-11-27); one connection for the serial link: emulator-tested |
 | GATT server with the Nordic UART Service (`src/bt/gatt.c`) | done, PC-tested (`tests/btle_host.py`) |
+| Pairing: LE legacy pairing, passkey on the radio, keys made again instead of stored (`src/bt/smp.c`) | done, PC-tested (the spec's own c1/s1 examples, AES FIPS-197, whole pairings); not tried with a phone |
 | Apps BLE SCAN, BT BEACON, BT INFO | work on Sean's radio |
 | Apps BT SERIAL, BT CHIRP; PC bridge `tools/ble_serial.py` | written; not tried on a radio |
 | SPP glue (`src/platform/jl_sdk/bt_spp.c`) | written against the SDK's `spp_user.h`; not compiled yet |
@@ -263,7 +264,7 @@ instead: **`src/bt/gatt.c`**, pure C, about 300 lines, from the Bluetooth Core S
 
 The Nordic UART Service is what most "BLE serial" phone apps (Serial Bluetooth Terminal, nRF Connect, Bluefruit
 Connect) and Web Bluetooth pages speak. ATT MTU stays 23, so a notification carries 20 bytes and every packet fits
-one 27-byte link-layer packet. No pairing (requests get "pairing not supported"), no bonding, nothing written to
+one 27-byte link-layer packet. Pairing is our own too ([below](#pairing-mode-2026-11-27)); nothing is written to
 flash. `python tests/btle_host.py` walks a phone's discovery, writes and notifications through it (73 checks with
 the advertising parser).
 
@@ -291,8 +292,31 @@ link into a TCP port:
    UV-5R Mini.
 5. Upload the same way. Leave BT CHIRP with EXIT when done.
 
+If the build only lets paired PCs in (`ENABLE_BT_PAIRED_ONLY=1`), pair once first: press 5 on the radio (pairing
+mode), then Windows Settings → Bluetooth → Add a device → UV5R-MINI, and type the six digits the radio shows.
+
 `python tools/ble_serial.py --scan` lists radios in range; `-v` prints the bytes both ways. The same bridge works for
 BT SERIAL with any TCP terminal (`ncat localhost 5005`).
+
+### Pairing mode (2026-11-27)
+
+`src/bt/smp.c`, our own Security Manager (Bluetooth Core Vol 3 Part H), the radio as the responder:
+
+| Part | How |
+| --- | --- |
+| Pairing mode | **5** in BT SERIAL or BT CHIRP: on for 60 s (the line shows `PAIRING ON 59S`), 5 again for off; it ends by itself once a phone has paired. Outside it a pairing request gets "pairing not supported" |
+| Method | LE legacy pairing. The radio is DisplayOnly. A phone or PC that can type and asks for protection (Windows, Android, iOS do) gets **passkey entry**: the radio shows `KEY 123456`, typed on the phone or PC. Others get Just Works |
+| Bonding with no key store | The long-term key we hand out is AES(ER, EDIV‖Rand), and the phone keeps EDIV and Rand with it. When it comes back it sends them, and the radio makes the same key again. ER is a secret made at each Bluetooth start from this radio's own BTIF block (0xFE000) and calibration bytes, never written, so a paired phone reconnects encrypted after power cycles with nothing stored (AGENTS.md rule 6) |
+| Encryption | the controller's (LE Encryption feature on: `config_btctler_le_features = 1`); the key comes from `SMP_LongTermKey` on each LE Long Term Key Request |
+| Paired only (optional) | `ENABLE_BT_PAIRED_ONLY=1`: the serial service answers "insufficient authentication" until the link is encrypted, so only a paired phone or PC can use BT SERIAL or program the radio with BT CHIRP. Off by default |
+| Line on screen | `5 PAIRING MODE`, `PAIRING ON nnS`, `KEY nnnnnn`, `PAIRED, ENCRYPTED`, `PAIR FAILED` |
+
+Limits: no LE Secure Connections (it needs P-256 ECDH, not written), so the pairing is the old kind: someone who
+records the pairing itself over the air can work the key out (more work with a passkey). Phones that insist on
+Secure Connections only won't pair. Forgetting a phone: remove the radio on the phone; the radio keeps nothing. A
+radio's ER changes only if its BTIF or calibration bytes change. Random numbers come from AES under ER of a counter,
+the time and the radio's own Bluetooth events. `python tests/btle_host.py` runs whole pairings (passkey, wrong
+passkey, Just Works, a reconnect with the kept key) against the module.
 
 **Not yet:** none of this has run on a radio. The CHIRP protocol is tested on the PC (`tests/chirp_host.py`) and the
 link's start in the emulator, but no phone or PC has connected yet. The BLE remote (HID over GATT) is the next one the

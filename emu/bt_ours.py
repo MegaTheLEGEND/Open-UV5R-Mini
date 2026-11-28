@@ -48,6 +48,10 @@ def main():
     # JieLi's start-up calibrates with many delay(n * 60) busy loops: a millisecond or so each on the chip, minutes in
     # this emulator. Time means nothing here, so delay returns at once.
     m.observe[sym['delay']] = lambda c: setattr(c, 'pc', c.rets)
+    # Our FLASH_Read (the pairing secret from the BTIF block) waits on the flash controller, which the emulator lacks:
+    # it returns at once (the buffer keeps what it had). It runs from RAM, which takes the ROM path above.
+    flash_read, ram_call = sym['FLASH_Read'], m.rom.call
+    m.rom.call = lambda c: setattr(c, 'pc', c.rets) if c.pc == flash_read else ram_call(c)
 
     p = m.periph
     p.read_hooks[0x1E3100] = lambda base: p.regs[base] | 0x80          # SAR ADC: conversion always done

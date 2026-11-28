@@ -50,7 +50,7 @@ the file against its pinned SHA-256 and refuses any other file.
 | FM broadcast radio (the chip's own FM receiver), with RDS | **plays on a radio** (2026-11-26); RDS decodes, weak |
 | APRS (beacon out, packets in), sub-GHz remotes (receive) | written; tried on a radio: the sub-GHz receiver sees a remote but can't decode it (ROADMAP 3.15) |
 | Bluetooth (BLE): scanner, beacon, info | **work on a radio** (2026-11-27) |
-| Bluetooth (BLE): serial link, CHIRP over Bluetooth | written; PC- and emulator-tested |
+| Bluetooth (BLE): serial link, CHIRP over Bluetooth, pairing mode (passkey on the radio) | written; PC- and emulator-tested |
 | Remote control from the PC over the cable (debug builds) | works (screen text, keys, registers; also as MCP tools) |
 | Own firmware: clocks, timer interrupts, voice prompts | to do |
 
