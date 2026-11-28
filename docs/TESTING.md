@@ -87,6 +87,15 @@ as **Back to stock**, and Studio's own Back to stock gives the same bytes.
   loader. An app that crashes before that check can't be updated with the cable. That is why a new app must run
   its update check first, before anything else.
 - **A cut update is different:** the bootloader resumes it without the app (the dark screen above).
+- **A crash after start-up (since 1.0.0, PC-checked only):** the bootloader's watchdog stays on and our main loop
+  clears it every tick, so a hang restarts the radio. Exceptions have our handlers from power-on
+  (`src/driver/crash.c`): they note where, then let the watchdog restart it; the bottom line then says
+  `CRASH E1 01E0ABCD` (vector, address) or `RESTARTED` for a hang. After two restarts in a row that each came within
+  20 s of power-on, the next start is a **SAFE START**: the power-on picture, the beeps' DAC and broadcast FM in the
+  VFO don't start by themselves, so a crash in one of them can't become a restart loop. The update mode is checked
+  before all of this, so PTT-A + `=` still works. The record lives in RAM that start-up doesn't clear; whether it
+  survives the bootloader's restart on a radio is not checked yet (if not, the note and the safe start just don't
+  happen).
 - **Last resort: the chip's ROM download mode.** JieLi chips have a factory programming mode in mask ROM that
   doesn't need the app. Community tools talk to it over USB, for example kagaimiq's `jl-uboot-tool`. On this radio,
   this needs the case open: the K-plug reaches only USB D−, and the battery's USB-C port is charge-only. The pads

@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "app/app.h"
 #include "app/bcast.h"
+#include "driver/crash.h"
 #include "app/battery.h"
 #include "app/apps.h"
 #include "store/calib.h"
@@ -1526,6 +1527,7 @@ static void draw_about(void)
  * radio yet. */
 static void reboot_to_rescue(void)
 {
+	CRASH_CleanOff();
 	IRQ_GlobalOff();
 	/* Sean, 2026-11-27: the first try restarted but the PC found nothing. Our cable UART had the USB pins (D+ / D-)
 	 * and the USB controller off, and the soft reset may leave those as they are: give them back, and hold off a
@@ -2481,6 +2483,7 @@ void APP_Init(void)
 		ST7735S_SetBacklight(true);
 		UPDATE_Mode();          /* PTT-A + '=' at power-on, as the stock app; does not return */
 	}
+	CRASH_Init();               /* exception handlers, the restart record, a safe start after restarts in a row */
 #if APP_FM_ENABLE
 	gRadioBeepHook = FMRX_Beep;  /* key beeps on the MCU's DAC, as stock; not the BK4819 (it blipped on the air) */
 #endif
@@ -2518,6 +2521,10 @@ void APP_Init(void)
 		m[9] = gStock.have_vfo ? '1' : '0';
 		m[12] = ext_ok() ? '1' : '0';
 		note(s_xf_ok ? m : "NO EXT FLASH", s_xf_ok ? COLOR_DIM : COLOR_TX);
+		if (CRASH_Safe())                /* restarted early twice in a row: nothing starts by itself this time */
+			note("SAFE START", COLOR_TX);
+		else if (CRASH_Restarted())
+			note(CRASH_Text(), COLOR_WARN);
 	}
 #if PROGRAM_ENABLE
 	if (s_xf_ok)
@@ -2530,10 +2537,11 @@ void APP_Init(void)
 #endif
 	/* The radio's own power-on picture while the beeps' audio starts (Sean, 2026-11-27; ROADMAP 4.8). After
 	 * PROGRAM_Init, which starts the LCD again (its pin check) and so cleared a picture drawn before it. */
-	bool splash_on = s_xf_ok && splash();
+	bool splash_on = s_xf_ok && !CRASH_Safe() && splash();
 	uint32_t splash_t0 = SYSTEM_Ms();    /* held from when it shows */
 #if APP_FM_ENABLE
-	FMRX_BeepPrepare();                  /* the beeps' DAC, with everything else ready (behind the picture) */
+	if (!CRASH_Safe())
+		FMRX_BeepPrepare();              /* the beeps' DAC, with everything else ready (behind the picture) */
 #endif
 	while (splash_on && SYSTEM_Ms() - splash_t0 < SPLASH_MIN_MS)
 		SYSTEM_DelayMs(10);
@@ -2921,8 +2929,8 @@ static void bc_tick(void)
 		bool auto_now = f >= BCAST_AUTO_MIN && f <= BCAST_MAX, auto_was = was >= BCAST_AUTO_MIN && was <= BCAST_MAX;
 		if (f < BCAST_MIN || f > BCAST_MAX)
 			gVfo.wfm = false;            /* tuned away: the BK4819 again, on W or N as before */
-		else if (auto_now && !auto_was)
-			gVfo.wfm = true;             /* into the broadcast band: WFM */
+		else if (auto_now && !auto_was && !CRASH_Safe())
+			gVfo.wfm = true;             /* into the broadcast band: WFM (not on a safe start) */
 		if (f != was)
 			s_bc_wait = 0;
 		s_bc_last[s_active] = f;
@@ -3017,6 +3025,7 @@ void APP_Tick(void)
 			}
 #endif
 			IO_Amp(0xFF, false);
+			CRASH_CleanOff();            /* switched off: not a crash */
 			BOARD_PowerOff();
 		}
 	} else
@@ -3134,6 +3143,7 @@ void APP_Tick(void)
 		}
 	}
 	gAppsUptimeMs += APP_TICK_MS;
+	CRASH_Tick(gAppsUptimeMs);
 #if APP_FM_ENABLE
 	FMRX_BeepTick(APP_TICK_MS);          /* keeps the beep's samples coming; the DAC off after 3 s quiet */
 #endif
