@@ -1,8 +1,11 @@
 /* Open-UV5R-Mini: system info (ENABLE_APP_SYSINFO), after F4HWN's System Info app: battery, calibration, external
- * flash, channels in use, transmit lock, uptime, version and build. Refreshed every second; any key goes back. */
+ * flash, channels in use, transmit lock, uptime, version, build, and whether this run began after a restart.
+ * Refreshed every second; any key goes back. Opened from MENU -> ABOUT with 1 (since 1.0.0). */
 #include "app/apps.h"
 #if APP_SYSINFO_ENABLE
+#include "app/app.h"
 #include "app/battery.h"
+#include "driver/crash.h"
 #include "app/version.h"
 #include "radio/txlock.h"
 #include "store/calib.h"
@@ -78,7 +81,8 @@ static void enter(void)
 	s_p.label[5] = "UPTIME";   s_p.value[5] = s_up;
 	s_p.label[6] = "VERSION";  s_p.value[6] = FW_VERSION;
 	s_p.label[7] = "BUILD";    s_p.value[7] = VERSION_Build();
-	s_p.label[8] = "RADIO";    s_p.value[8] = "NRF HW V1.7";
+	/* the radio kind is on the ABOUT screen this opens from; here how this run started (driver/crash.h) */
+	s_p.label[8] = "START";    s_p.value[8] = CRASH_Safe() ? "SAFE START" : CRASH_Restarted() ? "AFTER RESTART" : "NORMAL";
 	s_p.hint = "ANY KEY: BACK";
 	s_ms = 0;
 	fill();
@@ -94,7 +98,7 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
-	if ((s_ms = (uint16_t)(s_ms + 10u)) >= 1000u) {
+	if ((s_ms = (uint16_t)(s_ms + APP_TICK_MS)) >= 1000u) {   /* the tick is not always 10 ms */
 		s_ms = 0;
 		fill();
 		UI_InfoDraw(&s_p, full);

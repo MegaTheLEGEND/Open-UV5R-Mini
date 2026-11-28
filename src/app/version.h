@@ -6,7 +6,7 @@
 #define APP_VERSION_H
 
 #define FW_NAME    "OPEN UV5R MINI"
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "1.0.0"
 #define FW_TARGET  "NRF V0.27 HW V1.7"   /* the only kind of radio this build is for (AGENTS.md rule 4) */
 
 const char *VERSION_Build(void);

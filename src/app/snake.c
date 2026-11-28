@@ -17,7 +17,7 @@ static uint16_t s_head, s_len;
 static int8_t   s_dx, s_dy, s_ndx, s_ndy;
 static uint8_t  s_fx, s_fy;
 static uint16_t s_ms, s_every, s_score;
-static bool     s_over;
+static bool     s_over, s_played;        /* s_played: a game is on the board (a redraw shows it, not a new one) */
 static uint32_t s_rand;
 
 static uint32_t rnd(void)
@@ -69,14 +69,31 @@ static void start(void)
 	s_every = 160;
 	s_score = 0;
 	s_over = false;
+	s_played = true;
 	score();
 	place_food();
+}
+
+/* The whole screen again (back from the help screen or sleep): the same game, not a new one */
+static void redraw(void)
+{
+	UI_GameFrame("SNAKE");
+	for (uint16_t i = 0; i < s_len; i++) {
+		uint16_t k = (uint16_t)((s_head + SNAKE_MAX - i) % SNAKE_MAX);
+		UI_GameCell(s_x[k], s_y[k], i == 0 ? COLOR_ACCENT : COLOR_RX);
+	}
+	UI_GameCell(s_fx, s_fy, COLOR_TX);
+	if (s_over)
+		UI_GameScore("OVER MENU:GO");
+	else
+		score();
 }
 
 static void enter(void)
 {
 	s_rand ^= gAppsUptimeMs * 2654435761u + 1u;
-	s_over = true;                       /* drawn by the first tick */
+	s_over = true;                       /* a new game, started by the first (full) tick */
+	s_played = false;
 }
 
 static void leave(void) {}
@@ -86,8 +103,10 @@ static AppsResult_t key(KEY_Code_t k)
 	if (k == KEY_ACT_EXIT)
 		return APPS_EXIT;
 	if (s_over) {
-		if (k == KEY_ACT_MENU)
+		if (k == KEY_ACT_MENU) {
+			s_played = false;
 			start();
+		}
 		return APPS_STAY;
 	}
 	/* a turn takes effect on the next step; no turning straight back */
@@ -108,7 +127,10 @@ static AppsResult_t tick(bool full)
 	uint16_t tail;
 
 	if (full) {
-		start();
+		if (s_played)
+			redraw();
+		else
+			start();
 		return APPS_STAY;
 	}
 	if (s_over || (s_ms = (uint16_t)(s_ms + APP_TICK_MS)) < s_every)

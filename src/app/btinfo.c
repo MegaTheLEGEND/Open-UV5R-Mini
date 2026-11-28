@@ -4,6 +4,7 @@
  * read only, raw, as stored. Refreshed every second; any key goes back.
  * Its state is in .ram2 (the stock app's RAM, free under our firmware): .bss is full. */
 #include "app/apps.h"
+#include "app/app.h"
 #if APP_BTINFO_ENABLE
 #include "bt/bt.h"
 #include "driver/flash.h"
@@ -116,7 +117,7 @@ static AppsResult_t key(KEY_Code_t k)
 
 static AppsResult_t tick(bool full)
 {
-	if ((S.ms = (uint16_t)(S.ms + 10u)) >= 1000u) {
+	if ((S.ms = (uint16_t)(S.ms + APP_TICK_MS)) >= 1000u) {   /* the tick is not always 10 ms */
 		S.ms = 0;
 		fill();
 		UI_InfoDraw(&S.p, full);

@@ -28,8 +28,10 @@ static struct {
 
 static void draw(bool full)
 {
+#if PROGRAM_BT
 	static char b[22];
 	char *o;
+#endif
 
 	if (full) {
 		ST7735S_FillRect(0, 0, LCD_WIDTH, LCD_HEIGHT, COLOR_BG);

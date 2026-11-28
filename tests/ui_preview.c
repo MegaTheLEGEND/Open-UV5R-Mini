@@ -273,9 +273,9 @@ int main(int argc, char **argv)
 		p.label[3] = "CHANNELS"; p.value[3] = "37 USED";
 		p.label[4] = "TX LOCK";  p.value[4] = "HAM US";
 		p.label[5] = "UPTIME";   p.value[5] = "1:23:45";
-		p.label[6] = "VERSION";  p.value[6] = "0.1.0";
+		p.label[6] = "VERSION";  p.value[6] = "1.0.0";
 		p.label[7] = "BUILD";    p.value[7] = "81689c1";
-		p.label[8] = "RADIO";    p.value[8] = "NRF HW V1.7";
+		p.label[8] = "START";    p.value[8] = "NORMAL";
 		p.hint = "ANY KEY: BACK";
 		UI_InfoDraw(&p, true);
 		snprintf(path, sizeof path, "%s/app_sysinfo.ppm", dir);
