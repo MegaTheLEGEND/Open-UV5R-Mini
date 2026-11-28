@@ -21,6 +21,9 @@ function download(bytes, name, type = 'application/octet-stream') {
 }
 
 // --- 1. radio and files
+// Browsers put back ticks from the last visit without telling the page. The radio kind and the risk ticks must be
+// chosen on each visit (never NRF by accident, AGENTS rule 4), so clear them all.
+for (const e of document.querySelectorAll('input[name=variant], #ack, #confirm')) e.checked = false;
 document.querySelectorAll('input[name=variant]').forEach(r => r.addEventListener('change', () => {
   state.variant = r.value;
   if (r.value === 'nrfb') {

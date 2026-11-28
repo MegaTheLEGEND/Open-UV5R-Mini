@@ -51,9 +51,9 @@
     <div class="body">
       <p>Switch the radio off, hold <kbd>8</kbd> and switch it on. For a second the screen shows its kind:</p>
       <div class="choice" role="radiogroup" aria-label="Radio kind">
-        <label class="opt"><input type="radio" name="variant" value="nrf">
+        <label class="opt"><input type="radio" name="variant" value="nrf" autocomplete="off">
           <span class="lcd">5RMINI NRF</span><span class="sub">stock V0.27 · supported</span></label>
-        <label class="opt"><input type="radio" name="variant" value="nrfb">
+        <label class="opt"><input type="radio" name="variant" value="nrfb" autocomplete="off">
           <span class="lcd">5RMINI NRFB</span><span class="sub">stock V0.04 · not supported</span></label>
       </div>
       <p id="variant-msg" class="msg"></p>
@@ -140,10 +140,10 @@
       </ol>
       <div id="rescue" class="rescue" hidden>
         <p id="rescue-text"></p>
-        <label class="ack"><input type="checkbox" id="confirm"> I can open the case and recover this radio through
+        <label class="ack"><input type="checkbox" id="confirm" autocomplete="off"> I can open the case and recover this radio through
           the ROM rescue mode, and I have a full flash backup of it.</label>
       </div>
-      <label class="ack"><input type="checkbox" id="ack"> I have read the risks above. This build is untested and I
+      <label class="ack"><input type="checkbox" id="ack" autocomplete="off"> I have read the risks above. This build is untested and I
         flash it at my own risk.</label>
       <div class="actions">
         <button id="b-flash" type="button" class="primary" disabled>Flash</button>
