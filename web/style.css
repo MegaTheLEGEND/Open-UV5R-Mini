@@ -172,3 +172,6 @@ footer p { max-width: 70ch; }
   .ver-row label { grid-column: 1 / -1; }
   .ver-row select { grid-column: 1 / -1; }
 }
+
+.exp { margin-left: .5rem; padding: .05rem .35rem; border: 1px solid var(--warn); border-radius: 3px; color: var(--warn);
+  font: 600 .66rem/1.3 var(--f-label); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }

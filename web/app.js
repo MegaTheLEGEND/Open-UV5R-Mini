@@ -136,6 +136,12 @@ const DEPS = {     // shown as hints; the Makefile's own overrides apply in the 
   ENABLE_BT_PAIRED_ONLY: [['ENABLE_BT_LE', 1]],
   REGION: [['ENABLE_REGIONS', 1]],
 };
+// Off on this page unless ticked, and marked experimental (not yet working reliably on a radio), whatever
+// features.mk says; the build then passes them as =0, as the shown make command does.
+const EXPERIMENTAL = new Set(['ENABLE_BT_LE', 'ENABLE_BT_PAIRED_ONLY', 'ENABLE_APP_BTSCAN', 'ENABLE_APP_BTINFO',
+  'ENABLE_APP_BTBEACON', 'ENABLE_APP_BTSERIAL', 'ENABLE_APP_BTCHIRP', 'ENABLE_APP_SUBGHZ', 'ENABLE_APP_APRS']);
+const pageDefault = f => (EXPERIMENTAL.has(f.name) ? 0 : f.default);
+const STORE = 'uv5r-features-2';   // new key: settings saved before the experimental defaults are not reused
 // Plain names and groups for the switches; anything new in features.mk lands in "Other" with its own name.
 const NAMES = {
   ENABLE_TX: 'Transmit', ENABLE_REGIONS: 'Region transmit modes', REGION: 'Region', ENABLE_TX_UNLOCK: 'UNLOCKED transmit mode',
@@ -174,8 +180,8 @@ function features() {
   return out;
 }
 // kept across versions: a switch keeps its setting in every version that has it
-function saveFeatures() { try { localStorage.setItem('uv5r-features', JSON.stringify({ ...savedFeatures(), ...features() })); } catch { /* private window */ } }
-function savedFeatures() { try { return JSON.parse(localStorage.getItem('uv5r-features') || '{}'); } catch { return {}; } }
+function saveFeatures() { try { localStorage.setItem(STORE, JSON.stringify({ ...savedFeatures(), ...features() })); } catch { /* private window */ } }
+function savedFeatures() { try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; } }
 function renderFeatures() {
   const saved = savedFeatures();
   const byName = Object.fromEntries(feats.map(f => [f.name, f]));
@@ -188,10 +194,11 @@ function renderFeatures() {
     const g = el('div', 'group'); g.append(el('h3', null, title));
     for (const n of items) {
       const f = byName[n];
-      const v = n in saved ? saved[n] : f.default;
+      const v = n in saved ? saved[n] : pageDefault(f);
       const row = el('div', 'feat' + (f.values ? ' select' : '')); row.id = 'fd-' + n;
       const lab = el('label'); lab.htmlFor = 'ft-' + n;
       lab.append(el('span', 'name', NAMES[n] || n), el('span', 'sw', n));
+      if (EXPERIMENTAL.has(n)) lab.append(el('span', 'exp', 'experimental'));
       if (f.values) {
         const sel = el('select'); sel.id = 'ft-' + n;
         for (const [k, t] of Object.entries(f.values)) sel.add(new Option(t, k));
@@ -229,7 +236,7 @@ function featureHints() {
 $('b-defaults').addEventListener('click', () => {
   const saved = savedFeatures();
   for (const f of feats) delete saved[f.name];
-  try { localStorage.setItem('uv5r-features', JSON.stringify(saved)); } catch { /* */ }
+  try { localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* */ }
   renderFeatures(); state.bin = null; state.img = null; state.checks = null; showChecks(); refresh();
 });
 

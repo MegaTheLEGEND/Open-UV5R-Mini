@@ -15,6 +15,8 @@ the page. **No build is known to be safe to flash** (read [TESTING.md](TESTING.m
 4. **Version and features**: pick a release, a branch's newest commit or a recent commit, or type any commit hash,
    branch or tag. The feature list is that version's own `features.mk` (a switch you set keeps its setting in
    every version that has it). The page shows the same `git checkout` and `make` commands for a PC build.
+   Bluetooth (`ENABLE_BT_LE` and the BT apps), SUB-GHZ and APRS start **off** on the page and are marked
+   experimental, whatever `features.mk` says (`EXPERIMENTAL` in `web/app.js`); tick them to build them in.
 5. **Build**. The first time it downloads the compiler (about 21 MB, kept by the browser); a build takes a few
    seconds. Then the page combines it with your files and shows every check (the same as
    `tools/ufwcheck.py` and `tools/uv5r_flasher.py`). You can download `firmware.bin` or the `.ufw`.
