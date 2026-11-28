@@ -3,6 +3,7 @@
 #include <string.h>
 #include "bt/le_adv.h"
 #include "bt/gatt.h"
+#include "bt/smp.h"
 
 static int fails, checks;
 #define CHECK(c) do { checks++; if (!(c)) { fails++; printf("FAIL line %d: %s\n", __LINE__, #c); } } while (0)
@@ -20,6 +21,138 @@ static BT_LeReport_t rep(uint8_t last, int8_t rssi, uint8_t type, const uint8_t 
 	BT_LeReport_t r = { { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, last }, 1, type, rssi, n, { 0 } };
 	memcpy(r.data, d, n);
 	return r;
+}
+
+/* a value written most significant byte first (as the Bluetooth spec prints it) into little-endian bytes */
+static void le(uint8_t *out, const char *hex, int n)
+{
+	for (int i = 0; i < n; i++) {
+		unsigned v;
+		sscanf(hex + 2 * (n - 1 - i), "%2x", &v);
+		out[i] = (uint8_t)v;
+	}
+}
+
+static uint8_t rnd_n;
+static void test_rnd(uint8_t *o, int n)
+{
+	for (int i = 0; i < n; i++)
+		o[i] = (uint8_t)(rnd_n++ * 37u + 11u);
+}
+
+static void test_smp(void)
+{
+	/* AES-128, FIPS-197 appendix C.1 */
+	{
+		uint8_t k[16], p[16], o[16];
+		static const uint8_t want[16] = { 0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
+		                                  0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a };
+		for (int i = 0; i < 16; i++) {
+			k[i] = (uint8_t)i;
+			p[i] = (uint8_t)(i * 0x11);
+		}
+		SMP_Aes(k, p, o);
+		CHECK(!memcmp(o, want, 16));
+	}
+	/* c1 and s1: the examples in the Core spec, Vol 3 Part H 2.2.3 and 2.2.4 */
+	{
+		uint8_t k[16] = { 0 }, r[16], preq[7], pres[7], ia[6], ra[6], o[16], w[16], r1[16], r2[16];
+		le(r, "5783D52156AD6F0E6388274EC6702EE0", 16);
+		le(pres, "05000800000302", 7);
+		le(preq, "07071000000101", 7);
+		le(ia, "A1A2A3A4A5A6", 6);
+		le(ra, "B1B2B3B4B5B6", 6);
+		SMP_C1(k, r, preq, pres, 1, ia, 0, ra, o);
+		le(w, "1E1E3FEF878988EAD2A74DC5BEF13B86", 16);
+		CHECK(!memcmp(o, w, 16));
+		le(r1, "000F0E0D0C0B0A091122334455667788", 16);
+		le(r2, "010203040506070899AABBCCDDEEFF00", 16);
+		SMP_S1(k, r1, r2, o);
+		le(w, "9A1FE1F0E8B0F49B5B4216AE796DA062", 16);
+		CHECK(!memcmp(o, w, 16));
+	}
+	/* a whole pairing, the test as the phone: passkey entry, bonding */
+	{
+		static const uint8_t ia[6] = { 1, 2, 3, 4, 5, 0xC6 }, ra[6] = { 9, 8, 7, 6, 5, 0xC4 };
+		uint8_t er[16], o[SMP_MAX], o2[SMP_MAX], tk[16] = { 0 }, mrand[16], mconf[16], c[16], stk[16], ltk[16];
+		uint8_t req[7] = { 0x01, 0x04, 0x00, 0x05, 16, 0x00, 0x01 };   /* KeyboardDisplay, bond + MITM */
+		int n, n1, n2;
+		for (int i = 0; i < 16; i++)
+			er[i] = (uint8_t)(0xA0 + i);
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		SMP_SetPairable(false);
+		n = SMP_Input(req, 7, o);
+		CHECK(n == 2 && o[0] == 0x05 && o[1] == 0x05 && SMP_State() == SMP_FAILED);
+		SMP_SetPairable(true);
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		CHECK(SMP_Pairable() && SMP_State() == SMP_IDLE && SMP_Passkey() < 0);
+		n = SMP_Input(req, 7, o);
+		CHECK(n == 7 && o[0] == 0x02 && o[1] == 0x00 && o[3] == 0x05 && o[4] == 16 && o[6] == 0x01);
+		CHECK(SMP_State() == SMP_PAIRING && SMP_Passkey() >= 0 && SMP_Passkey() <= 999999);
+		uint8_t rsp[7];
+		memcpy(rsp, o, 7);
+		uint32_t pk = (uint32_t)SMP_Passkey();
+		tk[0] = (uint8_t)pk; tk[1] = (uint8_t)(pk >> 8); tk[2] = (uint8_t)(pk >> 16);
+		for (int i = 0; i < 16; i++)
+			mrand[i] = (uint8_t)(0x55 ^ i);
+		SMP_C1(tk, mrand, req, rsp, 1, ia, 1, ra, mconf);
+		uint8_t pc[17] = { 0x03 };
+		memcpy(pc + 1, mconf, 16);
+		n = SMP_Input(pc, 17, o);
+		CHECK(n == 17 && o[0] == 0x03);
+		memcpy(c, o + 1, 16);                     /* the radio's confirm */
+		uint8_t pr[17] = { 0x04 };
+		memcpy(pr + 1, mrand, 16);
+		n = SMP_Input(pr, 17, o);
+		CHECK(n == 17 && o[0] == 0x04);
+		SMP_C1(tk, o + 1, req, rsp, 1, ia, 1, ra, mconf);
+		CHECK(!memcmp(mconf, c, 16));             /* the radio's random matches its confirm */
+		SMP_S1(tk, o + 1, mrand, stk);
+		static const uint8_t z8[8] = { 0 };
+		CHECK(SMP_LongTermKey(z8, 0, ltk) && !memcmp(ltk, stk, 16));
+		CHECK(SMP_Encrypted(o, &n1, o2, &n2) == 2 && n1 == 17 && n2 == 11 && o[0] == 0x06 && o2[0] == 0x07);
+		CHECK(SMP_State() == SMP_PAIRED && SMP_IsEncrypted() && SMP_Passkey() < 0);
+		memcpy(c, o + 1, 16);                     /* the LTK the phone keeps, with EDIV and Rand */
+		/* next connection (after a power cycle): the phone's EDIV/Rand give the same key back */
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		CHECK(!SMP_IsEncrypted());
+		CHECK(SMP_LongTermKey(o2 + 3, (uint16_t)(o2[1] | o2[2] << 8), ltk) && !memcmp(ltk, c, 16));
+		CHECK(SMP_Encrypted(o, &n1, o2, &n2) == 0 && SMP_State() == SMP_PAIRED);
+		CHECK(!SMP_LongTermKey(z8, 0, ltk));      /* no short-term key outside a pairing */
+
+		/* a wrong passkey: Pairing Failed, passkey entry failed */
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		SMP_Input(req, 7, o);
+		memcpy(rsp, o, 7);
+		pk = (uint32_t)SMP_Passkey() + 1u;
+		tk[0] = (uint8_t)pk; tk[1] = (uint8_t)(pk >> 8); tk[2] = (uint8_t)(pk >> 16);
+		SMP_C1(tk, mrand, req, rsp, 1, ia, 1, ra, mconf);
+		memcpy(pc + 1, mconf, 16);
+		SMP_Input(pc, 17, o);
+		n = SMP_Input(pr, 17, o);
+		CHECK(n == 2 && o[0] == 0x05 && o[1] == 0x01 && SMP_State() == SMP_FAILED && SMP_FailReason() == 1);
+
+		/* Just Works: a phone that can't type, no bonding */
+		static const uint8_t jw[7] = { 0x01, 0x03, 0x00, 0x00, 16, 0x00, 0x00 };
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		n = SMP_Input(jw, 7, o);
+		CHECK(n == 7 && o[3] == 0 && o[6] == 0 && SMP_Passkey() < 0);
+		memcpy(rsp, o, 7);
+		memset(tk, 0, 16);
+		SMP_C1(tk, mrand, jw, rsp, 1, ia, 1, ra, mconf);
+		memcpy(pc + 1, mconf, 16);
+		CHECK(SMP_Input(pc, 17, o) == 17);
+		CHECK(SMP_Input(pr, 17, o) == 17 && o[0] == 0x04);
+		CHECK(SMP_LongTermKey(z8, 0, ltk) && SMP_Encrypted(o, &n1, o2, &n2) == 0 && SMP_State() == SMP_PAIRED);
+
+		/* out of order and bad sizes */
+		SMP_Reset(ia, 1, ra, 1, er, test_rnd);
+		CHECK(SMP_Input(pr, 17, o) == 2 && o[1] == 0x08);
+		CHECK(SMP_Input(req, 6, o) == 2 && o[1] == 0x0A);
+		uint8_t small[7] = { 0x01, 0x04, 0x00, 0x05, 6, 0x00, 0x01 };
+		CHECK(SMP_Input(small, 7, o) == 2 && o[1] == 0x06);
+		SMP_SetPairable(false);
+	}
 }
 
 int main(void)
@@ -253,6 +386,8 @@ int main(void)
 		n = GATT_Input(L2CAP_CID_ATT, wr, sizeof wr, o, &cid);    /* no handler: dropped */
 		CHECK(n == 0 && rx_len == 3);
 	}
+
+	test_smp();
 
 	printf("%d checks, %d failed\n", checks, fails);
 	return fails != 0;

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 r"""Test src/bt/le_adv.c on the PC (tests/btle_host.c): BLE advertising data parsed, the list of devices heard,
-and the GATT serial server (src/bt/gatt.c).
+the GATT serial server (src/bt/gatt.c) and pairing (src/bt/smp.c).
 Needs a host gcc (MSYS2 mingw64 on Windows: C:\msys64\mingw64\bin first on PATH).
 
     python tests/btle_host.py
@@ -18,7 +18,7 @@ def main():
     exe = os.path.join(out, 'btle_host' + ('.exe' if os.name == 'nt' else ''))
     subprocess.run(['gcc', '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-I', os.path.join(ROOT, 'src'),
                     os.path.join(ROOT, 'tests', 'btle_host.c'), os.path.join(ROOT, 'src', 'bt', 'le_adv.c'),
-                    os.path.join(ROOT, 'src', 'bt', 'gatt.c'),
+                    os.path.join(ROOT, 'src', 'bt', 'gatt.c'), os.path.join(ROOT, 'src', 'bt', 'smp.c'),
                     '-o', exe], check=True)
     r = subprocess.run([exe], capture_output=True, text=True)
     print(r.stdout.rstrip())
