@@ -94,13 +94,14 @@ bool RADIO_ToneHeard(void) { return s_tone_heard; }
 /* ------------------------------------------------------------------------------------------- receive */
 static uint16_t s_mute_ms;     /* receive audio held off after transmit (repeater tail) */
 static bool     s_monitor;     /* squelch held open (RADIO_Monitor) */
+static bool     s_parked;      /* RADIO_Park: the BK4819 asleep while the MCU's FM receiver has the VFO */
 static bool     s_rx_asleep;   /* the BK4819 is asleep (RADIO_RxSleep) until RADIO_Apply or transmit */
 static void beep_end(void);
 static bool     s_probe;       /* the spectrum has the receiver (RADIO_ProbeBegin) */
 
 static void audio(bool open)
 {
-	if (s_mute_ms)
+	if (s_mute_ms || s_parked)
 		open = false;
 	BK4819_SetAF(open ? (RADIO_IsAm() ? BK4819_AF_AM : BK4819_AF_FM) : BK4819_AF_MUTE);
 	IO_Amp(AUDIO_RX, open);
@@ -113,7 +114,7 @@ void RADIO_Apply(void)
 		gVfo.freq = FREQ_MIN;
 	if (gVfo.freq > FREQ_MAX)
 		gVfo.freq = FREQ_MAX;
-	if (s_state == RADIO_TX)
+	if (s_state == RADIO_TX || s_parked)   /* parked: gVfo is kept, the chip stays asleep until RADIO_Park(false) */
 		return;
 	s_rx_asleep = false;               /* BK4819_RxOn below wakes the chip (REG_37) */
 	if (s_beep_ms) {                   /* retuning puts receive back on, which would leave the beep half set up */
@@ -147,7 +148,7 @@ void RADIO_Monitor(bool on)
 	if (s_monitor == on)
 		return;
 	s_monitor = on;
-	if (s_state == RADIO_TX)
+	if (s_state == RADIO_TX || s_parked)
 		return;
 	if (on) {
 		s_state = RADIO_RX_OPEN;
@@ -162,6 +163,25 @@ void RADIO_Monitor(bool on)
 }
 
 bool RADIO_MonitorOn(void) { return s_monitor; }
+
+/* Parked (broadcast FM in the VFO, app.c): the BK4819 asleep with its audio off, as RADIO_RxSleep, and kept so:
+ * RADIO_Apply only clamps gVfo, the squelch and monitor don't open, no beeps, no transmit (RADIO_TxRefusal).
+ * RADIO_Park(false) wakes it on gVfo again. */
+void RADIO_Park(bool on)
+{
+	if (on == s_parked || (on && s_state == RADIO_TX))
+		return;
+	if (on) {
+		RADIO_ProbeListen(0);            /* only acts while the spectrum is parked listening */
+		RADIO_RxSleep();
+		s_parked = true;
+	} else {
+		s_parked = false;
+		RADIO_Apply();
+	}
+}
+
+bool RADIO_Parked(void) { return s_parked; }
 
 /* The receiver asleep, for the radio's sleep mode: audio off, then the BK4819 off as stock's power saving and
  * F4HWN's sleep do (REG_30 = 0, REG_37 = 0x1D00: BK4819_Sleep). Nothing is heard until RADIO_Apply wakes it. */
@@ -418,6 +438,8 @@ const char *RADIO_TxRefusal(void)
 
 	if (!RADIO_ENABLE_TX)
 		return "TX OFF IN BUILD";
+	if (s_parked)
+		return "NO TX ON BROADCAST";
 	if (gVfo.rx_only)
 		return "RX ONLY CHANNEL";
 	if (RADIO_IsAm())
@@ -598,7 +620,7 @@ void RADIO_Beep(uint16_t hz, uint16_t ms)
 		return;
 	if (gRadioBeepHook && gRadioBeepHook(hz, ms))
 		return;                          /* the MCU's DAC played it (app.c): the BK4819 untouched */
-	if (s_probe)
+	if (s_probe || s_parked)
 		return;
 	IO_Amp(AUDIO_BEEP, true);
 	BK4819_Beep(hz);

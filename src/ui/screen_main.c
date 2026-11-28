@@ -154,9 +154,13 @@ static void draw_tags(const UiSide_t *s, uint8_t y, bool active)
 	uint8_t x = 2;
 
 	ST7735S_FillRect(0, y, LCD_WIDTH, 9, COLOR_BG);
-	x = pill(x, y, s->am ? "AM" : "FM", c);
-	x = pill(x, y, s->narrow ? "N" : "W", c);
-	x = pill(x, y, s->high_power ? "H" : "L", active && s->high_power ? COLOR_WARN : c);   /* power as a letter */
+	if (s->wfm)                          /* receive only: no power letter */
+		x = pill(x, y, "WFM", c);
+	else {
+		x = pill(x, y, s->am ? "AM" : "FM", c);
+		x = pill(x, y, s->narrow ? "N" : "W", c);
+		x = pill(x, y, s->high_power ? "H" : "L", active && s->high_power ? COLOR_WARN : c);   /* power as a letter */
+	}
 	if (s->shift)
 		x = pill(x, y, s->shift > 0 ? "+" : "-", c);
 	if (s->tone_kind != UI_TONE_NONE) {
@@ -236,7 +240,7 @@ static void draw_side(const UiMain_t *v, uint8_t n, bool full)
 			UI_PrintString(l2, 10, (uint8_t)(y + 22), freq_color(s, active), COLOR_BG, 1);
 		}
 	}
-	if (full || active != was || s->am != o->am || s->narrow != o->narrow || s->high_power != o->high_power
+	if (full || active != was || s->am != o->am || s->narrow != o->narrow || s->wfm != o->wfm || s->high_power != o->high_power
 	    || s->shift != o->shift || s->tone_kind != o->tone_kind || differ(s->tone, o->tone))
 		draw_tags(s, (uint8_t)(y + 35), active);
 }

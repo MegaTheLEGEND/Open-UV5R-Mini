@@ -43,7 +43,13 @@ Settings are kept the stock way (`ENABLE_SAVE`, on): at power-on the app reads t
 squelch, key beep, each side's VFO (frequency, tones, power, width, step, shift) and channel, and our own extra bytes
 (volume, FM station, APRS settings). Each side keeps its own squelch (MENU → SQUELCH, the side's own settings, or
 F + UP/DOWN change the selected side's), kept in byte 31 of that side's VFO record; stock's one squelch byte holds the
-selected side's, and a side with nothing in byte 31 yet (a log stock wrote) starts with that. Changes are written back once a key is let go, and at power-off. Without stock
+selected side's, and a side with nothing in byte 31 yet (a log stock wrote) starts with that.
+
+Broadcast FM in the VFO (with `ENABLE_APP_FM`): tune the VFO into 87.5–108 MHz and it switches to the **WFM**
+bandwidth and plays the station through the MCU's own FM receiver, without opening FM RADIO; tune out of 64–108 MHz
+and it is back on the BK4819 with W or N. MENU → BANDWIDTH picks WIDE, NARROW or (64–108 MHz) BROADCAST by hand.
+Receive only: PTT is refused there. The side shows `WFM`, the FM level and the station's RDS name once heard. Not
+tried on a radio yet ([ROADMAP](ROADMAP.md) 3.13). Changes are written back once a key is let go, and at power-off. Without stock
 settings it starts at 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
 own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
 frequencies, RX and TX tones (CTCSS or DCS), power and width are used. Checked against a dump of one radio on the PC: 76 channels

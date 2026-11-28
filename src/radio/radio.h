@@ -35,6 +35,8 @@ typedef struct {
 	uint32_t     tx_freq;     /* 10 Hz; 0 = same as freq */
 	bool         rx_only;     /* a channel with no TX frequency */
 	uint8_t      ptt_id;      /* channel byte 13: bit 0 send the up code at TX start, bit 1 the down code at the end */
+	bool         wfm;         /* broadcast FM (WFM) on the MCU's FM receiver where it reaches (app.c, app/bcast.h);
+	                           * the radio core ignores it (the app parks the BK4819, RADIO_Park) */
 } Vfo_t;
 
 extern Vfo_t gVfo;
@@ -59,6 +61,10 @@ void         RADIO_Beep(uint16_t hz, uint16_t ms);
  * its transmit audio path does, which can put a blip on the air (Sean, 2026-11-27). */
 extern bool (*gRadioBeepHook)(uint16_t hz, uint16_t ms);
 void         RADIO_Monitor(bool on);        /* squelch held open while on */
+/* The BK4819 asleep and left alone while the MCU's FM receiver plays broadcast FM on gVfo (app.c): RADIO_Apply
+ * keeps gVfo only, no squelch, monitor, beep or transmit; false wakes it on gVfo */
+void         RADIO_Park(bool on);
+bool         RADIO_Parked(void);
 void         RADIO_RxSleep(void);           /* the receiver (BK4819) asleep until RADIO_Apply or RADIO_StartTx */
 bool         RADIO_RxAsleep(void);
 /* Spectrum: audio off, the squelch idle; RADIO_ProbeRssi(f) tunes to f, waits settle_us and reads the raw RSSI;

@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "app/app.h"
+#include "app/bcast.h"
 #include "app/battery.h"
 #include "app/apps.h"
 #include "store/calib.h"
@@ -254,6 +255,13 @@ static void copy_text(char *d, const char *s, unsigned n)
 	d[i] = 0;
 }
 
+/* Broadcast FM in the VFO (release 1.0.0, ROADMAP 3.13): the WFM bandwidth on a frequency the MCU's FM receiver
+ * covers (64-108 MHz) plays there through the MCU's FM receiver instead of the BK4819 (bc_tick). */
+static bool bc_mode(const Vfo_t *v)
+{
+	return APP_FM_ENABLE && v->wfm && v->freq >= BCAST_MIN && v->freq <= BCAST_MAX;
+}
+
 static void side_view(UiSide_t *u, uint8_t n, const Vfo_t *vf, bool mr, int ch, const char *name)
 {
 	char b[8], t[8];
@@ -302,6 +310,9 @@ static void side_view(UiSide_t *u, uint8_t n, const Vfo_t *vf, bool mr, int ch, 
 	}
 	u->am = vf->mod == MOD_AM || (vf->mod == MOD_AUTO && vf->freq >= 10800000u && vf->freq < 13600000u);
 	u->narrow = vf->narrow || u->am;
+	u->wfm = bc_mode(vf);
+	if (u->wfm && !(mr && ch >= 0))      /* the station's RDS name, once heard, where "VFO" would be */
+		copy_text(u->label, n == s_active && BCAST_Name() ? BCAST_Name() : "BROADCAST", sizeof u->label);
 	u->high_power = vf->power == POWER_HIGH;
 	u->shift = (int8_t)(!vf->tx_freq || vf->tx_freq == vf->freq ? 0 : vf->tx_freq > vf->freq ? 1 : -1);
 	u->tone_kind = UI_TONE_NONE;
@@ -365,6 +376,10 @@ static void main_view(UiMain_t *v)
 		UiSide_t *u = &v->side[tuned];
 		u->state = st == RADIO_TX ? UI_STATE_TX : st == RADIO_RX_OPEN ? UI_STATE_RX : UI_STATE_IDLE;
 		u->meter = st == RADIO_TX ? UI_METER_BARS : meter_bars();
+		if (BCAST_On()) {                /* broadcast FM playing: its own level */
+			u->state = UI_STATE_RX;
+			u->meter = BCAST_Bars(UI_METER_BARS);
+		}
 		if (!s_peek)
 			s_meter_kept = u->meter;
 	} else
@@ -805,7 +820,7 @@ static const char *menu_value(int i, char *b)
 	case M_SQL:     return UI_FormatDec(b, gVfo.squelch, 1);
 	case M_VOL:     return UI_FormatDec(b, gVfo.volume, 2);
 	case M_STEP:    return fmt_step(b, RADIO_Steps[gVfo.step]);
-	case M_BW:      return gVfo.narrow ? "NARROW" : "WIDE";
+	case M_BW:      return bc_mode(&gVfo) ? "BROADCAST" : gVfo.narrow ? "NARROW" : "WIDE";
 	case M_MOD:     return MOD[gVfo.mod];
 	case M_RXTONE:  return TONE_Format(b, gVfo.rx_tone);
 	case M_TXTONE:  return TONE_Format(b, gVfo.tx_tone);
@@ -1001,7 +1016,15 @@ static void menu_change(int i, int dir)
 	case M_SQL:   gVfo.squelch = (uint8_t)((gVfo.squelch + 10 + dir) % 10); break;
 	case M_VOL:   gVfo.volume = (uint8_t)((gVfo.volume + 16 + dir) % 16); break;
 	case M_STEP:  gVfo.step = (uint8_t)((gVfo.step + RADIO_StepCount + dir) % RADIO_StepCount); break;
-	case M_BW:    gVfo.narrow = !gVfo.narrow; break;
+	case M_BW: {                         /* WIDE, NARROW, and BROADCAST where the FM receiver reaches (64-108 MHz) */
+		int n = APP_FM_ENABLE && gVfo.freq >= BCAST_MIN && gVfo.freq <= BCAST_MAX ? 3 : 2;
+		int i = bc_mode(&gVfo) ? 2 : gVfo.narrow ? 1 : 0;
+		i = (i + n + dir) % n;
+		gVfo.wfm = i == 2;
+		if (i < 2)
+			gVfo.narrow = i == 1;
+		break;
+	}
 	case M_MOD:   gVfo.mod = (Modulation_t)((gVfo.mod + 3 + dir) % 3); break;
 	case M_RXTONE: gVfo.rx_tone = TONE_Step(gVfo.rx_tone, dir); break;
 	case M_TXTONE: gVfo.tx_tone = TONE_Step(gVfo.tx_tone, dir); break;
@@ -1565,6 +1588,7 @@ static bool s_ptt_here;                  /* this PTT press transmits on the sele
 
 static void app_open(const AppDef_t *a)
 {
+	BCAST_Stop();                        /* an app has the receiver (and the FM radio app the FM block) to itself */
 	dw_end();
 	SCAN_Stop();
 	tscan_stop();
@@ -2782,7 +2806,7 @@ static void sleep_enter(void)
 #if APP_FM_ENABLE
 	FMRX_BeepOff();                      /* no DAC current while asleep (an open FM radio keeps it) */
 #endif
-	if (s_screen != SCREEN_APP)          /* an app has the receiver (or the FM radio) to itself */
+	if (s_screen != SCREEN_APP && !BCAST_On())   /* an app, or broadcast FM, has the receiver to itself */
 		duty_start();
 }
 
@@ -2823,7 +2847,7 @@ static void sleep_tick(bool busy)
 		s_blink_ms = (uint16_t)(((unsigned)s_blink_ms + APP_TICK_MS) % 5000u);
 		if (RADIO_State() != RADIO_RX_OPEN)
 			IO_LedRx(s_blink_ms < 50u);
-		if (s_screen != SCREEN_APP)
+		if (s_screen != SCREEN_APP && !BCAST_On())
 			duty_tick(SLEEP_OFF_MS, SLEEP_LISTEN_MS);
 		return;
 	}
@@ -2840,7 +2864,7 @@ static void sleep_tick(bool busy)
 			return;
 		}
 	}
-	if (bs && s_screen == SCREEN_MAIN && s_idle_sleep_ms >= BSAVE_IDLE_MS) {
+	if (bs && s_screen == SCREEN_MAIN && !BCAST_On() && s_idle_sleep_ms >= BSAVE_IDLE_MS) {
 		duty_start();
 		duty_tick((uint16_t)(bs * 100u), BSAVE_LISTEN_MS);
 	} else
@@ -2868,6 +2892,71 @@ static bool ptt_debounced(bool raw, unsigned i)
 }
 
 /* what an app's key or tick returned */
+/* Broadcast FM in the VFO (bc_mode): tuning into 87.5-108 MHz picks WFM by itself, leaving 64-108 MHz drops it;
+ * the FM receiver plays while the selected side is on WFM on the main screen or in the menus, and stops for an
+ * app, a scan, a tone scan, dual watch's look at the other side or a transmission (PTT is refused on WFM by
+ * RADIO_Park). It starts once the frequency has stayed BC_SETTLE_MS (starting takes about a second; then retuning
+ * is quick). A start that fails is not tried again on that frequency. */
+#define BC_SETTLE_MS 300u
+static uint32_t s_bc_last[2];            /* each side's frequency at the last tick */
+static uint32_t s_bc_fail;               /* the frequency a start failed on */
+static uint32_t s_bc_freq;               /* where the FM receiver is tuned */
+static uint8_t  s_bc_vol;
+static uint16_t s_bc_wait;
+
+static void bc_tick(void)
+{
+	bool want;
+
+	if (!APP_FM_ENABLE)
+		return;
+	if (!s_peek) {
+		uint32_t f = gVfo.freq, was = s_bc_last[s_active];
+		bool auto_now = f >= BCAST_AUTO_MIN && f <= BCAST_MAX, auto_was = was >= BCAST_AUTO_MIN && was <= BCAST_MAX;
+		if (f < BCAST_MIN || f > BCAST_MAX)
+			gVfo.wfm = false;            /* tuned away: the BK4819 again, on W or N as before */
+		else if (auto_now && !auto_was)
+			gVfo.wfm = true;             /* into the broadcast band: WFM */
+		if (f != was)
+			s_bc_wait = 0;
+		s_bc_last[s_active] = f;
+	}
+	want = bc_mode(&gVfo) && !s_peek && s_screen != SCREEN_APP && !SCAN_Active() && !s_tscan
+	       && RADIO_State() != RADIO_TX && gVfo.freq != s_bc_fail;
+	if (!want) {
+		if (BCAST_On())
+			BCAST_Stop();
+		if (!bc_mode(&gVfo))
+			s_bc_fail = 0;
+		s_bc_wait = 0;
+		return;
+	}
+	if (!BCAST_On()) {
+		if ((s_bc_wait = (uint16_t)(s_bc_wait + APP_TICK_MS)) < BC_SETTLE_MS)
+			return;
+		s_bc_wait = 0;
+		dw_end();
+		RADIO_Monitor(false);
+		if (!BCAST_Start(gVfo.freq, gVfo.volume)) {
+			s_bc_fail = gVfo.freq;
+			note("FM RECEIVER FAILED", COLOR_TX);
+			return;
+		}
+		s_bc_freq = gVfo.freq;
+		s_bc_vol = gVfo.volume;
+		s_redraw = true;                 /* the start took about a second */
+	}
+	if (gVfo.freq != s_bc_freq) {
+		s_bc_freq = gVfo.freq;
+		BCAST_Tune(s_bc_freq);
+	}
+	if (gVfo.volume != s_bc_vol) {
+		s_bc_vol = gVfo.volume;
+		BCAST_Volume(s_bc_vol);
+	}
+	BCAST_Tick();
+}
+
 static void app_result(AppsResult_t r)
 {
 	if (r == APPS_RELOAD) {              /* BT CHIRP wrote new channels and settings: as after a cable upload */
@@ -3069,8 +3158,10 @@ void APP_Tick(void)
 			RADIO_EndTx();
 	}
 #endif
-	if (!s_duty_on)
-		dw_tick(ptt || RADIO_MonitorOn() || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN);
+	bc_tick();
+	if (!s_duty_on)                      /* not while broadcast FM plays or the other side is on it */
+		dw_tick(ptt || RADIO_MonitorOn() || s_tscan || SCAN_Active() || s_entry_len || s_screen != SCREEN_MAIN
+		        || bc_mode(&gVfo) || bc_mode(&s_side[s_active ^ 1u].vfo));
 	if (RADIO_State() == RADIO_RX_OPEN)
 		light_wake();
 	else

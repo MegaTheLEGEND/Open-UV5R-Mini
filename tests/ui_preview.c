@@ -121,6 +121,24 @@ int main(int argc, char **argv)
 	snprintf(path, sizeof path, "%s/main_entry.ppm", dir);
 	dump(path);
 
+	/* broadcast FM in the VFO (release 1.0.0): A on WFM at 100.7 MHz with its RDS name, playing */
+	{
+		UiMain_t w = v;
+		side(&w.side[0], 10070000u, "KZZU-FM", UI_TONE_NONE, "");
+		w.side[0].wfm = true;
+		w.side[0].state = UI_STATE_RX;
+		w.side[0].meter = 5;
+		w.active = 0;
+		w.entry[0] = 0;
+		w.scan = w.battery_low = w.warning = false;
+		w.battery = 3;
+		w.bottom[0] = 0;
+		UI_MainDraw(&w, true);
+		snprintf(path, sizeof path, "%s/main_wfm.ppm", dir);
+		dump(path);
+		UI_MainDraw(&v, true);           /* back to the scene the next checks expect */
+	}
+
 	/* the same scene drawn from scratch must look the same as the one drawn by changes */
 	{
 		static uint16_t keep[LCD_HEIGHT][LCD_WIDTH];

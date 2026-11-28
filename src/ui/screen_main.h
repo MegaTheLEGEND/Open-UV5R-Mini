@@ -27,6 +27,7 @@ typedef struct {
 	uint8_t  tone_kind;     /* UI_TONE_* */
 	int8_t   shift;         /* repeater shift: -1, 0, +1 */
 	bool     am, narrow, high_power;
+	bool     wfm;           /* broadcast FM on the MCU's FM receiver: one "WFM" tag instead of FM/AM and W/N */
 	uint8_t  state;         /* UI_STATE_IDLE, UI_STATE_RX, UI_STATE_TX */
 	int8_t   meter;         /* 0..UI_METER_BARS bars lit; -1 = this side isn't tuned now, no meter */
 } UiSide_t;

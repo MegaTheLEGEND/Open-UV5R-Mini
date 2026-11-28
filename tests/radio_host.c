@@ -147,6 +147,23 @@ int main(void)
 	CHECK(!RADIO_RxAsleep() && reg30 == 0xBFF1 && RADIO_State() == RADIO_RX_OPEN, "awake again, opens on signal");
 	rssi = 60;
 	ticks(30);
+	/* parked (broadcast FM in the VFO, app.c): asleep, and RADIO_Apply, monitor, squelch 0 and TX leave it so */
+	RADIO_Park(true);
+	rssi = 200;
+	at(10070000u);
+	RADIO_Monitor(true);
+	ticks(10);
+	CHECK(RADIO_Parked() && RADIO_RxAsleep() && reg30 == 0 && !amp && af == BK4819_AF_MUTE && gVfo.freq == 10070000u,
+	      "parked: retune and monitor keep the BK4819 asleep and muted");
+	CHECK(!RADIO_StartTx() && RADIO_TxRefusal() && RADIO_State() != RADIO_TX, "parked: no transmit");
+	RADIO_Monitor(false);
+	RADIO_Park(false);
+	at(14552000u);
+	ticks(5);
+	CHECK(!RADIO_Parked() && !RADIO_RxAsleep() && reg30 == 0xBFF1 && RADIO_State() == RADIO_RX_OPEN,
+	      "unparked: awake on the VFO, opens on signal");
+	rssi = 60;
+	ticks(30);
 	/* spectrum probe (app/spectrum.c): audio off and the squelch idle while the receiver is moved and read; the
 	 * end tunes back to the VFO and the squelch works again */
 	RADIO_ProbeBegin();
