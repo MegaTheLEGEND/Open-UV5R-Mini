@@ -125,7 +125,7 @@ firmware: they are never in the repo.
 | # | Item | Status | Notes |
 | --- | --- | --- | --- |
 | 6.1 | Matching build, flasher with emulated radio, image checks | **done** | |
-| 6.8 | Web builder and flasher: build with chosen switches in the browser (pi32v2-llvm as WebAssembly), combine with the user's own stock file, flash over Web Serial | **partial** | [WEB-FLASHER.md](WEB-FLASHER.md). Builds any release or commit (its own Makefile and features.mk) byte for byte as native, `.ufw` and flasher tested on the PC against the Python tools and the emulated radio; not yet tried on a radio; GitHub Pages not switched on |
+| 6.8 | Web builder and flasher: build with chosen switches in the browser (pi32v2-llvm as WebAssembly), combine with the user's own stock file, flash over Web Serial | **partial** | [WEB-FLASHER.md](WEB-FLASHER.md). Builds any release or commit (its own Makefile and features.mk) byte for byte as native, `.ufw` and flasher tested on the PC against the Python tools and the emulated radio; flashed one radio from stock to ours from the page (Sean, 2026-11-27); on GitHub Pages |
 | 6.2 | CPU emulator able to run the C build to its main screen | **partial** | boots stock part way; the C build needs no RTOS, so it is the easier target |
 | 6.3 | External flash dump from a real radio | **done** | read whole (2 MB, ID `C46015`) over USB with [tools/jl_extflash](../tools/jl_extflash/README.md); layout in RE-NOTES (channels, settings, fonts, pictures; top 1 MB blank). Next: decode for 4.2 and 5.2 |
 | 6.4 | Hardware confirmations: speaker amp, band switch, LEDs, ADC channel | **todo** | candidates from the stock code: amp PB8, LEDs PB9/PR0, lamp PB6, ADC PA1/PB3; a key-test build or a multimeter will settle them |

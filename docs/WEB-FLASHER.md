@@ -77,7 +77,10 @@ python -m http.server 8770 -d build/site                   # then open http://12
 Tested on the PC (2026-11-27): all four pass (web_make_host: 45 commits, 117 runs, 0 differ; web_build_host at
 32650b6, 513abed and cc30834: identical). In Edge's engine (the Claude app's browser pane) the page built the
 default and a no-FM/no-TX switch set in about 3 s each, byte for byte the native builds, and combined and checked
-the `.ufw`; it switched between versions with 25, 18 and no switches, and fetched and built 7da3979 from GitHub. **Not tested: flashing a radio from the page** (Web Serial to a real K1 cable).
+the `.ufw`; it switched between versions with 25, 18 and no switches, and fetched and built 7da3979 from GitHub. **On a radio (Sean, 2026-11-27):** the page flashed one NRF radio from stock to our firmware over the K1
+cable (Chrome, Web Serial). One radio, one update: that says the page's update session works, not that any build
+is safe. "Failed to open port" means another program has the cable's COM port open (`tools/radiomon.py serve`,
+CHIRP, `uv5r_flasher.py`): close it first.
 
 ## Limits
 
