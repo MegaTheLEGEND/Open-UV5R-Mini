@@ -105,6 +105,9 @@ make ufw TOOLCHAIN=E:/toolchains/pi32v2-llvm/bin ENABLE_CHIRP=0
 
 ## 6. Put it on the radio
 
+**From a web page instead**: [WEB-FLASHER.md](WEB-FLASHER.md) builds with your switches in the browser and flashes
+over Web Serial (Chrome or Edge), with the same checks as below.
+
 **With the cable** (the K1 programming cable; unplug the rescue ESP32 first if your radio has one):
 
 ```powershell
