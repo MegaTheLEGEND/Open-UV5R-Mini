@@ -24,6 +24,8 @@ sh pi32v2-isa/tools/dropin/make_dropin.sh $L/bin ~/pi32v2/rt ~/pi32v2/jieli
 git -c core.autocrlf=false clone https://github.com/Jieli-Tech/fw-AC63_BT_SDK ~/pi32v2/sdk
 # 5. Build (installs the C library below into the drop-in, applies the SDK fixes, runs the SDK's make)
 sh tools/sdk/build_sdk.sh ~/pi32v2/sdk ~/pi32v2/jieli            # default target ac635n_spp_and_le
+#    ... or with our radio code as a task of the app (tools/sdk/add_radio.sh; docs/BLUETOOTH.md)
+sh tools/sdk/build_sdk.sh --radio ~/pi32v2/sdk ~/pi32v2/jieli
 # 6. Section images and app.bin from the ELF
 sh pi32v2-isa/tools/dropin/postbuild.sh ~/pi32v2/jieli/pi32v2/bin ~/pi32v2/sdk/cpu/br23/tools/sdk.elf OUTDIR
 ```
@@ -39,7 +41,9 @@ The SDK's own post-build step (`cpu/br23/tools/download.sh`) then stops: it need
 stops the same way with JieLi's own Linux tools (pi32v2-isa `docs/DROPIN.md`). `build_sdk.sh` counts that as a
 success when `sdk.elf` exists. So **no firmware package** (`.ufw`) is made, and nothing has run on a chip.
 
-Not checked yet:
+Not checked yet (and see docs/BLUETOOTH.md, "From `sdk.elf` to a flashable `.ufw`": with ld.lld the SDK's
+`.ld` fragments make several `.text`/`.data` sections, and `data_begin` points at the end of the first one, so
+this image would not start as it is):
 
 - **Whether everything needed was kept.** JieLi's libraries are LLVM bitcode, so link-time optimisation decides what
   stays. 116 of the 1961 functions `btctrler.a` defines and 46 of `btstack.a`'s 1159 have a symbol in the ELF.

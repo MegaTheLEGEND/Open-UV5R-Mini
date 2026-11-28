@@ -40,6 +40,7 @@ bool BT_IsAvailable(void);               /* a serial link exists in this build (
 void BT_Init(BT_ReceiveHandler_t on_receive);
 bool BT_IsConnected(void);
 int  BT_Send(const uint8_t *data, uint16_t len); /* 0 on success */
+void BT_WaitMs(uint32_t ms); /* wait while the Bluetooth stack runs (the SDK's OS delay; a plain delay without it) */
 
 /* Pairing (BLE: bt/smp.h). Pairing mode accepts a new phone or PC; a paired one reconnects encrypted any time. */
 typedef enum { BT_PAIR_NONE, BT_PAIR_PAIRING, BT_PAIR_PAIRED, BT_PAIR_FAILED } BT_PairState_t;

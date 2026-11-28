@@ -56,10 +56,14 @@ static void bt_wait_ms(uint32_t ms)
 #include "ui/helper.h"
 #include "ui/theme.h"
 #define WATCHDOG()  SYSTEM_WatchdogClear()
-/* Waiting for Bluetooth bytes: the SDK build passes its OS delay (-DPROGRAM_WAIT_MS=...) so the Bluetooth task runs
- * meanwhile; SYSTEM_DelayMs would spin. */
+/* Waiting for Bluetooth bytes: the BLE build keeps its controller running (above); otherwise BT_WaitMs (bt.h), the
+ * OS delay in the SDK edition so the stack runs meanwhile (a plain delay in the open stubs). */
 #ifndef PROGRAM_WAIT_MS
+#if PROGRAM_BT
+#define PROGRAM_WAIT_MS(ms) BT_WaitMs(ms)
+#else
 #define PROGRAM_WAIT_MS(ms) SYSTEM_DelayMs(ms)
+#endif
 #endif
 static void screen(const char *what)
 {

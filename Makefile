@@ -17,70 +17,18 @@ SIZE    := $(if $(TOOLCHAIN),$(TOOLCHAIN)/,)llvm-size
 BUILD := build/fw
 TARGET := $(BUILD)/firmware
 
-SRC := src/main.c src/board.c src/app/app.c src/radio/radio.c src/radio/txlock.c src/store/calib.c src/store/channels.c src/radio/tones.c src/store/settings.c src/app/battery.c src/radio/scan.c src/radio/dualwatch.c src/radio/vox.c src/radio/dtmfseq.c src/app/keytest.c src/app/program.c src/app/version.c src/update/update.c src/update/update_radio.c \
-       src/driver/uart.c src/bt/bt_none.c src/driver/gpio.c src/driver/system.c src/driver/bk4819.c src/driver/st7735s.c src/driver/keyboard.c \
-       src/driver/flash.c src/driver/io.c src/driver/adc.c src/driver/mem.c src/driver/extflash.c src/driver/spi1.c \
-       src/driver/irq.c src/driver/crash.c \
-       src/ui/font.c src/ui/helper.c src/ui/textentry.c src/ui/icons.c src/ui/screen_main.c src/ui/screen_menu.c \
-       src/app/apps.c src/app/spectrum.c src/app/meter.c src/app/chbook.c src/app/sysinfo.c src/app/snake.c \
-       src/app/fmradio.c src/app/bcast.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c \
-       src/ui/screen_apps.c src/ui/status.c \
-       src/app/monitor.c src/app/aprs.c src/radio/ax25.c src/radio/aprs.c src/radio/fskrx.c \
-       src/app/subghz.c src/radio/ook.c \
-       src/bt/le_adv.c src/app/btscan.c src/app/btinfo.c src/app/btbeacon.c src/app/btserial.c src/app/btchirp.c src/app/btpair.c
-ASM := src/start.S src/update/handover.S
-
+# The sources, and which ones each feature switch leaves out: sources.mk, shared with the Bluetooth edition's build
+# inside JieLi's SDK (tools/sdk/open_uv5r.mk).
 include features.mk
-ifeq ($(ENABLE_KEYTEST),0)
-SRC := $(filter-out src/app/keytest.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SPECTRUM),0)
-SRC := $(filter-out src/app/spectrum.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_METER),0)
-SRC := $(filter-out src/app/meter.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_CHANNELS),0)
-SRC := $(filter-out src/app/chbook.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SYSINFO),0)
-SRC := $(filter-out src/app/sysinfo.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_APRS),0)
-SRC := $(filter-out src/app/aprs.c src/radio/aprs.c src/radio/fskrx.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SUBGHZ),0)
-SRC := $(filter-out src/app/subghz.c src/radio/ook.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_BTSCAN),0)
-SRC := $(filter-out src/app/btscan.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_BTINFO),0)
-SRC := $(filter-out src/app/btinfo.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_BTBEACON),0)
-SRC := $(filter-out src/app/btbeacon.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_BTSERIAL),0)
-SRC := $(filter-out src/app/btserial.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_BTCHIRP),0)
-SRC := $(filter-out src/app/btchirp.c,$(SRC))
-endif
-ifeq ($(ENABLE_APP_SNAKE),0)
-SRC := $(filter-out src/app/snake.c,$(SRC))
-endif
-# Bluetooth: the BLE backend on JieLi's controller instead of the stubs
-ifeq ($(ENABLE_BT_LE),1)
-SRC := $(filter-out src/bt/bt_none.c,$(SRC)) src/platform/jl_sdk/bt_le.c src/platform/jl_sdk/bt_glue.c src/bt/gatt.c src/bt/smp.c
-endif
+include sources.mk
+SRC := $(FW_SRC)
+ASM := $(FW_ASM)
 # FM: our files, then JieLi's libraries at link time (link-time optimised: they are LLVM bitcode) and the
 # compiler's helper library for their 64-bit and float arithmetic
 ifeq ($(ENABLE_APP_FM),1)
 LIBS := --start-group build/sdk/cpu.a build/sdk/media.a $(if $(filter 1,$(ENABLE_BT_LE)),build/sdk/btctrler.a,) --end-group \
         $(wildcard $(if $(TOOLCHAIN),$(TOOLCHAIN)/../lib/clang/*/lib/pi32v2/libclang_rt.builtins.a,))
 else
-SRC := $(filter-out src/app/fmradio.c src/app/bcast.c src/platform/jl_sdk/fmrx.c src/platform/jl_sdk/fm_glue.c src/radio/rds.c,$(SRC))
 LIBS :=
 endif
 
