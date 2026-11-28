@@ -594,7 +594,7 @@ static const uint8_t SEC_SYS[] = { M_VOL, SI(1), SI(0), M_BATT, M_BSAVE, M_SLEEP
 
 /* APPS and BLUETOOTH: one row per app built in (features.mk ENABLE_APP_*); menu ids M_APP0 + n, the radio apps first,
  * then the Bluetooth ones, which have their own top-level section (Sean, 2026-11-27) */
-#define RAPPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SYSINFO_ENABLE + APP_SNAKE_ENABLE \
+#define RAPPS_COUNT (APP_SPECTRUM_ENABLE + APP_METER_ENABLE + APP_CHANNELS_ENABLE + APP_SNAKE_ENABLE \
                      + APP_FM_ENABLE + APP_APRS_ENABLE + APP_SUBGHZ_ENABLE)
 #define BTAPPS_COUNT (APP_BTSCAN_ENABLE + APP_BTINFO_ENABLE + APP_BTBEACON_ENABLE + APP_BTSERIAL_ENABLE \
                       + APP_BTCHIRP_ENABLE)
@@ -619,9 +619,6 @@ static const AppDef_t *const APPS[APPS_COUNT] = {
 #endif
 #if APP_SUBGHZ_ENABLE
 	&APP_SUBGHZ,
-#endif
-#if APP_SYSINFO_ENABLE
-	&APP_SYSINFO,
 #endif
 #if APP_SNAKE_ENABLE
 	&APP_SNAKE,
@@ -1474,7 +1471,7 @@ static void key_main(KEY_Code_t k)
 		s_menu_sec = -1;
 		go(SCREEN_MENU);
 	} else if (k == KEY_ACT_BW) {
-		gVfo.narrow = !gVfo.narrow;
+		menu_change(M_BW, +1);           /* W, N, and WFM where the FM receiver reaches */
 		RADIO_Apply();
 	} else if (k == KEY_ACT_LAMP)
 		lamp_step();
@@ -1486,7 +1483,8 @@ static void key_main(KEY_Code_t k)
 
 bool gDebug = true;                      /* app/apps.h DEBUG_ON: only used in DEBUGGING builds */
 
-/* MENU -> ABOUT: name, version and build; any key goes back to the menu. In DEBUGGING builds MENU switches the
+/* MENU -> ABOUT: name, version and build; 1 opens SYSTEM INFO (ENABLE_APP_SYSINFO), any other key goes back to the
+ * menu. In DEBUGGING builds MENU switches the
  * debugging aids on and off (Sean, 2026-11-27); kept with the settings (our byte 19). */
 static void draw_about(void)
 {
@@ -1504,9 +1502,17 @@ static void draw_about(void)
 	UI_PrintString(gDebug ? "ON " : "OFF", 58, 94, gDebug ? COLOR_WARN : COLOR_TEXT, COLOR_BG, 1);
 	UI_PrintString("RESCUE", 4, 105, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString("*", 58, 105, COLOR_TEXT, COLOR_BG, 1);
+#if APP_SYSINFO_ENABLE
+	UI_PrintString("INFO", 76, 105, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString("1", 106, 105, COLOR_TEXT, COLOR_BG, 1);
+#endif
 	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #else
-	UI_PrintString("OPEN FIRMWARE", 4, 96, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString("OPEN FIRMWARE", 4, 94, COLOR_DIM, COLOR_BG, 1);
+#if APP_SYSINFO_ENABLE
+	UI_PrintString("SYSTEM INFO", 4, 105, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString("1", 76, 105, COLOR_TEXT, COLOR_BG, 1);
+#endif
 	UI_PrintString("ANY KEY: BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #endif
 }
@@ -1583,7 +1589,7 @@ bool APP_TuneFreq(uint32_t f)            /* VFO mode; false outside the receiver
 }
 
 const char *APP_TxRefused(void) { return s_tx_refused ? (s_tx_why ? s_tx_why : "NO TX HERE") : 0; }
-static bool s_app_from_menu;             /* opened from the menu: EXIT goes back there, else to the main screen */
+static Screen_t s_app_from;              /* the menu or ABOUT (SYSTEM INFO): EXIT goes back there, else to the main screen */
 static bool s_ptt_here;                  /* this PTT press transmits on the selected side (it left the spectrum) */
 
 static void app_open(const AppDef_t *a)
@@ -1593,7 +1599,7 @@ static void app_open(const AppDef_t *a)
 	SCAN_Stop();
 	tscan_stop();
 	RADIO_Monitor(false);
-	s_app_from_menu = s_screen == SCREEN_MENU;
+	s_app_from = s_screen;
 	s_app = a;
 	a->enter();
 	go(SCREEN_APP);
@@ -1621,7 +1627,7 @@ static void app_close(AppsResult_t r)
 		channel_show(gAppsChannel);
 		go(SCREEN_MAIN);
 	} else if (r == APPS_CHANNEL || r == APPS_EXIT)
-		go(a != 0 && s_app_from_menu ? SCREEN_MENU : SCREEN_MAIN);
+		go(a != 0 && (s_app_from == SCREEN_MENU || s_app_from == SCREEN_ABOUT) ? s_app_from : SCREEN_MAIN);
 }
 
 /* MENU on a row: rows that act at once, rows that ask first (SAVE CH, DEL CH), or edit with UP/DOWN. */
@@ -3299,7 +3305,11 @@ void APP_Tick(void)
 				reboot_to_rescue();
 			}
 #endif
-			if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch, kept with the settings */
+			if (APP_SYSINFO_ENABLE && k == KEY_1) {   /* SYSTEM INFO lives here since 1.0.0 (Sean); EXIT comes back */
+#if APP_SYSINFO_ENABLE
+				app_open(&APP_SYSINFO);
+#endif
+			} else if (DEBUGGING && k == KEY_ACT_MENU) {   /* the debug switch, kept with the settings */
 				gDebug = !gDebug;
 				s_redraw = true;
 #if SETTINGS_ENABLE_SAVE

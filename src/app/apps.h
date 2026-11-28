@@ -4,7 +4,8 @@
  *   ENABLE_APP_SPECTRUM  app/spectrum.c  the band around the VFO frequency, from the BK4819's RSSI
  *   ENABLE_APP_METER     app/meter.c     signal meter for fox hunting: level, S-units, peak, history, tick sound
  *   ENABLE_APP_CHANNELS  app/chbook.c    the channel list with names; MENU picks one
- *   ENABLE_APP_SYSINFO   app/sysinfo.c   battery, calibration, flash, channels, TX lock, uptime, build
+ *   ENABLE_APP_SYSINFO   app/sysinfo.c   battery, calibration, flash, channels, TX lock, uptime, build (opened
+ *                                        from MENU -> ABOUT with 1, not listed under APPS)
  *   ENABLE_APP_APRS      app/aprs.c      APRS: heard stations, our position beacon
  *   ENABLE_APP_SUBGHZ    app/subghz.c    315/433 MHz remote controls, receive only
  *   ENABLE_APP_SNAKE     app/snake.c     a snake game

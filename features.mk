@@ -46,7 +46,8 @@ ENABLE_APP_SPECTRUM ?= 1
 ENABLE_APP_METER    ?= 1
 # Channel book: the channel list with names, pick one (src/app/chbook.c).
 ENABLE_APP_CHANNELS ?= 1
-# System info: battery, calibration, flash, channels, TX lock, uptime, build (src/app/sysinfo.c).
+# System info: battery, calibration, flash, channels, TX lock, uptime, build (src/app/sysinfo.c). In MENU -> ABOUT (key 1),
+# not the APPS list.
 ENABLE_APP_SYSINFO  ?= 1
 # APRS: position beacon (AFSK from the BK4819's tone generator) and receive through the BK4819's FSK modem
 # (experimental), a list of heard stations (src/app/aprs.c, src/radio/ax25.c, aprs.c, fskrx.c).

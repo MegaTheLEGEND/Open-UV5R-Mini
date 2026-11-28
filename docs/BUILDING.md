@@ -81,7 +81,7 @@ everything that uses a changed switch is rebuilt.
 | `ENABLE_APP_SPECTRUM` | 1 | MENU → APPS → SPECTRUM (`src/app/spectrum.c`) |
 | `ENABLE_APP_METER` | 1 | MENU → APPS → SIGNAL METER, for fox hunting (`src/app/meter.c`) |
 | `ENABLE_APP_CHANNELS` | 1 | MENU → APPS → CHANNELS, the channel book (`src/app/chbook.c`) |
-| `ENABLE_APP_SYSINFO` | 1 | MENU → APPS → SYSTEM INFO (`src/app/sysinfo.c`) |
+| `ENABLE_APP_SYSINFO` | 1 | MENU → ABOUT → 1: SYSTEM INFO (`src/app/sysinfo.c`) |
 | `ENABLE_APP_SNAKE` | 1 | MENU → APPS → SNAKE (`src/app/snake.c`). With every app off the APPS section goes from the menu |
 | `ENABLE_APP_FM` | 1 | MENU → APPS → FM RADIO (`src/app/fmradio.c`); the receiver starts by itself. Plays through the speaker on Sean's radio (2026-11-26; ROADMAP 3.9). Needs JieLi's FM and DAC libraries from their public SDK: clone [fw-AC63_BT_SDK](https://github.com/Jieli-Tech/fw-AC63_BT_SDK), then `sh tools/sdk/fm_libs.sh <clone>` from the repo root (copies `cpu.a`, `media.a` and the Bluetooth controller `btctrler.a` into `build/sdk/`). Without them the build leaves FM out with a warning. With them the image contains JieLi's closed library code (Apache-2.0; docs/THIRD-PARTY.md) |
 | `ENABLE_APP_APRS` | 1 | MENU → APPS → APRS: position beacon out, packets in through the BK4819's FSK modem (`src/app/aprs.c`, ROADMAP 3.14) |
