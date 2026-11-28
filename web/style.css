@@ -157,3 +157,18 @@ footer { border-top: 1px solid var(--rule); padding-block: 1.2rem 2.5rem; color:
 footer p { max-width: 70ch; }
 
 @media (prefers-reduced-motion: reduce) { .toggle, .toggle::after { transition: none; } }
+
+/* version picker */
+.msg.warn { color: var(--warn); }
+.version { display: grid; gap: .5rem; padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--rule); }
+.ver-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; margin: 0; }
+.ver-row label { font: 600 .74rem/1.2 var(--f-label); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.ver-row select, .ver-row input { font: .86rem var(--f-mono); padding: .45rem .5rem; border: 1px solid var(--rule);
+  border-radius: 3px; background: var(--surface); color: var(--ink); min-width: 0; width: 100%; }
+.ver-row select { grid-column: 2 / 4; }
+.ver-row button { padding: .45rem .9rem; }
+@media (max-width: 560px) {
+  .ver-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .ver-row label { grid-column: 1 / -1; }
+  .ver-row select { grid-column: 1 / -1; }
+}

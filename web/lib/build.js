@@ -1,6 +1,7 @@
 // The in-browser build: fetch the toolchain and sources (cached by the browser), compile every file in a pool of
-// Web Workers, link, and hand back firmware.bin. The same steps as `make` (plan.js; tests/web_plan_host.py).
-import { makePlan } from './plan.js';
+// Web Workers, link, and hand back firmware.bin. The steps are the chosen version's own Makefile's (plan.js, make.js;
+// tests/web_make_host.py checks them against GNU make).
+import { makePlan, SDK_LIBS, BUILTINS } from './plan.js';
 
 const cache = {};
 async function fetchBytes(url, progress) {
@@ -37,19 +38,17 @@ export async function loadToolchain(base, log) {
   });
   log('Starting the compiler...');
   const module = await WebAssembly.compile(await gunzip(gz));
-  const [src, inc, cpu, media, btc, rt] = await Promise.all([
-    fetch(base + 'sources.json').then(r => r.json()),
+  const [inc, cpu, media, btc, rt] = await Promise.all([
     fetch(base + 'toolchain/clang-include.json').then(r => r.json()),
     fetchBytes(base + 'sdk/cpu.a'), fetchBytes(base + 'sdk/media.a'), fetchBytes(base + 'sdk/btctrler.a'),
     fetchBytes(base + 'toolchain/libclang_rt.builtins.a'),
   ]);
-  const files = { ...src.files, 'sdk/cpu.a': cpu, 'sdk/media.a': media, 'sdk/btctrler.a': btc,
-    'lib/libclang_rt.builtins.a': rt };
-  cache.tc = { module, files, clangInclude: inc, meta: src.meta };
+  const files = { [SDK_LIBS[0]]: cpu, [SDK_LIBS[1]]: media, [SDK_LIBS[2]]: btc, [BUILTINS]: rt };
+  cache.tc = { module, files, clangInclude: inc };
   return cache.tc;
 }
 
-function startWorker(tc) {
+function startWorker(tc, files) {
   const w = new Worker(new URL('./build-worker.js', import.meta.url), { type: 'module' });
   const pending = new Map(); let next = 1;
   const ready = new Promise((res, rej) => {
@@ -59,21 +58,21 @@ function startWorker(tc) {
     };
     w.onerror = e => rej(new Error('worker: ' + e.message));
   });
-  w.postMessage({ type: 'init', module: tc.module, files: tc.files, clangInclude: tc.clangInclude });
+  w.postMessage({ type: 'init', module: tc.module, files: { ...files, ...tc.files }, clangInclude: tc.clangInclude });
   const call = (type, msg) => new Promise(res => { const id = next++; pending.set(id, res); w.postMessage({ type, id, ...msg }); });
   return { ready, call, stop: () => w.terminate() };
 }
 
-// features: {ENABLE_x: 0|1, REGION: n}. Returns {bin, plan, seconds}
-export async function buildFirmware(base, features, log) {
-  const tc = await loadToolchain(base, log);
-  const defaults = Object.fromEntries(tc.meta.features.map(f => [f.name, f.default]));
-  const plan = makePlan(features, defaults, tc.meta.build + '-web');
+// version: from versions.js; switches: {ENABLE_x: 0|1, REGION: n}; build: the FW_BUILD name.
+// Returns {bin, plan, seconds, build}
+export async function buildFirmware(base, version, switches, build, log) {
+  const plan = makePlan(version.files, switches, build);   // first: a Makefile this page can't read stops here
   for (const n of plan.notes) log('Note: ' + n);
+  const tc = await loadToolchain(base, log);
   const t0 = performance.now();
   const n = Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 8, plan.compile.length));
   log(`Compiling ${plan.compile.length} files with ${n} workers...`);
-  const workers = Array.from({ length: n }, () => startWorker(tc));
+  const workers = Array.from({ length: n }, () => startWorker(tc, version.files));
   try {
     await Promise.all(workers.map(w => w.ready));
     const queue = plan.compile.slice();
@@ -94,8 +93,8 @@ export async function buildFirmware(base, features, log) {
     for (const l of r.log) log('  ' + l);
     if (r.code || !r.bin) throw new Error(`the linker stopped (exit ${r.code})`);
     const seconds = (performance.now() - t0) / 1000;
-    log(`Built firmware.bin: ${r.bin.length} bytes in ${seconds.toFixed(1)} s (build ${tc.meta.build}-web).`);
-    return { bin: r.bin, plan, seconds, build: tc.meta.build + '-web' };
+    log(`Built firmware.bin: ${r.bin.length} bytes in ${seconds.toFixed(1)} s (build ${build}).`);
+    return { bin: r.bin, plan, seconds, build };
   } finally {
     workers.forEach(w => w.stop());
   }

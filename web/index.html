@@ -13,7 +13,7 @@
       <p class="brand">Open UV-5R Mini</p>
       <h1>Build and flash</h1>
     </div>
-    <p class="build-id">source <code id="build-id">…</code></p>
+    <p class="build-id">site <code id="build-id">…</code></p>
   </div>
 </header>
 
@@ -22,6 +22,7 @@
     <div class="cell"><span class="k">Radio</span><span class="v" id="st-radio">not chosen</span></div>
     <div class="cell"><span class="k">Stock file</span><span class="v" id="st-stock">not loaded</span></div>
     <div class="cell"><span class="k">Loader patch</span><span class="v" id="st-patch">not loaded</span></div>
+    <div class="cell"><span class="k">Version</span><span class="v" id="st-ver">loading</span></div>
     <div class="cell"><span class="k">Firmware</span><span class="v" id="st-fw">not built</span></div>
     <div class="cell"><span class="k">Checks</span><span class="v" id="st-checks">–</span></div>
   </div>
@@ -75,9 +76,21 @@
   </section>
 
   <section class="step" aria-labelledby="h-features">
-    <h2 id="h-features" class="label"><span class="n">2</span> Features</h2>
+    <h2 id="h-features" class="label"><span class="n">2</span> Version and features</h2>
     <div class="body">
-      <p>The switches from <code>features.mk</code>. Ticked means built in.
+      <div class="version">
+        <div class="ver-row">
+          <label for="ver">Version</label>
+          <select id="ver"></select>
+        </div>
+        <form class="ver-row" id="ver-form">
+          <label for="ver-ref">Or any commit</label>
+          <input id="ver-ref" type="text" spellcheck="false" autocomplete="off" placeholder="hash, branch or tag">
+          <button type="submit">Load</button>
+        </form>
+        <p id="ver-msg" class="msg"></p>
+      </div>
+      <p>The switches from this version's <code>features.mk</code>. Ticked means built in.
         <button id="b-defaults" type="button" class="link">Reset to the repository's defaults</button></p>
       <div id="features"></div>
       <p class="small">The same build on a PC: <code id="make-cmd"></code></p>

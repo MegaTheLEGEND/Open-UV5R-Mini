@@ -1,13 +1,14 @@
 // The page: pick the radio and files, the switches, build, check, flash. See docs/WEB-FLASHER.md.
 import { STOCK_SHA, sha256, prepareImage, needsRescueWarning, RESCUE_WARNING, ufwcheck } from './lib/ufw.js';
 import { buildFirmware } from './lib/build.js';
+import { loadIndex, loadVersion, defaultSha, buildName } from './lib/versions.js';
 import { flashRadio, WebSerialLink, APP_BAUD } from './lib/flasher.js';
 
 const $ = id => document.getElementById(id);
 const BASE = new URL('.', import.meta.url).href;
 const state = { variant: null, stock: null, patch: null, bin: null, img: null, checks: null, building: false,
   flashing: false, cancel: false, trace: [] };
-let meta;
+let meta, index, version = null, feats = [];   // feats: this version's switches (features.mk)
 
 function msg(el, text, kind = '') { el.textContent = text; el.className = 'msg ' + kind; }
 function logTo(el) { return s => { el.textContent += s + '\n'; el.scrollTop = el.scrollHeight; }; }
@@ -59,8 +60,50 @@ $('f-patch').addEventListener('change', async e => {
   await combine(); refresh();
 });
 
-// --- 2. features
-const DEPS = {     // shown as hints; the Makefile's own overrides are applied by plan.js
+// --- 2. version and features
+function short(c) { return c.sha.slice(0, 7); }
+function trim(t, n) { return t.length > n ? t.slice(0, n - 1) + '…' : t; }
+function renderVersions(selected) {
+  const sel = $('ver'); sel.textContent = '';
+  const group = (label, rows) => {
+    if (!rows.length) return;
+    const g = document.createElement('optgroup'); g.label = label;
+    for (const [value, text] of rows) g.append(new Option(text, value));
+    sel.append(g);
+  };
+  const bySha = Object.fromEntries(index.commits.map(c => [c.sha, c]));
+  group('Releases', index.releases.map(r => [r.sha, `${r.tag} · ${r.date}`]));
+  group('Branches', index.branches.map(b => index.commits.find(c => (c.tips || []).includes(b)))
+    .filter(Boolean).map(c => [c.sha, `${c.tips.join(', ')} · ${short(c)} · ${c.date}`]));
+  group('Recent commits', index.commits.map(c => [c.sha, `${short(c)} · ${c.date} · ${trim(c.subject, 60)}`]));
+  if (selected && !bySha[selected]) group('From GitHub', [[selected, `${selected.slice(0, 7)} · ${version ? version.date + ' · ' + trim(version.subject, 60) : ''}`]]);
+  sel.value = selected || '';
+}
+async function pickVersion(ref) {
+  msg($('ver-msg'), 'Loading ' + ref.slice(0, 40) + '...');
+  $('st-ver').textContent = 'loading'; $('st-ver').className = 'v';
+  try {
+    const v = await loadVersion(BASE, index, ref, s => msg($('ver-msg'), s));
+    version = v; feats = v.features;
+    try { localStorage.setItem('uv5r-version', v.sha); } catch { /* private window */ }
+    renderVersions(v.sha);
+    const rel = index.releases.find(r => r.sha === v.sha);
+    const tips = (index.commits.find(c => c.sha === v.sha)?.tips || []);
+    msg($('ver-msg'), [rel ? 'Release ' + rel.tag : tips.length ? 'Newest on ' + tips.join(', ') : 'Commit',
+      v.sha.slice(0, 10), v.date, v.subject].filter(Boolean).join(' · ') +
+      (v.from === 'github' ? ' (fetched from GitHub)' : '') +
+      (feats.length ? '' : '. This version has no features.mk: it builds with its Makefile as it is.'), feats.length ? '' : 'warn');
+  } catch (e) {
+    msg($('ver-msg'), e.message, 'bad');
+    if (version) renderVersions(version.sha);
+  }
+  state.bin = null; state.img = null; state.checks = null;
+  renderFeatures(); showChecks(); refresh();
+}
+$('ver').addEventListener('change', e => pickVersion(e.target.value));
+$('ver-form').addEventListener('submit', e => { e.preventDefault(); const r = $('ver-ref').value.trim(); if (r) pickVersion(r); });
+
+const DEPS = {     // shown as hints; the Makefile's own overrides apply in the build (make.js)
   ENABLE_SCREEN_TEST: [['ENABLE_CHIRP', 1]],
   ENABLE_BT_LE: [['ENABLE_APP_FM', 1]],
   ENABLE_APP_BTCHIRP: [['ENABLE_CHIRP', 1], ['ENABLE_BT_LE', 1]],
@@ -98,19 +141,20 @@ function firstSentence(t) {
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function features() {
   const out = {};
-  for (const f of meta.features) {
+  for (const f of feats) {
     const e = $('ft-' + f.name);
     out[f.name] = f.values ? +e.value : (e.checked ? 1 : 0);
   }
   return out;
 }
-function saveFeatures() { try { localStorage.setItem('uv5r-features', JSON.stringify(features())); } catch { /* private window */ } }
+// kept across versions: a switch keeps its setting in every version that has it
+function saveFeatures() { try { localStorage.setItem('uv5r-features', JSON.stringify({ ...savedFeatures(), ...features() })); } catch { /* private window */ } }
 function savedFeatures() { try { return JSON.parse(localStorage.getItem('uv5r-features') || '{}'); } catch { return {}; } }
 function renderFeatures() {
   const saved = savedFeatures();
-  const byName = Object.fromEntries(meta.features.map(f => [f.name, f]));
+  const byName = Object.fromEntries(feats.map(f => [f.name, f]));
   const known = new Set(GROUPS.flatMap(g => g[1]));
-  const groups = [...GROUPS, ['Other', meta.features.map(f => f.name).filter(n => !known.has(n))]];
+  const groups = [...GROUPS, ['Other', feats.map(f => f.name).filter(n => !known.has(n))]];
   const box = $('features'); box.textContent = '';
   for (const [title, names] of groups) {
     const items = names.filter(n => byName[n]);
@@ -141,17 +185,27 @@ function renderFeatures() {
   }
 }
 $('features').addEventListener('change', () => { saveFeatures(); state.bin = null; state.img = null; state.checks = null; showChecks(); refresh(); });
+// the switches set away from this version's defaults (what `make X=...` gets)
+function changed() {
+  const f = features();
+  return Object.fromEntries(feats.filter(x => f[x.name] !== x.default).map(x => [x.name, f[x.name]]));
+}
 function featureHints() {
   const f = features();
-  for (const x of meta.features) {
-    const blocked = (DEPS[x.name] || []).filter(([dep, want]) => f[dep] !== want).map(([dep]) => NAMES[dep] || dep);
+  for (const x of feats) {
+    const blocked = (DEPS[x.name] || []).filter(([dep, want]) => dep in f && f[dep] !== want).map(([dep]) => NAMES[dep] || dep);
     const needs = document.querySelector('#fd-' + x.name + ' .needs');
     needs.textContent = blocked.length && f[x.name] ? 'Has no effect without ' + blocked.join(' and ') + '.' : '';
   }
-  const diff = meta.features.filter(x => f[x.name] !== x.default).map(x => `${x.name}=${f[x.name]}`);
-  $('make-cmd').textContent = ['make ufw TOOLCHAIN=…', ...diff].join(' ');
+  $('make-cmd').textContent = (version ? `git checkout ${version.sha.slice(0, 7)} && ` : '') +
+    ['make ufw TOOLCHAIN=…', ...Object.entries(changed()).map(([k, v]) => `${k}=${v}`)].join(' ');
 }
-$('b-defaults').addEventListener('click', () => { try { localStorage.removeItem('uv5r-features'); } catch { /* */ } renderFeatures(); state.bin = null; state.img = null; refresh(); });
+$('b-defaults').addEventListener('click', () => {
+  const saved = savedFeatures();
+  for (const f of feats) delete saved[f.name];
+  try { localStorage.setItem('uv5r-features', JSON.stringify(saved)); } catch { /* */ }
+  renderFeatures(); state.bin = null; state.img = null; state.checks = null; showChecks(); refresh();
+});
 
 // --- 3. build and combine
 $('b-build').addEventListener('click', async () => {
@@ -160,7 +214,11 @@ $('b-build').addEventListener('click', async () => {
   $('build-details').open = true;
   state.building = true; state.bin = null; state.img = null; showChecks(); refresh();
   try {
-    const r = await buildFirmware(BASE, features(), log);
+    if (!version) throw new Error('no version loaded');
+    const v = version;
+    log(`Version ${v.sha.slice(0, 10)} (${v.date}): ${v.subject}`);
+    const r = await buildFirmware(BASE, v, changed(), buildName(index, v), log);
+    if (v !== version) throw new Error('the version changed during the build; build again');
     state.bin = r.bin; state.build = r.build;
     await combine(log);
   } catch (e) {
@@ -246,7 +304,8 @@ $('b-dl-trace').addEventListener('click', () => download(state.trace.join('\n') 
 function refresh() {
   if (!meta) return;
   featureHints();
-  $('b-build').disabled = state.building;
+  $('b-build').disabled = state.building || !version;
+  $('ver').disabled = state.building;
   $('b-dl-bin').disabled = !state.bin;
   $('b-dl-ufw').disabled = !state.img;
   $('b-flash').disabled = !flashAllowed();
@@ -268,6 +327,8 @@ function status() {
     state.variant === 'nrf' ? 'ok' : state.variant ? 'bad' : '');
   set('st-stock', state.stock ? 'V0.27, checked' : 'not loaded', state.stock ? 'ok' : '');
   set('st-patch', state.patch ? 'L2 1.1.0' : 'not loaded', state.patch ? 'ok' : '');
+  const rel = version && index.releases.find(r => r.sha === version.sha);
+  set('st-ver', version ? (rel ? rel.tag : version.sha.slice(0, 7)) : 'none', version ? 'ok' : 'bad');
   set('st-fw', state.building ? 'building...' : state.bin ? state.bin.length.toLocaleString('en') + ' B' : 'not built',
     state.bin ? 'ok' : '');
   if (!state.checks) set('st-checks', '–');
@@ -280,6 +341,10 @@ function status() {
 (async () => {
   meta = await fetch(BASE + 'meta.json').then(r => r.json());
   $('build-id').textContent = meta.build;
-  renderFeatures();
-  refresh();
+  index = await loadIndex(BASE);
+  let start = defaultSha(index);
+  try { const s = localStorage.getItem('uv5r-version'); if (s) start = s; } catch { /* */ }
+  const asked = new URLSearchParams(location.search).get('version');   // ?version=<hash, branch or tag>
+  await pickVersion(asked || start);
+  if (!version && (asked || start) !== defaultSha(index)) await pickVersion(defaultSha(index));
 })();

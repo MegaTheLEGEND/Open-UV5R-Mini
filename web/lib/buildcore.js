@@ -7,9 +7,10 @@ export const RESOURCE_DIR = '/clang';
 // files: {path: string | Uint8Array}; clangInclude: {relative path under include/: text}
 export function baseFS(files, clangInclude) {
   const fs = new MemFS();
-  for (const [p, d] of Object.entries(files)) fs.write('/' + p, d);
+  for (const [p, d] of Object.entries(files)) fs.write(p.startsWith('/') ? p : '/' + p, d);
   for (const [p, d] of Object.entries(clangInclude)) fs.write(`${RESOURCE_DIR}/include/${p}`, d);
   fs.mkdirp('/build/fw');
+  fs.mkdirp('/tc/bin');                // TOOLCHAIN: the Makefile finds the builtins at $(TOOLCHAIN)/../lib
   fs.mkdirp('/tmp');                  // clang preprocesses .S files into a temporary file
   return fs;
 }
@@ -53,15 +54,16 @@ function parseQuoted(line) {
   return out;
 }
 
-// objs: {path: bytes}. Returns {code, log, elf, bin}
+// The steps after the compiles (ld.lld, llvm-objcopy), in order, with the objects in place. Returns {code, log, bin}
 export function link(module, fs0, plan, objs) {
   const fs = fs0.fork();
   for (const [p, d] of Object.entries(objs)) fs.write('/' + p, d);
-  const l = run(module, fs, 'ld.lld', plan.link);
-  if (l.code) return { code: l.code, log: l.log };
-  const o = run(module, fs, 'llvm-objcopy', plan.objcopy);
-  return {
-    code: o.code, log: [...l.log, ...o.log],
-    elf: fs.read('/build/fw/firmware.elf')?.slice(), bin: o.code ? null : fs.read('/build/fw/firmware.bin')?.slice(),
-  };
+  const log = [];
+  for (const st of plan.after) {
+    const r = run(module, fs, st.tool, st.args);
+    log.push(...r.log);
+    if (r.code) return { code: r.code, log };
+  }
+  const out = plan.output.startsWith('/') ? plan.output : '/' + plan.output;
+  return { code: 0, log, bin: fs.read(out)?.slice() };
 }
