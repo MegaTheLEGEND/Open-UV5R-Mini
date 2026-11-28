@@ -330,7 +330,7 @@ $('b-flash').addEventListener('click', async () => {
     log((ok ? 'OK: ' : 'NOT DONE: ') + text);
   } catch (e) {
     log('Stopped: ' + e.message);
-    if (/open/i.test(e.message)) log('Another program probably has the cable's port open (CHIRP, a serial monitor, another flasher, or this page in a second tab). Close it and press Flash again.');
+    if (/open/i.test(e.message)) log('Another program probably has the cable port open (CHIRP, a serial monitor, another flasher, or this page in a second tab). Close it and press Flash again.');
   }
   if (link) await link.close();
   state.flashing = false; refresh();
