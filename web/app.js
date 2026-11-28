@@ -46,8 +46,8 @@ async function fetchBoth() {
     } catch (e) { msg($('m-stock'), 'Could not fetch it: ' + e.message + '. Load the file by hand below.', 'bad'); }
   })());
   if (!state.patch) jobs.push((async () => {
-    msg($('m-patch'), 'Downloading from GitHub...');
-    try { setPatch(await fetchPatch()); } catch (e) { msg($('m-patch'), 'Could not fetch it: ' + e.message + '. Load the file by hand below.', 'bad'); }
+    msg($('m-patch'), 'Downloading...');
+    try { setPatch(await fetchPatch(BASE)); } catch (e) { msg($('m-patch'), 'Could not fetch it: ' + e.message + '. Load the file by hand below.', 'bad'); }
   })());
   await Promise.all(jobs);
   $('b-fetch').disabled = false;

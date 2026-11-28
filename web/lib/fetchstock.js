@@ -1,10 +1,12 @@
-// Fetch the two outside files straight into the user's browser, from where the README and BUILDING.md link them.
-// This site never holds them: the stock file comes from its MEGA link (decrypted here with the key in the link, as
-// MEGA's own page does), the loader patch from MM9PDY's GitHub repo at a pinned commit. Each is then checked
+// The two outside files, fetched by the user's browser and checked like hand-loaded ones.
+// This site never holds the stock file: it comes from its MEGA link (decrypted here with the key in the link, as
+// MEGA's own page does). The loader patch comes from this site's own copy (web/vendor/mm9pdy, redistributed
+// unmodified under its licence), else from MM9PDY's GitHub repo at a pinned commit. Each is then checked
 // against its pinned SHA-256, so a changed or wrong file is refused like a hand-loaded one.
 import { STOCK_SHA, sha256 } from './ufw.js';
 
 export const STOCK_LINK = 'https://mega.nz/file/U5NSDIhZ#DqRVur6RPVay1ylKZFQsz2zrXnR3ZrAMBToPHgPnPvQ';
+export const PATCH_LOCAL = 'vendor/mm9pdy/uv5rmini-fw-to-stock-nrf-v0.27-hw1.7-1.1.0.patch.json';
 export const PATCH_URL = 'https://raw.githubusercontent.com/pskillen/mm9pdy-firmware/' +
   '6f23730a1edbcbce603252edcfa84ebb44760330/releases/baofeng-uv5rmini/to-stock/' +
   'uv5rmini-fw-to-stock-nrf-v0.27-hw1.7-1.1.0.patch.json';
@@ -53,10 +55,17 @@ export async function fetchStock(progress) {
   return b;
 }
 
-export async function fetchPatch() {
-  const r = await fetch(PATCH_URL);
-  if (!r.ok) throw new Error('GitHub: ' + r.status);
-  const bytes = new Uint8Array(await r.arrayBuffer());
-  if (await sha256(bytes) !== PATCH_SHA) throw new Error('the downloaded loader patch is not the pinned 1.1.0 file (SHA-256 differs)');
-  return JSON.parse(new TextDecoder().decode(bytes));
+// base: the site's address. Tries the site's copy, then MM9PDY's repo; either must match the pinned SHA-256.
+export async function fetchPatch(base = '') {
+  let last;
+  for (const url of [base + PATCH_LOCAL, PATCH_URL]) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${url}: ${r.status}`);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (await sha256(bytes) !== PATCH_SHA) throw new Error(`${url}: not the pinned 1.1.0 file (SHA-256 differs)`);
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (e) { last = e; }
+  }
+  throw last;
 }

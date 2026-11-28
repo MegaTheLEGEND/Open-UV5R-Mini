@@ -9,8 +9,8 @@ the page. **No build is known to be safe to flash** (read [TESTING.md](TESTING.m
 1. Open the page in **Chrome or Edge** on a desktop computer (other browsers can build but not flash).
 2. **Your radio**: hold `8` while switching on. Only `5RMINI NRF` (stock V0.27) is supported; the page refuses NRFB.
 3. The page downloads the two outside files into your browser by itself: `stock-nrf-v0.27.ufw` from its MEGA link
-   (decrypted in the page with the link's key) and MM9PDY's to-stock patch (it adds back the update loader the
-   stock file lacks) from his GitHub repo at a pinned commit. Each must match its pinned SHA-256. If a download
+   (decrypted in the page with the link's key) and MM9PDY's to-stock patch (it adds the update loader the stock
+   file lacks) from the site's own unmodified copy, else from his GitHub repo at a pinned commit. Each must match its pinned SHA-256. If a download
    fails, load your own copies (see [BUILDING.md](BUILDING.md) section 2).
 4. **Version and features**: pick a release, a branch's newest commit or a recent commit, or type any commit hash,
    branch or tag. The feature list is that version's own `features.mk` (a switch you set keeps its setting in
@@ -28,9 +28,10 @@ the page. **No build is known to be safe to flash** (read [TESTING.md](TESTING.m
 | --- | --- |
 | The page (`web/`), and the firmware sources (Makefile, `*.mk`, `src/`) of every tag, every branch's newest commit and the 40 newest commits that changed the build (`versions/`) | ours |
 | `llvm.wasm.gz`: pi32v2-llvm's clang, ld.lld and llvm-objcopy as one WebAssembly program, the compiler's C headers and compiler-rt's builtins | Apache-2.0 with LLVM Exceptions |
+| MM9PDY's to-stock patch, unmodified, with his `LICENSE.md` (`web/vendor/mm9pdy/`) | his release-patch terms: redistribute unmodified with the notice |
 | JieLi's `cpu.a`, `media.a`, `btctrler.a` with their `LICENSE` | Apache-2.0 ([THIRD-PARTY.md](THIRD-PARTY.md)) |
 
-Never on the site: the stock `.ufw`, MM9PDY's patch, or anything made from them. Each visitor's browser fetches
+Never on the site: the stock `.ufw` or anything made from it. Each visitor's browser fetches
 those from the links the README already gives (`web/lib/fetchstock.js`) and builds the flashable `.ufw` itself, the
 way `make ufw` does.
 
