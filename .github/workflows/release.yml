@@ -1,0 +1,85 @@
+# A release: push a tag such as v0.1.0 (or start it by hand with a tag name). Builds firmware.bin for a few switch
+# sets with pi32v2-llvm and makes a DRAFT release with them and their SHA-256 sums; a person reads it and publishes.
+# Only our code and JieLi's Apache-2.0 libraries are in these files: no .ufw (that would hold Baofeng's loader).
+# Make the flashable .ufw from one with `python tools/mkufw.py` or the web builder, which use your own stock file.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (made at the selected commit if it does not exist)'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  LLVM_TAG: pi32v2-23.1.6-2
+  LLVM_SHA256: b9aa6878a3e9863d54f7dea96ec5dd2e4f438b02a1503f7b042fa601bb5e4c22
+  JIELI_SDK_COMMIT: fdc018de81629e21e594d677cf05f87d288be0f0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: pi32v2-llvm
+        run: |
+          curl -sSL -o llvm.tar.xz https://github.com/jvitkauskas/pi32v2-llvm/releases/download/$LLVM_TAG/pi32v2-llvm-${LLVM_TAG#pi32v2-}-linux-x64.tar.xz
+          echo "$LLVM_SHA256  llvm.tar.xz" | sha256sum -c -
+          mkdir -p ~/llvm && tar xJf llvm.tar.xz -C ~/llvm --strip-components=1
+
+      - name: JieLi's libraries (Apache-2.0)
+        run: |
+          git init -q ~/jieli && cd ~/jieli
+          git remote add origin https://github.com/Jieli-Tech/fw-AC63_BT_SDK.git
+          git sparse-checkout set cpu/br23/liba
+          git fetch -q --depth 1 origin $JIELI_SDK_COMMIT && git checkout -q FETCH_HEAD
+          cd $GITHUB_WORKSPACE && sh tools/sdk/fm_libs.sh ~/jieli
+
+      - name: Build the switch sets
+        run: |
+          TAG=${{ github.event.inputs.tag || github.ref_name }}
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          mkdir -p dist
+          build() {   # name, then make arguments
+            name=$1; shift
+            make clean > /dev/null
+            make -j4 TOOLCHAIN=$HOME/llvm/bin FW_BUILD=$TAG "$@"
+            cp build/fw/firmware.bin dist/open-uv5r-mini-$TAG-$name.bin
+            echo "| \`open-uv5r-mini-$TAG-$name.bin\` | $(stat -c %s build/fw/firmware.bin) | ${*:-defaults of features.mk} |" >> dist/table.md
+          }
+          build full
+          build no-bluetooth ENABLE_BT_LE=0
+          build no-transmit ENABLE_TX=0
+          build minimal ENABLE_APP_FM=0 ENABLE_BT_LE=0
+          cp build/sdk/LICENSE.jieli dist/
+          (cd dist && sha256sum *.bin > SHA256SUMS)
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Open firmware for the Baofeng UV-5R Mini, **NRF radios only** (\`5RMINI NRF\`, stock V0.27), built at ${GITHUB_SHA::7} with $LLVM_TAG."
+            echo
+            echo "**No build is known to be safe to flash.** The cable update mode lives in the app: if an app crashes before"
+            echo "its update check, the radio can only be recovered with the case open (docs/TESTING.md)."
+            echo
+            echo "| File | Bytes | Switches |"
+            echo "| --- | --- | --- |"
+            cat dist/table.md
+            echo
+            echo "These are app images (\`firmware.bin\`), not flashable files. Make a .ufw from one with your own stock file:"
+            echo "\`python tools/mkufw.py --base build/stock-flashable-reference.ufw --app <file> -o out.ufw\`, or use the web"
+            echo "builder (docs/WEB-FLASHER.md). The FM and Bluetooth parts contain JieLi's Apache-2.0 libraries (LICENSE.jieli)."
+          } > notes.md
+          rm dist/table.md
+          gh release view "$TAG" > /dev/null 2>&1 && { echo "release $TAG exists already"; exit 1; }
+          gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Open UV-5R Mini $TAG" --notes-file notes.md dist/*
