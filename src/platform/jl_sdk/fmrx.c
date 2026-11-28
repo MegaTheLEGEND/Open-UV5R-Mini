@@ -560,6 +560,9 @@ static void clock_back(void)
 	s_fast = false;
 }
 
+void FMRX_ClockFast(void) { if (!s_fast) clock_fast(); }
+void FMRX_ClockBack(void) { clock_back(); }
+
 /* The real FM interrupt period, with the interrupt off: wait for its pending flag (HF_CON1 bit 7, seen set in the
  * log), clear it as JieLi's interrupt does (|= 0x40), 9 times; also counts the half-buffer bit's toggles between
  * two. 853 us wanted. */

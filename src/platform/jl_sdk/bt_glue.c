@@ -30,8 +30,10 @@
 const int config_btctler_modules = BT_MODULE_LE;
 const int config_btctler_mode = BT_NORMAL;
 const int config_btctler_hci_standard = 0;
-const uint64_t config_btctler_le_features = 1;   /* LE_ENCRYPTION: a paired link is encrypted (bt/smp.h) */
-const int config_btctler_le_roles = LE_SCAN | LE_ADV | LE_SLAVE;   /* slave: the serial link */
+/* Not const for now: changeable over the cable (!w) before a Bluetooth start, to find which one stops advertising
+ * on the radio (2026-11-27: no advertising with these on; it worked with features 0 and roles SCAN | ADV). */
+__attribute__((used)) uint64_t config_btctler_le_features = 1;   /* LE_ENCRYPTION: a paired link is encrypted (bt/smp.h) */
+__attribute__((used)) int config_btctler_le_roles = LE_SCAN | LE_ADV | LE_SLAVE;   /* slave: the serial link */
 const int config_btctler_le_hw_nums = 2;
 const int config_btctler_le_rx_nums = 8;
 const int config_btctler_le_acl_packet_length = 27;
@@ -239,7 +241,23 @@ void  power_reset_close(void) {}
  * and the controller works without it: bt_le.c sets a random address itself. */
 int syscfg_read(uint16_t id, void *buf, uint16_t len) { (void)id; (void)buf; (void)len; return -1; }
 int syscfg_write(uint16_t id, void *buf, uint16_t len) { (void)id; (void)buf; (void)len; return -1; }
-const void *get_syscfg_btif_ops(void) { return 0; }
+/* The controller calls through this table (analog.c get_bt_osc_offset_flag: ops->check_id(110), from ll_slave.c and
+ * lmp.c), so it must not be NULL: every item reads as not there. Layout: SDK include_lib/system/syscfg_id.h. */
+static int cfg_init(void) { return 0; }
+static int cfg_check(uint16_t id) { (void)id; return 0; }
+static int cfg_rw(uint16_t id, uint8_t *buf, uint16_t len) { (void)id; (void)buf; (void)len; return -1; }
+static int cfg_str(uint16_t id, uint8_t *buf, uint16_t len, uint8_t ver) { (void)id; (void)buf; (void)len; (void)ver; return -1; }
+static uint8_t *cfg_ptr(uint16_t id, uint16_t *len) { (void)id; if (len) *len = 0; return 0; }
+static const struct {
+	int (*init)(void);
+	int (*check_id)(uint16_t);
+	int (*read)(uint16_t, uint8_t *, uint16_t);
+	int (*write)(uint16_t, uint8_t *, uint16_t);
+	int (*dma_write)(uint16_t, uint8_t *, uint16_t);
+	int (*read_string)(uint16_t, uint8_t *, uint16_t, uint8_t);
+	uint8_t *(*ptr_read)(uint16_t, uint16_t *);
+} s_btif_ops = { cfg_init, cfg_check, cfg_rw, cfg_rw, cfg_rw, cfg_str, cfg_ptr };
+const void *get_syscfg_btif_ops(void) { return &s_btif_ops; }
 int norflash_ioctl(void *dev, uint32_t cmd, uint32_t arg) { (void)dev; (void)cmd; (void)arg; return -1; }
 
 /* ------------------------------------------------------------------ events for JieLi's application: none here */

@@ -22,6 +22,9 @@
 #include "driver/system.h"
 #include "platform/jl_sdk/bt_glue.h"
 #include "platform/jl_sdk/bt_le.h"
+#if APP_FM_ENABLE
+#include "platform/jl_sdk/fmrx.h"
+#endif
 
 /* ------------------------------------------------------------------ the library's calls we use */
 extern const void *hci_transport_h4_controller_instance(void);
@@ -91,6 +94,7 @@ static struct {
 static uint8_t s_er[16];                 /* the radio's pairing secret (made once, from its own flash) */
 static bool    s_er_ok;
 static volatile uint8_t s_ltk_due, s_enc_due;
+static volatile uint8_t s_upd_due, s_upd_n; /* ask the phone for a slower connection (see BTLE_Tick) */
 
 static uint8_t s_on;                     /* the controller is running */
 static uint8_t s_scan, s_adv;            /* what the apps asked for */
@@ -101,6 +105,13 @@ static volatile uint8_t s_credits;       /* ACL packets the controller can still
 static uint16_t s_handle;
 static uint32_t s_credit_ms;             /* when the last packet went out without a credit back */
 static BT_ReceiveHandler_t s_rx;
+/* The connection rate we ask for (1.25 ms units): 30-50 ms, no latency, 4 s timeout. On Sean's radio (2026-11-27)
+ * a phone connected, swapped 7 packets each way, went to 7.5 ms (Android does during service discovery) and the
+ * link died 2.4 s later (supervision timeout); the cable monitor went quiet meanwhile, the CPU busy with the
+ * radio's interrupts. So the radio asks for a slower rate at once (L2CAP Connection Parameter Update Request). */
+#define CONN_MIN 24u
+#define CONN_MAX 40u
+#define CONN_TIMEOUT 400u
 #define CREDITS 6                        /* of config_btctler_le_acl_total_nums (8) */
 BtLeStats_t gBtLe;
 
@@ -230,6 +241,12 @@ int hci_packet_handler(uint8_t type, const uint8_t *packet, uint16_t size)
 	if (type != 4 || size < 2)
 		return 0;
 	gBtLe.last_event = packet[0];
+	if (packet[0] != 0x13 && !(packet[0] == 0x3E && size >= 3 && packet[2] == 0x02)) {
+		uint8_t *l = gBtLe.log[gBtLe.log_n++ & 7u];
+		l[0] = (uint8_t)size;
+		for (int i = 0; i < 11; i++)
+			l[1 + i] = i < size ? packet[i] : 0;
+	}
 	switch (packet[0]) {
 	case 0x3E:                           /* LE Meta */
 		if (size < 3)
@@ -237,6 +254,8 @@ int hci_packet_handler(uint8_t type, const uint8_t *packet, uint16_t size)
 		gBtLe.last_sub = packet[2];
 		if (packet[2] == 0x02)               /* LE Advertising Report */
 			report(packet + 3, size - 3);
+		else if (packet[2] == 0x03 && size >= 8 && packet[3] == 0 && (unsigned)(packet[6] | packet[7] << 8) < CONN_MIN)
+			s_upd_due = 1;                   /* LE Connection Update Complete, faster than we asked: again */
 		else if (packet[2] == 0x01 && size >= 6 && packet[3] == 0) {   /* LE Connection Complete, success */
 			s_handle = (uint16_t)((packet[4] | packet[5] << 8) & 0x0FFFu);
 			s_credits = CREDITS;
@@ -256,6 +275,8 @@ int hci_packet_handler(uint8_t type, const uint8_t *packet, uint16_t size)
 				SMP_Reset(R.peer, R.peer_type, ra, 1, s_er, random_bytes);
 			}
 			s_ltk_due = s_enc_due = 0;
+			s_upd_due = 1;
+			s_upd_n = 0;
 			s_conn = 1;
 			gBtLe.conns++;
 		} else if (packet[2] == 0x05 && size >= 15) {   /* LE Long Term Key Request: answered in BTLE_Tick */
@@ -412,7 +433,16 @@ static bool start(void)
 	P33_Write(6, (uint8_t)((P33_Read(6) & ~7u) | 7u));
 
 	gBtLe.step = 2;
+#if APP_FM_ENABLE
+	/* The fast clock, as for the FM radio. At 48 MHz (code fetched from the flash at the same rate) a phone's connection
+	 * never got going: the controller took it (LE Connection Complete) and dropped it as "failed to be established"
+	 * (0x3E), and no scan response was seen, both answers the radio must send 150 us after a phone's packet (Sean's
+	 * radio, 2026-11-27). Test build: whether the fast clock lets the controller's interrupt make that. */
+	FMRX_ClockFast();
+	bt_pll_para(OSC_HZ, FMRX_SysMHz() * 1000000u, 0, 0);
+#else
 	bt_pll_para(OSC_HZ, SYS_HZ, 0, 0);
+#endif
 	bt_max_pwr_set(7, 5, 8, BLE_PWR);
 	gBtLe.step = 3;
 	btctrler_task_init(hci_transport_h4_controller_instance(), 0);  /* records the transport; no task is made */
@@ -447,6 +477,9 @@ static void stop(void)
 	hci_controller_destory();
 	IRQ_Free(38);
 	IRQ_Free(39);
+#if APP_FM_ENABLE
+	FMRX_ClockBack();
+#endif
 	s_on = 0;
 	FMGLUE_BtHeap(false, 0, 0);
 	gBtLe.step = 0;
@@ -509,6 +542,18 @@ void BTLE_Tick(void)
 			l2cap_send(L2CAP_CID_SMP, k1, l1);
 		if (n >= 2)
 			l2cap_send(L2CAP_CID_SMP, k2, l2);
+	}
+	if (s_conn && s_upd_due && s_upd_n < 3u) {
+		static const uint8_t REQ[12] = { 0x12, 0, 8, 0, CONN_MIN, 0, CONN_MAX, 0, 0, 0,
+		                                 (uint8_t)CONN_TIMEOUT, CONN_TIMEOUT >> 8 };
+		uint8_t r[12];
+		for (int i = 0; i < 12; i++)
+			r[i] = REQ[i];
+		r[1] = (uint8_t)(0x40u + s_upd_n);  /* identifier */
+		if (l2cap_send(L2CAP_CID_SIG, r, sizeof r)) {
+			s_upd_due = 0;
+			s_upd_n++;
+		}
 	}
 	if (s_conn)
 		serve();

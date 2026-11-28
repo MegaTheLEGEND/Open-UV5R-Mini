@@ -1509,7 +1509,8 @@ static void draw_about(void)
 #endif
 	UI_PrintString("MENU:DEBUG  ELSE:BACK", 0, 118, COLOR_DIM, COLOR_BG, 1);
 #else
-	UI_PrintString("OPEN FIRMWARE", 4, 94, COLOR_DIM, COLOR_BG, 1);
+	UI_PrintString("RESCUE", 4, 94, COLOR_DIM, COLOR_BG, 1);   /* every build since 1.0.0 (Sean) */
+	UI_PrintString("*", 76, 94, COLOR_TEXT, COLOR_BG, 1);
 #if APP_SYSINFO_ENABLE
 	UI_PrintString("SYSTEM INFO", 4, 105, COLOR_DIM, COLOR_BG, 1);
 	UI_PrintString("1", 76, 105, COLOR_TEXT, COLOR_BG, 1);
@@ -1518,8 +1519,8 @@ static void draw_about(void)
 #endif
 }
 
-#if DEBUGGING
-/* Restart into the boot ROM's USB download mode (the rescue mode), without the USB key. The AC695N's boot ROM
+/* Restart into the boot ROM's USB download mode (the rescue mode), without the USB key. In every build, not only
+ * debug ones (Sean, 2026-11-27). The AC695N's boot ROM
  * (dumped from Sean's radio, read 2026-11-27) checks 8 bytes of RAM at 0x10804 before booting: "usb" 0xED 0x63 0x81
  * 0x67 0xEF means USB download mode (another tag, "uart"..., the UART one); it clears the tag once read, so the
  * next power-on boots normally. The ROM restarts the chip itself by writing 0x10 to P33 register 0xA0 (P3_PR_PWR in
@@ -1545,7 +1546,6 @@ static void reboot_to_rescue(void)
 	for (;;)
 		;
 }
-#endif
 
 /* ------------------------------------------------------------------------------------------- apps (app/apps.h) */
 static const AppDef_t *s_app;            /* the app open (SCREEN_APP) */
@@ -3309,12 +3309,10 @@ void APP_Tick(void)
 			app_result(r);
 		} else if (s_screen == SCREEN_ABOUT) {
 			s_fkey = false;
-#if DEBUGGING
-			if (k == KEY_STAR) {             /* rescue mode: the serial (USB) lines let go, then the restart */
-				UI_PrintPadded("RESCUE...", 58, 105, COLOR_WARN, COLOR_BG, 11);
+			if (k == KEY_STAR) {             /* rescue mode, every build: the serial (USB) lines let go, then the restart */
+				UI_PrintPadded("RESCUE...", DEBUGGING ? 58 : 76, DEBUGGING ? 105 : 94, COLOR_WARN, COLOR_BG, DEBUGGING ? 11 : 9);
 				reboot_to_rescue();
 			}
-#endif
 			if (APP_SYSINFO_ENABLE && k == KEY_1) {   /* SYSTEM INFO lives here since 1.0.0 (Sean); EXIT comes back */
 #if APP_SYSINFO_ENABLE
 				app_open(&APP_SYSINFO);

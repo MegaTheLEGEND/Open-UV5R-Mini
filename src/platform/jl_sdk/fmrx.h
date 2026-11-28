@@ -92,6 +92,9 @@ extern uint32_t gFmClkCon1Was;           /* CLK_CON1 as the bootloader left it, 
  * multiplies are counted; on Sean's radio at 48 MHz the interrupt left the rest no time at all. */
 #define FMRX_FAST 4u
 uint32_t FMRX_SysMHz(void);      /* the CPU clock now, from the clock registers */
+/* the FM radio's fast clock (160 MHz, flash divider / 1), also for the Bluetooth controller (bt_le.c); back = as before */
+void     FMRX_ClockFast(void);
+void     FMRX_ClockBack(void);
 bool     FMRX_Open(uint32_t khz, uint32_t mode);   /* FMRX_DAC | FMRX_RX for the radio */
 void     FMRX_ToneFill(void);    /* DAC only: keep a 1 kHz test tone in the DAC buffer (call every tick) */
 /* Key beeps on the DAC. FMRX_BeepPrepare opens it for them (slow: at power-on, behind the picture) unless the FM

@@ -16,6 +16,9 @@ typedef struct {
 	uint8_t  last_event, last_sub;       /* the last HCI event code and LE subevent */
 	uint32_t starts, events, msgs, msgs_other;
 	uint32_t conns, acl_in, acl_out, acl_dropped;   /* the serial link */
+	uint32_t log_n;                      /* events logged so far; the last 8 are in log[log_n % 8] */
+	uint8_t  log[8][12];                 /* each: size, then the event's first 11 bytes (code, length, ...). Not the
+	                                      * advertising reports or credits, which come all the time */
 } BtLeStats_t;
 extern BtLeStats_t gBtLe;
 
