@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Open UV-5R Mini Flasher</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-row">
+    <div>
+      <p class="brand">Open UV-5R Mini</p>
+      <h1>Build and flash</h1>
+    </div>
+    <p class="build-id">source <code id="build-id">…</code></p>
+  </div>
+</header>
+
+<nav class="status" aria-label="Progress">
+  <div class="wrap status-row">
+    <div class="cell"><span class="k">Radio</span><span class="v" id="st-radio">not chosen</span></div>
+    <div class="cell"><span class="k">Stock file</span><span class="v" id="st-stock">not loaded</span></div>
+    <div class="cell"><span class="k">Loader patch</span><span class="v" id="st-patch">not loaded</span></div>
+    <div class="cell"><span class="k">Firmware</span><span class="v" id="st-fw">not built</span></div>
+    <div class="cell"><span class="k">Checks</span><span class="v" id="st-checks">–</span></div>
+  </div>
+</nav>
+
+<main class="wrap">
+  <p class="intro">Pick the features you want, build the firmware in this browser, and flash it over the K1 cable.
+    The compiler runs on this page. Your stock file never leaves your computer.</p>
+
+  <section class="step risk" aria-labelledby="h-risk">
+    <h2 id="h-risk" class="label">Before you start</h2>
+    <div class="body">
+      <p><b>No build is known to be safe to flash.</b> This firmware is in development. It has run on a few radios in
+        debug builds, and that is all.</p>
+      <p><b>The cable update mode lives in the app.</b> The radio checks PTT-A + <kbd>=</kbd> at power-on inside the
+        app itself. If an app crashes before that check, the radio can't be flashed over the cable again. The way
+        back is then to open the case and use the chip's ROM mode: wires on the G, M and P pads, an ESP32 key sender,
+        and a full flash backup made beforehand
+        (<a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini/blob/main/docs/TESTING.md">TESTING.md</a>).</p>
+      <p><b>Transmit</b> stays inside the amateur bands by default (TX LOCK = HAM). Transmit only where you are licensed.</p>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="h-radio">
+    <h2 id="h-radio" class="label"><span class="n">1</span> Radio</h2>
+    <div class="body">
+      <p>Switch the radio off, hold <kbd>8</kbd> and switch it on. For a second the screen shows its kind:</p>
+      <div class="choice" role="radiogroup" aria-label="Radio kind">
+        <label class="opt"><input type="radio" name="variant" value="nrf">
+          <span class="lcd">5RMINI NRF</span><span class="sub">stock V0.27 · supported</span></label>
+        <label class="opt"><input type="radio" name="variant" value="nrfb">
+          <span class="lcd">5RMINI NRFB</span><span class="sub">stock V0.04 · not supported</span></label>
+      </div>
+      <p id="variant-msg" class="msg"></p>
+      <div id="files" hidden>
+        <p>This site carries none of Baofeng's code, so it needs two files from you. Download links are in the
+          <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini#which-radio">README</a> and
+          <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini/blob/main/docs/BUILDING.md">BUILDING.md</a>.</p>
+        <div class="file-row">
+          <label for="f-stock">Stock file<span class="fname">stock-nrf-v0.27.ufw</span></label>
+          <input type="file" id="f-stock" accept=".ufw">
+          <span id="m-stock" class="msg"></span>
+        </div>
+        <div class="file-row">
+          <label for="f-patch">Loader patch<span class="fname">uv5rmini-fw-to-stock-nrf-v0.27-hw1.7-1.1.0.patch.json</span></label>
+          <input type="file" id="f-patch" accept=".json">
+          <span id="m-patch" class="msg"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="h-features">
+    <h2 id="h-features" class="label"><span class="n">2</span> Features</h2>
+    <div class="body">
+      <p>The switches from <code>features.mk</code>. Ticked means built in.
+        <button id="b-defaults" type="button" class="link">Reset to the repository's defaults</button></p>
+      <div id="features"></div>
+      <p class="small">The same build on a PC: <code id="make-cmd"></code></p>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="h-build">
+    <h2 id="h-build" class="label"><span class="n">3</span> Build</h2>
+    <div class="body">
+      <p>The first build downloads the compiler (21 MB, kept by the browser). After that a build takes a few seconds.</p>
+      <div class="actions">
+        <button id="b-build" type="button" class="primary">Build firmware</button>
+        <button id="b-dl-bin" type="button" disabled>Download firmware.bin</button>
+        <button id="b-dl-ufw" type="button" disabled>Download .ufw</button>
+      </div>
+      <div id="slot" class="slot" hidden>
+        <div class="slot-bar"><span id="slot-fill"></span></div>
+        <p class="small" id="slot-text"></p>
+      </div>
+      <details id="build-details">
+        <summary>Build log</summary>
+        <pre id="build-log" class="log"></pre>
+      </details>
+      <ul id="checks" class="checks"></ul>
+    </div>
+  </section>
+
+  <section class="step" aria-labelledby="h-flash">
+    <h2 id="h-flash" class="label"><span class="n">4</span> Flash</h2>
+    <div class="body">
+      <p id="serial-msg" class="msg"></p>
+      <ol class="howto">
+        <li>Plug the K1 cable into the radio and the computer.</li>
+        <li>Switch the radio off. Hold <b>PTT-A</b> and <kbd>=</kbd>, switch it on, and let go at <span class="lcd sm">UPDATE...</span></li>
+        <li>Press <b>Flash</b> and pick the cable's port.</li>
+      </ol>
+      <div id="rescue" class="rescue" hidden>
+        <p id="rescue-text"></p>
+        <label class="ack"><input type="checkbox" id="confirm"> I can open the case and recover this radio through
+          the ROM rescue mode, and I have a full flash backup of it.</label>
+      </div>
+      <label class="ack"><input type="checkbox" id="ack"> I have read the risks above. This build is untested and I
+        flash it at my own risk.</label>
+      <div class="actions">
+        <button id="b-flash" type="button" class="primary" disabled>Flash</button>
+        <button id="b-cancel" type="button" disabled>Cancel</button>
+        <button id="b-dl-trace" type="button" disabled>Download byte log</button>
+      </div>
+      <progress id="progress" max="1" value="0"></progress>
+      <pre id="flash-log" class="log"></pre>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <p>Open UV-5R Mini is an independent project, not made or supported by Baofeng. The compiler is
+    <a href="https://github.com/jvitkauskas/pi32v2-llvm">pi32v2-llvm</a> (Apache-2.0 with LLVM Exceptions) built
+    for WebAssembly. The FM and Bluetooth parts link JieLi's libraries from their public SDK
+    (<a href="sdk/LICENSE.jieli">Apache-2.0</a>). Source:
+    <a href="https://github.com/MegaTheLEGEND/Open-UV5R-Mini">github.com/MegaTheLEGEND/Open-UV5R-Mini</a>.</p>
+</footer>
+<script type="module" src="app.js"></script>
+</body>
+</html>
