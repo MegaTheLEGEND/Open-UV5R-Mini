@@ -13,7 +13,9 @@
  * VFO record: 0-7 frequency, one decimal digit a byte (MMM.MMMMM); 8-9 RX tone, 10-11 TX tone (radio/tones.h);
  * 14 bits 6:5 shift (1 +, 2 -); 16 power (0 High, 1 Low); 17 bit 6 narrow; 18 not traced (4 on every airband slot
  * in one radio's log, 0 on all others); 19 step index (the stock steps, RADIO_Steps; 0 = 2.5 kHz,
- * while on airband the stock app moved in 8.33 kHz steps); 20-26 offset, one digit a byte (MMM.MMMM).
+ * while on airband the stock app moved in 8.33 kHz steps); 20-26 offset, one digit a byte (MMM.MMMM); 31 ours: that
+ * side's squelch as 0xA0 + level (0-9). Stock wrote 0xFF at 29-31 in every slot of one radio's log (2026-11-21
+ * dump) and CHIRP's driver names them unknown6, so any other value means "not set" (the shared squelch byte then).
  *
  * The stock app loads its defaults when the last slot's CRC is bad; so do we (SETTINGS_Load returns false).
  */
@@ -58,7 +60,10 @@ typedef struct {
 	uint8_t  power;          /* 0 High, 1 Low */
 	bool     narrow;
 	uint8_t  step;           /* index into RADIO_Steps */
+	uint8_t  squelch;        /* 0-9, record byte 31; SETTINGS_NO_SQUELCH = not set (a record stock wrote) */
 } StockVfo_t;
+
+#define SETTINGS_NO_SQUELCH 0xFFu
 
 typedef struct {
 	uint8_t    raw[64];      /* the setting bytes as stock keeps them */

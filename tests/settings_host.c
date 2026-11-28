@@ -58,6 +58,7 @@ static void set_vfo(int side, uint32_t f, uint16_t rx, uint16_t tx, uint8_t powe
 	StockVfo_t *v = &gStock.vfo[side];
 	v->freq = f; v->rx_tone = rx; v->tx_tone = tx; v->power = power; v->narrow = narrow; v->step = step;
 	v->shift = side ? 0 : -1;
+	v->squelch = SETTINGS_NO_SQUELCH;
 	v->offset = side ? 0 : 60000u;
 }
 
@@ -149,6 +150,20 @@ int main(int argc, char **argv)
 		set_vfo(0, 12000000u, 0, 0, 0, 0, 0);
 		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
 		CHECK(rec[18] == 4, "airband: band byte 4");
+		/* each side's squelch in byte 31: 0xA0 + level; stock's 0xFF (or anything else) reads as not set */
+		memset(rec, 0xFF, sizeof rec);
+		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
+		CHECK(rec[31] == 0xFF && SETTINGS_DecodeVfo(rec, &v) && v.squelch == SETTINGS_NO_SQUELCH,
+		      "no squelch set: byte 31 left as stock wrote it");
+		gStock.vfo[0].squelch = 7;
+		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
+		CHECK(rec[31] == 0xA7 && rec[29] == 0xFF && rec[30] == 0xFF && SETTINGS_DecodeVfo(rec, &v) && v.squelch == 7,
+		      "squelch 7: byte 31 0xA7, reads back");
+		gStock.vfo[0].squelch = 0;
+		SETTINGS_EncodeVfo(rec, &gStock.vfo[0]);
+		CHECK(rec[31] == 0xA0 && SETTINGS_DecodeVfo(rec, &v) && v.squelch == 0, "squelch 0 reads back");
+		rec[31] = 0xAC;
+		CHECK(SETTINGS_DecodeVfo(rec, &v) && v.squelch == SETTINGS_NO_SQUELCH, "squelch 12: not set");
 	}
 
 	/* saving on a blank log: slot 1 written, header bit 0 cleared (as stock: slot 0 is the blank current one) */
@@ -160,6 +175,8 @@ int main(int argc, char **argv)
 	gStock.ext[15] = 0x5C;
 	set_vfo(0, 14552500u, 885, 0, 0, 0, 4);
 	set_vfo(1, 43562500u, 0, 106, 1, 1, 7);
+	gStock.vfo[0].squelch = 2;
+	gStock.vfo[1].squelch = 8;
 	memset(gStock.vfo_raw, 0, sizeof gStock.vfo_raw);
 	CHECK(SETTINGS_SaveSettings() == 0 && SETTINGS_SaveVfos() == 0, "saved");
 	CHECK(flash[0x9000] == 0xFE && flash[0x8000] == 0xFE, "header bit 0 cleared");
@@ -168,6 +185,7 @@ int main(int argc, char **argv)
 	memset(gStock.ext, 0, sizeof gStock.ext);
 	CHECK(SETTINGS_Load() && gStock.raw[SET_SQUELCH] == 6 && gStock.vfo[0].freq == 14552500u
 	      && gStock.vfo[1].freq == 43562500u && gStock.vfo[1].tx_tone == 106, "saved values read back");
+	CHECK(gStock.vfo[0].squelch == 2 && gStock.vfo[1].squelch == 8, "each side's squelch reads back");
 	CHECK(gStock.ext[0] == 0xA5 && gStock.ext[2] == 0xE6 && gStock.ext[3] == 0x03 && gStock.ext[15] == 0x5C,
 	      "our bytes read back");
 

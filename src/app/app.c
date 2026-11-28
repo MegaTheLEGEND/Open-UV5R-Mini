@@ -2255,6 +2255,8 @@ static void start_side(uint8_t side)
 		gVfo.step = v->step < RADIO_StepCount ? v->step : 4;
 		if (v->shift && v->offset)
 			gVfo.tx_freq = v->shift > 0 ? v->freq + v->offset : v->freq - v->offset;
+		if (v->squelch <= 9u)            /* this side's own squelch (record byte 31); else the shared byte */
+			gVfo.squelch = v->squelch;
 	}
 	if (ext_ok() && gStock.ext[EXT_MOD_A + side] <= MOD_AM)
 		gVfo.mod = (Modulation_t)gStock.ext[EXT_MOD_A + side];
@@ -2285,12 +2287,11 @@ static void side_save(void)
 static void side_load(uint8_t side)
 {
 	const Side_t *s = &s_side[side];
-	uint8_t squelch = gVfo.squelch, volume = gVfo.volume;
+	uint8_t volume = gVfo.volume;
 
 	s_active = side;
-	gVfo = s->vfo;
-	gVfo.squelch = squelch;                 /* one squelch and volume for both sides, as stock */
-	gVfo.volume = volume;
+	gVfo = s->vfo;                          /* each side has its own squelch (Sean, 2026-11-27, release 1.0.0) */
+	gVfo.volume = volume;                   /* one volume for both sides, as stock */
 	s_mr = s->mr;
 	s_ch = s->ch;
 	for (int i = 0; i < 13; i++)
@@ -2314,8 +2315,7 @@ static void dw_begin(void)
 
 	side_save();
 	gVfo = s_side[s_active ^ 1u].vfo;
-	gVfo.squelch = keep.squelch;          /* one squelch and volume for both, as stock */
-	gVfo.volume = keep.volume;
+	gVfo.volume = keep.volume;            /* one volume for both, as stock; the squelch is the other side's own */
 	RADIO_Apply();
 	s_peek = true;
 	s_peek_held = false;
@@ -2384,12 +2384,13 @@ static void save_now(void)
 		gStock.ext[EXT_CH_A + 2 * i + 1] = (uint8_t)(ch >> 8);
 		gStock.ext[EXT_MOD_A + i] = (uint8_t)s_side[i].vfo.mod;
 	}
-	gStock.raw[SET_SQUELCH] = gVfo.squelch;
+	gStock.raw[SET_SQUELCH] = gVfo.squelch;  /* the active side's, for stock and CHIRP; each side's in its VFO record */
 	gStock.raw[SET_ACTIVE_SIDE] = s_active;
 	gStock.raw[SET_WORK_MODE] = (uint8_t)((s_side[0].mr ? 0x01u : 0u) | (s_side[1].mr ? 0x10u : 0u));
 	for (int i = 0; i < 2; i++) {
 		const Vfo_t *v = &s_side[i].vfo;
 		StockVfo_t *sv = &gStock.vfo[i];
+		sv->squelch = v->squelch;        /* kept in channel mode too: it is the side's, not the VFO frequency's */
 		if (s_side[i].mr)
 			continue;
 		sv->freq = v->freq;

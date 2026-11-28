@@ -41,7 +41,9 @@ here is PC-tested only until someone tries it; [ROADMAP.md](ROADMAP.md) has each
 
 Settings are kept the stock way (`ENABLE_SAVE`, on): at power-on the app reads the stock app's own settings: the
 squelch, key beep, each side's VFO (frequency, tones, power, width, step, shift) and channel, and our own extra bytes
-(volume, FM station, APRS settings). Changes are written back once a key is let go, and at power-off. Without stock
+(volume, FM station, APRS settings). Each side keeps its own squelch (MENU → SQUELCH, the side's own settings, or
+F + UP/DOWN change the selected side's), kept in byte 31 of that side's VFO record; stock's one squelch byte holds the
+selected side's, and a side with nothing in byte 31 yet (a log stock wrote) starts with that. Changes are written back once a key is let go, and at power-off. Without stock
 settings it starts at 145.520 MHz in VFO mode. MENU → MEMORY switches to the radio's
 own stock channels: UP/DOWN go through the filled slots, three digits pick a channel, and the channel's RX and TX
 frequencies, RX and TX tones (CTCSS or DCS), power and width are used. Checked against a dump of one radio on the PC: 76 channels

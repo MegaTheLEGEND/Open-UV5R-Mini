@@ -49,6 +49,7 @@ bool SETTINGS_DecodeVfo(const uint8_t rec[32], StockVfo_t *v)
 	v->power = rec[16] ? 1 : 0;
 	v->narrow = (rec[17] & 0x40u) != 0;
 	v->step = rec[19] <= 8 ? rec[19] : 4;
+	v->squelch = (rec[31] & 0xF0u) == 0xA0u && (rec[31] & 0x0Fu) <= 9u ? rec[31] & 0x0Fu : SETTINGS_NO_SQUELCH;
 	return true;
 }
 
@@ -152,6 +153,8 @@ void SETTINGS_EncodeVfo(uint8_t rec[32], const StockVfo_t *v)
 	rec[16] = v->power ? 1 : 0;
 	rec[17] = (uint8_t)((rec[17] & ~0x40u) | (v->narrow ? 0x40u : 0u));
 	rec[19] = v->step;
+	if (v->squelch <= 9u)                /* else the byte stays as it was (0xFF from stock) */
+		rec[31] = (uint8_t)(0xA0u | v->squelch);
 	put_digits(rec + 20, 7, v->offset / 10u);
 }
 
